@@ -20,8 +20,8 @@ const inter = localFont({
 });
 
 export const metadata: Metadata = {
-  title: "Second Brain Research Agent",
-  description: "Phase 1 MVP for source-grounded X and YouTube research ingestion."
+  title: "Second Brain",
+  description: "A source-grounded knowledge inbox for saved links, videos, transcripts, and reading decisions."
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {

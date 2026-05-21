@@ -1,4 +1,4 @@
-package phaseone
+package knowledge
 
 import (
 	"bytes"
@@ -51,7 +51,7 @@ type transcriptAttempt struct {
 	mode  string
 }
 
-func (s *Service) fetchYouTubePhaseOneItems(ctx context.Context, playlistID string, transcriptVideoID string) ([]YouTubeItem, error) {
+func (s *Service) fetchYouTubeInboxItems(ctx context.Context, playlistID string, transcriptVideoID string) ([]YouTubeItem, error) {
 	items, err := s.fetchPlaylistItems(ctx, playlistID, 5)
 	if err != nil {
 		return nil, err
@@ -141,7 +141,7 @@ func (s *Service) fetchSupadataTranscriptAttempt(ctx context.Context, videoID st
 		return YouTubeItem{TranscriptStatus: "blocked", TranscriptError: fmt.Sprintf("Supadata transcript extraction failed: %v", err)}
 	}
 	if payload.JobID != "" {
-		return YouTubeItem{TranscriptStatus: "blocked", TranscriptError: "Supadata returned async job " + payload.JobID + "; Phase 1 only accepts immediate native transcripts."}
+		return YouTubeItem{TranscriptStatus: "blocked", TranscriptError: "Supadata returned async job " + payload.JobID + "; Knowledge inbox only accepts immediate native transcripts."}
 	}
 
 	text := transcriptText(payload.Content)

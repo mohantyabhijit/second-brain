@@ -1,4 +1,4 @@
-package phaseone
+package knowledge
 
 import (
 	"context"
@@ -57,7 +57,7 @@ func (s *Service) Run(ctx context.Context) (Result, error) {
 	if s.cfg.YouTubePlaylistID == "" {
 		blockers = append(blockers, "YOUTUBE_PLAYLIST_ID is missing. Use a dedicated Second Brain Inbox playlist because Watch Later is blocked by the YouTube API.")
 	} else {
-		youtubeItems, err = s.fetchYouTubePhaseOneItems(ctx, s.cfg.YouTubePlaylistID, s.cfg.YouTubeTranscriptTestVideoID)
+		youtubeItems, err = s.fetchYouTubeInboxItems(ctx, s.cfg.YouTubePlaylistID, s.cfg.YouTubeTranscriptTestVideoID)
 		if err != nil {
 			youtubeBlocked = true
 			blockers = append(blockers, err.Error())

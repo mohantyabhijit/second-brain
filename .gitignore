@@ -11,6 +11,7 @@ frontend/dist
 !frontend/.env.example
 !backend/.env.example
 data/runtime
+.cache/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
