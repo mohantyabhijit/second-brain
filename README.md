@@ -1,51 +1,65 @@
 # Second Brain Research Agent
 
-Phase 1 proves the hard path first: fetch real saved material from X and YouTube, extract source text or transcripts, summarize without losing attribution, and show which API limitations are blocking the product.
+Source-grounded research inbox for saved X posts and YouTube videos. The repo is now split into a React frontend, a Go backend, and Supabase-managed database schema.
 
-## Phase 1 App
+## Structure
 
-```bash
-npm install
-npm run dev
+```text
+frontend/   Next.js React console
+backend/    Go API, ingestion pipeline, Supabase persistence
+supabase/   Database migrations
+docs/       Architecture and operating notes
+scripts/    Local setup helpers
 ```
 
-Open `http://localhost:3000` and run the Phase 1 validation. The app writes non-secret validation output to `data/runtime/latest-phase1.json`, which is ignored by git.
+## Local Setup
+
+Apply the Supabase migration in `supabase/migrations`, then set `SUPABASE_DB_URL` to the pooled Postgres connection string.
+
+```bash
+cp backend/.env.example backend/.env
+cp frontend/.env.example frontend/.env.local
+npm install --prefix frontend
+cd backend && go mod download
+```
+
+Apply migrations:
+
+```bash
+npm run db:migrate
+```
+
+Run the services in two terminals:
+
+```bash
+npm run backend:dev
+npm run frontend:dev
+```
+
+Open `http://localhost:3000`. The frontend calls the Go API at `NEXT_PUBLIC_API_BASE_URL`, defaulting to `http://localhost:8080`.
+
+`npm run backend:dev` reads `SUPABASE_DB_URL` from Keychain when it is not already exported, then runs the Go API through `onecli run` so outbound provider requests use OneCLI gateway injection.
 
 ## Secrets
 
-OneCLI was installed at:
-
-```bash
-/Users/abhijitmohanty/.local/bin/onecli
-```
-
-Authenticate it before saving secrets:
-
-```bash
-/Users/abhijitmohanty/.local/bin/onecli auth login --api-key oc_...
-```
-
-Then export the real values only for the save command and store them in OneCLI:
+Store provider secrets in OneCLI or export them only for a local validation session:
 
 ```bash
 export X_USER_ACCESS_TOKEN=...
 export YOUTUBE_API_KEY=...
 export YOUTUBE_ACCESS_TOKEN=...
+export SUPADATA_API_KEY=...
+export OPENAI_API_KEY=...
 npm run onecli:save-secrets
 ```
 
-Run the app through OneCLI gateway mode when you want HTTP secret injection:
+`YOUTUBE_PLAYLIST_ID` is intentionally a non-secret backend setting. Use a dedicated playlist such as `Second Brain Inbox`; the official YouTube API blocks Watch Later listing.
+
+## Validation
 
 ```bash
-ONECLI_GATEWAY=true /Users/abhijitmohanty/.local/bin/onecli run --project second-brain npm -- run dev
+npm run typecheck
+npm run lint
+npm run build
+npm run backend:test
 ```
-
-`YOUTUBE_PLAYLIST_ID` is intentionally a non-secret local setting. Use a dedicated playlist such as `Second Brain Inbox`; the official YouTube API blocks Watch Later listing.
-
-## Source Requirements
-
-X requires an OAuth 2.0 user access token with `bookmark.read`, `tweet.read`, and `users.read`.
-
-YouTube can read a public playlist with `YOUTUBE_API_KEY`; private playlist tests need `YOUTUBE_ACCESS_TOKEN`. Transcript extraction is attempted against the first playlist video or `YOUTUBE_TRANSCRIPT_TEST_VIDEO_ID`.
-
-Summaries are deliberately extractive in Phase 1 so every output stays tied to fetched source text.

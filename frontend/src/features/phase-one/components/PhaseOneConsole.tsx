@@ -1,40 +1,11 @@
 "use client";
 
-import { startTransition, useEffect, useMemo, useState } from "react";
+import { useMemo } from "react";
 import type { ReactNode } from "react";
-import type { Decision, PhaseOneResult, SourceStatus, Summary, ValidationItem } from "@/lib/types";
+import { usePhaseOne } from "../hooks/usePhaseOne";
+import type { Decision, PhaseOneResult, SourceStatus, Summary, ValidationItem } from "../types";
 
 type IconName = "key" | "x" | "youtube" | "check" | "run" | "link" | "alert" | "spark";
-
-const initialResult: PhaseOneResult = {
-  generatedAt: new Date().toISOString(),
-  sourceStatus: {
-    x: "needs_secrets",
-    youtube: "needs_secrets",
-    onecli: "needs_secrets"
-  },
-  xBookmarks: [],
-  youtubeItems: [],
-  summaries: [],
-  validation: [
-    {
-      label: "X bookmark request",
-      status: "untested",
-      detail: "Run Phase 1 validation after adding credentials."
-    },
-    {
-      label: "YouTube playlist check",
-      status: "untested",
-      detail: "Use a dedicated Second Brain Inbox playlist ID."
-    },
-    {
-      label: "Transcript path",
-      status: "untested",
-      detail: "The app tests the first playlist video or YOUTUBE_TRANSCRIPT_TEST_VIDEO_ID."
-    }
-  ],
-  blockers: ["OneCLI is installed, but this app has not been run with authenticated provider secrets yet."]
-};
 
 const statusLabels: Record<SourceStatus, string> = {
   ready: "Ready",
@@ -157,40 +128,19 @@ function SummaryCard({ summary }: { summary: Summary }) {
   );
 }
 
-export default function Home() {
-  const [result, setResult] = useState<PhaseOneResult>(() => initialResult);
-  const [isRunning, setIsRunning] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    let ignore = false;
-    fetch("/api/phase1")
-      .then((response) => response.json())
-      .then((payload: { latest: PhaseOneResult | null }) => {
-        if (!ignore && payload.latest) {
-          startTransition(() => setResult(payload.latest as PhaseOneResult));
-        }
-      })
-      .catch(() => undefined);
-    return () => {
-      ignore = true;
-    };
-  }, []);
-
-  async function runValidation() {
-    setIsRunning(true);
-    setError(null);
-    try {
-      const response = await fetch("/api/phase1", { method: "POST" });
-      const payload = (await response.json()) as PhaseOneResult;
-      if (!response.ok) throw new Error("Phase 1 validation failed.");
-      startTransition(() => setResult(payload));
-    } catch (phaseError) {
-      setError(phaseError instanceof Error ? phaseError.message : "Phase 1 validation failed.");
-    } finally {
-      setIsRunning(false);
-    }
+function transcriptLabel(item: PhaseOneResult["youtubeItems"][number]) {
+  if (item.transcriptTranslationStatus === "translated" && item.transcriptSourceLang) {
+    return `${item.transcriptStatus} (${item.transcriptSourceLang} -> en)`;
   }
+  if (item.transcriptTranslationStatus === "blocked" && item.transcriptSourceLang) {
+    return `${item.transcriptStatus} (${item.transcriptSourceLang}, translation blocked)`;
+  }
+  if (item.transcriptLang) return `${item.transcriptStatus} (${item.transcriptLang})`;
+  return item.transcriptStatus;
+}
+
+export default function PhaseOneConsole() {
+  const { result, isRunning, error, runValidation } = usePhaseOne();
 
   const validationPassCount = useMemo(() => result.validation.filter((item) => item.status === "pass").length, [result.validation]);
   const totalFetched = result.xBookmarks.length + result.youtubeItems.length;
@@ -200,7 +150,8 @@ export default function Home() {
     () =>
       new Intl.DateTimeFormat("en", {
         dateStyle: "medium",
-        timeStyle: "short"
+        timeStyle: "short",
+        timeZone: "UTC"
       }).format(new Date(result.generatedAt)),
     [result.generatedAt]
   );
@@ -242,7 +193,7 @@ export default function Home() {
 
         <section id="sources" className="status-strip" aria-label="Source status">
           <SourceBadge label="OneCLI Secrets" detail="Credential vault" status={result.sourceStatus.onecli} icon="key" />
-          <SourceBadge label="X Bookmarks" detail="5 recent saves" status={result.sourceStatus.x} icon="x" />
+          <SourceBadge label="X Bookmarks" detail="10 recent saves" status={result.sourceStatus.x} icon="x" />
           <SourceBadge label="YouTube" detail="Playlist + captions" status={result.sourceStatus.youtube} icon="youtube" />
           <div className="readiness-card">
             <div>
@@ -282,7 +233,7 @@ export default function Home() {
             <div className="panel-header">
               <div>
                 <h2>Recent Ingestion</h2>
-                <p>Fetches 5 X bookmarks and a dedicated YouTube inbox playlist sample.</p>
+                <p>Fetches 10 X bookmarks and a dedicated YouTube inbox playlist sample.</p>
               </div>
               <span className="panel-symbol">
                 <Icon name="spark" />
@@ -304,9 +255,9 @@ export default function Home() {
                   {result.xBookmarks.map((bookmark) => (
                     <tr key={bookmark.id}>
                       <td>X</td>
-                      <td>{bookmark.text}</td>
+                      <td>{bookmark.title ?? bookmark.text}</td>
                       <td>{bookmark.username ? `@${bookmark.username}` : bookmark.authorName ?? bookmark.authorId ?? "Unknown"}</td>
-                      <td>Fetched</td>
+                      <td>{bookmark.contentType === "article" ? "Article fetched" : "Tweet fetched"}</td>
                       <td>
                         <a href={bookmark.sourceUrl} target="_blank" rel="noreferrer">
                           Open
@@ -319,7 +270,7 @@ export default function Home() {
                       <td>YouTube</td>
                       <td>{item.title}</td>
                       <td>{item.channelTitle ?? "Unknown"}</td>
-                      <td>{item.transcriptStatus}</td>
+                      <td>{transcriptLabel(item)}</td>
                       <td>
                         <a href={item.sourceUrl} target="_blank" rel="noreferrer">
                           Open
@@ -393,10 +344,10 @@ export default function Home() {
               </span>
             </div>
             {result.youtubeItems.length ? (
-              result.youtubeItems.slice(0, 3).map((item) => (
+              result.youtubeItems.map((item) => (
                 <article className="transcript-item" key={item.videoId}>
                   <strong>{item.title}</strong>
-                  <span>{item.transcriptStatus}</span>
+                  <span>{transcriptLabel(item)}</span>
                   <p>{item.transcriptPreview ?? item.transcriptError ?? "Not tested in this run."}</p>
                 </article>
               ))

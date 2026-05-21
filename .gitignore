@@ -1,21 +1,27 @@
 node_modules
 .next
+frontend/.next
 out
 dist
+frontend/out
+frontend/dist
 .env
 .env.*
 !.env.example
+!frontend/.env.example
+!backend/.env.example
 data/runtime
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 tsconfig.tsbuildinfo
+frontend/tsconfig.tsbuildinfo
 .DS_Store
 
-# Keep only the local web fonts imported by app/layout.tsx.
-design-system/Inter-4.1/*
-!design-system/Inter-4.1/LICENSE.txt
-!design-system/Inter-4.1/web/
-design-system/Inter-4.1/web/*
-!design-system/Inter-4.1/web/InterVariable.woff2
-!design-system/Inter-4.1/web/InterVariable-Italic.woff2
+# Keep only the local web fonts imported by frontend/app/layout.tsx.
+frontend/design-system/Inter-4.1/*
+!frontend/design-system/Inter-4.1/LICENSE.txt
+!frontend/design-system/Inter-4.1/web/
+frontend/design-system/Inter-4.1/web/*
+!frontend/design-system/Inter-4.1/web/InterVariable.woff2
+!frontend/design-system/Inter-4.1/web/InterVariable-Italic.woff2
