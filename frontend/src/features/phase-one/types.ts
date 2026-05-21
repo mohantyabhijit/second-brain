@@ -10,7 +10,12 @@ export type ValidationItem = {
 
 export type XBookmark = {
   id: string;
+  contentType: "tweet" | "article";
   text: string;
+  title?: string;
+  body: string;
+  previewText?: string;
+  expandedUrl?: string;
   authorId?: string;
   authorName?: string;
   username?: string;
@@ -26,7 +31,12 @@ export type YouTubeItem = {
   publishedAt?: string;
   sourceUrl: string;
   transcriptStatus: "available" | "missing" | "blocked" | "untested";
+  transcriptLang?: string;
+  transcriptSourceLang?: string;
+  transcriptAvailableLangs?: string[];
+  transcriptTranslationStatus?: "none" | "translated" | "blocked";
   transcriptPreview?: string;
+  transcriptOriginalPreview?: string;
   transcriptError?: string;
 };
 

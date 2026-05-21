@@ -58,5 +58,7 @@ create_param_secret() {
 create_secret X_USER_ACCESS_TOKEN "Second Brain X user access token" "api.x.com"
 create_secret YOUTUBE_ACCESS_TOKEN "Second Brain YouTube OAuth access token" "www.googleapis.com"
 create_param_secret YOUTUBE_API_KEY "Second Brain YouTube API key" "www.googleapis.com" "key"
+create_secret SUPADATA_API_KEY "Second Brain Supadata API key" "api.supadata.ai" "x-api-key" "{value}"
+create_secret OPENAI_API_KEY "Second Brain OpenAI translation key" "api.openai.com"
 
 echo "Done. Run: $ONECLI secrets list --project $PROJECT"
