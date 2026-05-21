@@ -1,20 +1,35 @@
 # Second Brain
 
-Source-grounded knowledge inbox for saved X posts, YouTube videos, transcripts, and reading decisions. The repo is split into a React frontend, a Go backend, and Supabase-managed database schema.
+Source-grounded knowledge inbox for saved X posts, YouTube videos, transcripts, and reading decisions. The repo is split into a React frontend, a Go backend, Supabase-managed relational/vector/object storage, and a Neo4j knowledge graph.
+
+## Architecture
+
+```text
+frontend/Next.js
+    |
+backend/Go API
+    |
+    +-- Supabase Postgres: relational system of record
+    +-- Supabase Storage: documents and object storage
+    +-- Supabase pgvector: vector database for embeddings
+    +-- Neo4j: knowledge graph for entities and relationships
+```
+
+Supabase is the canonical data layer. Neo4j is a derived graph index for multi-hop reasoning and relationship-heavy retrieval.
 
 ## Structure
 
 ```text
 frontend/   Next.js React app
-backend/    Go API, ingestion pipeline, Supabase persistence
-supabase/   Database migrations
+backend/    Go API, ingestion pipeline, persistence adapters
+supabase/   Database migrations for Postgres and pgvector
 docs/       Architecture and operating notes
 scripts/    Local setup helpers
 ```
 
 ## Local Setup
 
-Apply the Supabase migration in `supabase/migrations`, then set `SUPABASE_DB_URL` to the pooled Postgres connection string.
+Apply the Supabase migration in `supabase/migrations`, enable `pgvector`, create private Supabase Storage buckets, then set `SUPABASE_DB_URL` to the pooled Postgres connection string. Neo4j credentials are server-side settings once the graph sync is implemented.
 
 ```bash
 cp backend/.env.example backend/.env
