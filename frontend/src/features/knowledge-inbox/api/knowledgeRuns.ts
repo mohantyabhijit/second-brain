@@ -1,4 +1,4 @@
-import type { PhaseOneResult } from "./types";
+import type { KnowledgeRunResult } from "../contracts";
 
 const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8080";
 
@@ -19,17 +19,17 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return (await response.json()) as T;
 }
 
-export async function readLatestPhaseOneResult() {
-  const payload = await request<{ latest: PhaseOneResult | null }>("/api/phase1");
-  return payload.latest ? normalizePhaseOneResult(payload.latest) : null;
+export async function readLatestKnowledgeRun() {
+  const payload = await request<{ latest: KnowledgeRunResult | null }>("/api/knowledge-runs/latest");
+  return payload.latest ? normalizeKnowledgeRun(payload.latest) : null;
 }
 
-export async function runPhaseOneValidation() {
-  const payload = await request<PhaseOneResult>("/api/phase1/run", { method: "POST" });
-  return normalizePhaseOneResult(payload);
+export async function runKnowledgeInboxValidation() {
+  const payload = await request<KnowledgeRunResult>("/api/knowledge-runs/refresh", { method: "POST" });
+  return normalizeKnowledgeRun(payload);
 }
 
-function normalizePhaseOneResult(result: PhaseOneResult): PhaseOneResult {
+function normalizeKnowledgeRun(result: KnowledgeRunResult): KnowledgeRunResult {
   return {
     ...result,
     xBookmarks: result.xBookmarks ?? [],

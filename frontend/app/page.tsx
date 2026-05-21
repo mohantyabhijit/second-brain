@@ -1,5 +1,5 @@
-import PhaseOneConsole from "@/features/phase-one/components/PhaseOneConsole";
+import KnowledgeInboxContainer from "@/features/knowledge-inbox/KnowledgeInboxContainer";
 
 export default function Home() {
-  return <PhaseOneConsole />;
+  return <KnowledgeInboxContainer />;
 }

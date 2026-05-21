@@ -11,8 +11,9 @@ import (
 
 	"github.com/abhijitmohanty/second-brain/backend/internal/config"
 	"github.com/abhijitmohanty/second-brain/backend/internal/httpapi"
-	"github.com/abhijitmohanty/second-brain/backend/internal/phaseone"
+	"github.com/abhijitmohanty/second-brain/backend/internal/knowledge"
 	"github.com/abhijitmohanty/second-brain/backend/internal/platform/httpclient"
+	"github.com/abhijitmohanty/second-brain/backend/internal/store/localfile"
 	"github.com/abhijitmohanty/second-brain/backend/internal/store/postgres"
 )
 
@@ -23,19 +24,24 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
+	var store knowledge.Store
+	var closeStore func()
 	if cfg.SupabaseDatabaseURL == "" {
-		logger.Error("SUPABASE_DB_URL is required")
-		os.Exit(1)
+		logger.Warn("SUPABASE_DB_URL missing; using local knowledge run file", "path", "../data/runtime/latest-knowledge-run.json")
+		store = localfile.New("../data/runtime/latest-knowledge-run.json")
+		closeStore = func() {}
+	} else {
+		postgresStore, err := postgres.New(ctx, cfg.SupabaseDatabaseURL)
+		if err != nil {
+			logger.Error("connect supabase postgres", "error", err)
+			os.Exit(1)
+		}
+		store = postgresStore
+		closeStore = postgresStore.Close
 	}
+	defer closeStore()
 
-	store, err := postgres.New(ctx, cfg.SupabaseDatabaseURL)
-	if err != nil {
-		logger.Error("connect supabase postgres", "error", err)
-		os.Exit(1)
-	}
-	defer store.Close()
-
-	service := phaseone.NewService(cfg, store, httpclient.New())
+	service := knowledge.NewService(cfg, store, httpclient.New())
 	server := &http.Server{
 		Addr:              ":" + cfg.Port,
 		Handler:           httpapi.NewRouter(cfg, service, logger),

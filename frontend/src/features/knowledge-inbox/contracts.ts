@@ -8,7 +8,7 @@ export type ValidationItem = {
   detail: string;
 };
 
-export type XBookmark = {
+export type SavedXItem = {
   id: string;
   contentType: "tweet" | "article";
   text: string;
@@ -24,7 +24,7 @@ export type XBookmark = {
   sourceUrl: string;
 };
 
-export type YouTubeItem = {
+export type SavedYouTubeItem = {
   videoId: string;
   title: string;
   channelTitle?: string;
@@ -40,7 +40,7 @@ export type YouTubeItem = {
   transcriptError?: string;
 };
 
-export type Summary = {
+export type KnowledgeSummary = {
   id: string;
   source: "x" | "youtube";
   title: string;
@@ -52,16 +52,16 @@ export type Summary = {
   notes: string[];
 };
 
-export type PhaseOneResult = {
+export type KnowledgeRunResult = {
   generatedAt: string;
   sourceStatus: {
     x: SourceStatus;
     youtube: SourceStatus;
     onecli: SourceStatus;
   };
-  xBookmarks: XBookmark[];
-  youtubeItems: YouTubeItem[];
-  summaries: Summary[];
+  xBookmarks: SavedXItem[];
+  youtubeItems: SavedYouTubeItem[];
+  summaries: KnowledgeSummary[];
   validation: ValidationItem[];
   blockers: string[];
 };

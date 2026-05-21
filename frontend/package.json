@@ -2,7 +2,7 @@
   "name": "@second-brain/frontend",
   "version": "0.1.0",
   "private": true,
-  "description": "React frontend for the Second Brain research console.",
+  "description": "React frontend for the Second Brain knowledge inbox.",
   "scripts": {
     "dev": "next dev",
     "build": "next build",

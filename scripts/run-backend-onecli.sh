@@ -14,8 +14,11 @@ if [[ -f "$BACKEND_DIR/.env" ]]; then
 fi
 
 if [[ -z "${SUPABASE_DB_URL:-}" ]]; then
-  SUPABASE_DB_URL="$(security find-generic-password -a "$USER" -s "second-brain/SUPABASE_DB_URL" -w)"
-  export SUPABASE_DB_URL
+  if SUPABASE_DB_URL="$(security find-generic-password -a "$USER" -s "second-brain/SUPABASE_DB_URL" -w 2>/dev/null)"; then
+    export SUPABASE_DB_URL
+  else
+    unset SUPABASE_DB_URL
+  fi
 fi
 
 export ONECLI_GATEWAY=true

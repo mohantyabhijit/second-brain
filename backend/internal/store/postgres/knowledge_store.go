@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 
-	"github.com/abhijitmohanty/second-brain/backend/internal/phaseone"
+	"github.com/abhijitmohanty/second-brain/backend/internal/knowledge"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -30,11 +30,11 @@ func (s *Store) Close() {
 	s.pool.Close()
 }
 
-func (s *Store) ReadLatest(ctx context.Context) (*phaseone.Result, error) {
+func (s *Store) ReadLatest(ctx context.Context) (*knowledge.Result, error) {
 	var raw []byte
 	err := s.pool.QueryRow(ctx, `
 		select payload
-		from phase_one_runs
+		from knowledge_runs
 		order by generated_at desc
 		limit 1
 	`).Scan(&raw)
@@ -45,20 +45,20 @@ func (s *Store) ReadLatest(ctx context.Context) (*phaseone.Result, error) {
 		return nil, err
 	}
 
-	var result phaseone.Result
+	var result knowledge.Result
 	if err := json.Unmarshal(raw, &result); err != nil {
 		return nil, err
 	}
 	return &result, nil
 }
 
-func (s *Store) SaveLatest(ctx context.Context, result phaseone.Result) error {
+func (s *Store) SaveLatest(ctx context.Context, result knowledge.Result) error {
 	raw, err := json.Marshal(result)
 	if err != nil {
 		return err
 	}
 	_, err = s.pool.Exec(ctx, `
-		insert into phase_one_runs (generated_at, payload)
+		insert into knowledge_runs (generated_at, payload)
 		values ($1, $2)
 	`, result.GeneratedAt, raw)
 	return err

@@ -6,36 +6,39 @@ import (
 	"slices"
 
 	"github.com/abhijitmohanty/second-brain/backend/internal/config"
-	"github.com/abhijitmohanty/second-brain/backend/internal/phaseone"
+	"github.com/abhijitmohanty/second-brain/backend/internal/knowledge"
 	"github.com/abhijitmohanty/second-brain/backend/internal/platform/httputil"
 )
 
-func NewRouter(cfg config.Config, service *phaseone.Service, logger *slog.Logger) http.Handler {
+func NewRouter(cfg config.Config, service *knowledge.Service, logger *slog.Logger) http.Handler {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
 		httputil.JSON(w, http.StatusOK, map[string]string{"status": "ok", "env": cfg.Env})
 	})
 
-	mux.HandleFunc("GET /api/phase1", func(w http.ResponseWriter, r *http.Request) {
+	readLatest := func(w http.ResponseWriter, r *http.Request) {
 		latest, err := service.ReadLatest(r.Context())
 		if err != nil {
-			logger.Error("read latest phase one result", "error", err)
-			httputil.Error(w, http.StatusInternalServerError, "read latest phase one result")
+			logger.Error("read latest knowledge run", "error", err)
+			httputil.Error(w, http.StatusInternalServerError, "read latest knowledge run")
 			return
 		}
 		httputil.JSON(w, http.StatusOK, map[string]any{"latest": latest})
-	})
+	}
 
-	mux.HandleFunc("POST /api/phase1/run", func(w http.ResponseWriter, r *http.Request) {
+	runInbox := func(w http.ResponseWriter, r *http.Request) {
 		result, err := service.Run(r.Context())
 		if err != nil {
-			logger.Error("run phase one", "error", err)
-			httputil.Error(w, http.StatusInternalServerError, "run phase one")
+			logger.Error("run knowledge inbox", "error", err)
+			httputil.Error(w, http.StatusInternalServerError, "run knowledge inbox")
 			return
 		}
 		httputil.JSON(w, http.StatusOK, result)
-	})
+	}
+
+	mux.HandleFunc("GET /api/knowledge-runs/latest", readLatest)
+	mux.HandleFunc("POST /api/knowledge-runs/refresh", runInbox)
 
 	return cors(cfg.AllowedOrigins, mux)
 }

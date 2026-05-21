@@ -1,0 +1,283 @@
+import type { Decision, KnowledgeRunResult, SavedYouTubeItem, SourceStatus, ValidationItem } from "../contracts";
+
+export type IconName = "key" | "x" | "youtube" | "check" | "run" | "link" | "alert" | "spark";
+
+export type NavigationItemViewModel = {
+  label: string;
+  href: string;
+};
+
+export type SourceCardViewModel = {
+  label: string;
+  detail: string;
+  status: SourceStatus;
+  statusLabel: string;
+  icon: IconName;
+};
+
+export type ReadinessViewModel = {
+  label: string;
+  value: string;
+  progress: number;
+  generatedAtLabel: string;
+};
+
+export type MetricViewModel = {
+  label: string;
+  value: string;
+};
+
+export type IntakeRowViewModel = {
+  id: string;
+  source: string;
+  item: string;
+  author: string;
+  status: string;
+  sourceUrl: string;
+};
+
+export type ValidationItemViewModel = ValidationItem & {
+  icon: IconName;
+};
+
+export type SummaryCardViewModel = {
+  id: string;
+  title: string;
+  body: string;
+  quote?: string;
+  sourceUrl: string;
+  decision: Decision;
+  decisionLabel: string;
+  confidenceLabel: string;
+};
+
+export type TranscriptItemViewModel = {
+  id: string;
+  title: string;
+  statusLabel: string;
+  detail: string;
+};
+
+export type EmptyStateViewModel = {
+  icon: IconName;
+  title: string;
+  body: string;
+};
+
+export type PanelViewModel<T> = {
+  title: string;
+  description: string;
+  icon: IconName;
+  items: T[];
+  empty: EmptyStateViewModel;
+};
+
+export type KnowledgeInboxViewModel = {
+  brand: {
+    mark: string;
+    name: string;
+    descriptor: string;
+  };
+  navigation: NavigationItemViewModel[];
+  sidebarNote: {
+    label: string;
+    value: string;
+  };
+  header: {
+    eyebrow: string;
+    title: string;
+    description: string;
+    actionLabel: string;
+    isRunning: boolean;
+  };
+  sources: SourceCardViewModel[];
+  readiness: ReadinessViewModel;
+  metrics: MetricViewModel[];
+  intake: PanelViewModel<IntakeRowViewModel>;
+  validation: PanelViewModel<ValidationItemViewModel>;
+  summaries: PanelViewModel<SummaryCardViewModel>;
+  transcripts: PanelViewModel<TranscriptItemViewModel>;
+  blockers: {
+    eyebrow: string;
+    title: string;
+    items: string[];
+  };
+  error: string | null;
+};
+
+const statusLabels: Record<SourceStatus, string> = {
+  ready: "Ready",
+  partial: "Partial",
+  blocked: "Blocked",
+  needs_secrets: "Needs secrets"
+};
+
+const decisionLabels: Record<Decision, string> = {
+  read_now: "Read now",
+  later: "Later",
+  skip: "Skip"
+};
+
+const navItems: NavigationItemViewModel[] = [
+  { label: "Sources", href: "#sources" },
+  { label: "Intake", href: "#intake" },
+  { label: "Review", href: "#review" },
+  { label: "Quality", href: "#quality" }
+];
+
+export function toKnowledgeInboxViewModel(run: KnowledgeRunResult, isRunning: boolean, error: string | null): KnowledgeInboxViewModel {
+  const validationPassCount = run.validation.filter((item) => item.status === "pass").length;
+  const totalFetched = run.xBookmarks.length + run.youtubeItems.length;
+  const transcriptCount = run.youtubeItems.filter((item) => item.transcriptStatus === "available").length;
+  const progress = run.validation.length ? Math.round((validationPassCount / run.validation.length) * 100) : 0;
+
+  return {
+    brand: {
+      mark: "SB",
+      name: "Second Brain",
+      descriptor: "Knowledge Inbox"
+    },
+    navigation: navItems,
+    sidebarNote: {
+      label: "Operating mode",
+      value: "Source-grounded research memory"
+    },
+    header: {
+      eyebrow: "Knowledge inbox",
+      title: "Second Brain Command Center",
+      description: "A durable intake surface for saved links, videos, transcripts, and source-grounded reading decisions.",
+      actionLabel: isRunning ? "Running" : "Refresh Inbox",
+      isRunning
+    },
+    sources: [
+      sourceCard("OneCLI Secrets", "Credential vault", run.sourceStatus.onecli, "key"),
+      sourceCard("X Bookmarks", "Recent saved posts", run.sourceStatus.x, "x"),
+      sourceCard("YouTube Inbox", "Playlist and captions", run.sourceStatus.youtube, "youtube")
+    ],
+    readiness: {
+      label: `${validationPassCount}/${run.validation.length} checks passing`,
+      value: `${progress}% indexed`,
+      progress,
+      generatedAtLabel: formatGeneratedAt(run.generatedAt)
+    },
+    metrics: [
+      { label: "Captured items", value: String(totalFetched) },
+      { label: "Summaries", value: String(run.summaries.length) },
+      { label: "Transcripts", value: String(transcriptCount) },
+      { label: "Open blockers", value: String(run.blockers.length) }
+    ],
+    intake: {
+      title: "Recent Intake",
+      description: "Source rows normalized for review across saved posts and video inboxes.",
+      icon: "spark",
+      items: [
+        ...run.xBookmarks.map((bookmark): IntakeRowViewModel => ({
+          id: `x-${bookmark.id}`,
+          source: "X",
+          item: bookmark.title ?? bookmark.text,
+          author: bookmark.username ? `@${bookmark.username}` : bookmark.authorName ?? bookmark.authorId ?? "Unknown",
+          status: bookmark.contentType === "article" ? "Article captured" : "Post captured",
+          sourceUrl: bookmark.sourceUrl
+        })),
+        ...run.youtubeItems.map((item): IntakeRowViewModel => ({
+          id: `youtube-${item.videoId}`,
+          source: "YouTube",
+          item: item.title,
+          author: item.channelTitle ?? "Unknown",
+          status: transcriptLabel(item),
+          sourceUrl: item.sourceUrl
+        }))
+      ],
+      empty: {
+        icon: "spark",
+        title: "No source rows yet",
+        body: "Connect source credentials and refresh the inbox."
+      }
+    },
+    validation: {
+      title: "Quality Gate",
+      description: "Acceptance checks before the inbox can be trusted.",
+      icon: "check",
+      items: run.validation.map((item) => ({
+        ...item,
+        icon: item.status === "pass" ? "check" : "alert"
+      })),
+      empty: {
+        icon: "check",
+        title: "No checks configured",
+        body: "Validation rules will appear once the backend returns them."
+      }
+    },
+    summaries: {
+      title: "Review Queue",
+      description: "Reading decisions with attribution preserved.",
+      icon: "link",
+      items: run.summaries.map((summary) => ({
+        id: `${summary.source}-${summary.id}`,
+        title: summary.title,
+        body: summary.summary,
+        quote: summary.quote,
+        sourceUrl: summary.sourceUrl,
+        decision: summary.decision,
+        decisionLabel: decisionLabels[summary.decision],
+        confidenceLabel: `${summary.confidence} confidence`
+      })),
+      empty: {
+        icon: "spark",
+        title: "No summaries yet",
+        body: "Source-grounded summaries will appear once usable content is available."
+      }
+    },
+    transcripts: {
+      title: "Transcript Evidence",
+      description: "Caption status for videos entering the research memory.",
+      icon: "youtube",
+      items: run.youtubeItems.map((item) => ({
+        id: item.videoId,
+        title: item.title,
+        statusLabel: transcriptLabel(item),
+        detail: item.transcriptPreview ?? item.transcriptError ?? "Not tested in this run."
+      })),
+      empty: {
+        icon: "youtube",
+        title: "Waiting for video inbox",
+        body: "Set a YouTube inbox playlist and refresh the app."
+      }
+    },
+    blockers: {
+      eyebrow: "Setup required",
+      title: "Current blockers",
+      items: run.blockers
+    },
+    error
+  };
+}
+
+function sourceCard(label: string, detail: string, status: SourceStatus, icon: IconName): SourceCardViewModel {
+  return {
+    label,
+    detail,
+    status,
+    statusLabel: statusLabels[status],
+    icon
+  };
+}
+
+function transcriptLabel(item: SavedYouTubeItem) {
+  if (item.transcriptTranslationStatus === "translated" && item.transcriptSourceLang) {
+    return `${item.transcriptStatus} (${item.transcriptSourceLang} to en)`;
+  }
+  if (item.transcriptTranslationStatus === "blocked" && item.transcriptSourceLang) {
+    return `${item.transcriptStatus} (${item.transcriptSourceLang}, translation blocked)`;
+  }
+  if (item.transcriptLang) return `${item.transcriptStatus} (${item.transcriptLang})`;
+  return item.transcriptStatus;
+}
+
+function formatGeneratedAt(generatedAt: string) {
+  return new Intl.DateTimeFormat("en", {
+    dateStyle: "medium",
+    timeStyle: "short",
+    timeZone: "UTC"
+  }).format(new Date(generatedAt));
+}

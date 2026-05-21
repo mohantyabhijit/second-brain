@@ -2,7 +2,7 @@
   "name": "second-brain",
   "version": "0.1.0",
   "private": true,
-  "description": "Source-grounded second brain research agent.",
+  "description": "Source-grounded second brain knowledge inbox.",
   "scripts": {
     "dev": "npm --prefix frontend run dev",
     "frontend:dev": "npm --prefix frontend run dev",
