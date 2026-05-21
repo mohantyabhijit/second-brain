@@ -1,0 +1,1093 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Second Brain Research Agent - Project Plan</title>
+  <meta name="description" content="Interactive project plan for a second brain that turns saved X bookmarks and YouTube videos into a personal research digest.">
+  <style>
+    :root {
+      --bg: #f8fafc;
+      --surface: #ffffff;
+      --surface-soft: #eef4f8;
+      --ink: #172033;
+      --ink-muted: #516075;
+      --line: #dce5ee;
+      --primary: #255edb;
+      --primary-strong: #173c91;
+      --teal: #0f766e;
+      --amber: #b45309;
+      --red: #b91c1c;
+      --green: #047857;
+      --shadow: 0 18px 42px rgba(23, 32, 51, 0.12);
+      --radius: 8px;
+      --max: 1180px;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html {
+      scroll-behavior: smooth;
+    }
+
+    body {
+      margin: 0;
+      color: var(--ink);
+      background:
+        linear-gradient(180deg, rgba(37, 94, 219, 0.07), transparent 420px),
+        var(--bg);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-size: 16px;
+      line-height: 1.6;
+    }
+
+    button,
+    a {
+      touch-action: manipulation;
+    }
+
+    a {
+      color: var(--primary);
+      text-underline-offset: 3px;
+    }
+
+    a:hover {
+      color: var(--primary-strong);
+    }
+
+    :focus-visible {
+      outline: 3px solid rgba(37, 94, 219, 0.45);
+      outline-offset: 3px;
+    }
+
+    .skip-link {
+      position: absolute;
+      top: 12px;
+      left: 12px;
+      transform: translateY(-140%);
+      padding: 10px 14px;
+      border-radius: var(--radius);
+      background: var(--ink);
+      color: #fff;
+      z-index: 20;
+    }
+
+    .skip-link:focus {
+      transform: translateY(0);
+    }
+
+    .topbar {
+      position: sticky;
+      top: 0;
+      z-index: 10;
+      border-bottom: 1px solid rgba(220, 229, 238, 0.9);
+      background: rgba(248, 250, 252, 0.92);
+      backdrop-filter: blur(14px);
+    }
+
+    .topbar-inner {
+      max-width: var(--max);
+      margin: 0 auto;
+      padding: 12px 20px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      min-width: 210px;
+      font-weight: 760;
+      letter-spacing: 0;
+    }
+
+    .mark {
+      width: 34px;
+      height: 34px;
+      display: grid;
+      place-items: center;
+      border-radius: 8px;
+      color: #fff;
+      background: var(--ink);
+      box-shadow: 0 8px 18px rgba(23, 32, 51, 0.18);
+    }
+
+    .nav {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .nav a {
+      min-height: 44px;
+      display: inline-flex;
+      align-items: center;
+      padding: 8px 12px;
+      border-radius: var(--radius);
+      color: var(--ink-muted);
+      text-decoration: none;
+      font-weight: 650;
+      font-size: 0.92rem;
+    }
+
+    .nav a:hover {
+      background: var(--surface-soft);
+      color: var(--ink);
+    }
+
+    main {
+      overflow-x: hidden;
+    }
+
+    .hero {
+      max-width: var(--max);
+      margin: 0 auto;
+      padding: 72px 20px 36px;
+      display: grid;
+      grid-template-columns: minmax(0, 1.2fr) minmax(300px, 0.8fr);
+      gap: 36px;
+      align-items: end;
+    }
+
+    .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      width: fit-content;
+      padding: 6px 10px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      color: var(--primary-strong);
+      background: rgba(255, 255, 255, 0.76);
+      font-size: 0.86rem;
+      font-weight: 750;
+    }
+
+    h1,
+    h2,
+    h3 {
+      margin: 0;
+      line-height: 1.08;
+      letter-spacing: 0;
+    }
+
+    h1 {
+      max-width: 820px;
+      margin-top: 18px;
+      font-size: clamp(2.45rem, 7vw, 5.6rem);
+    }
+
+    .hero-copy {
+      max-width: 760px;
+      margin: 22px 0 0;
+      color: var(--ink-muted);
+      font-size: clamp(1.02rem, 1.9vw, 1.25rem);
+    }
+
+    .hero-actions {
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-top: 26px;
+    }
+
+    .button {
+      min-height: 44px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 9px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      padding: 10px 14px;
+      background: var(--surface);
+      color: var(--ink);
+      font: inherit;
+      font-weight: 760;
+      text-decoration: none;
+      cursor: pointer;
+      transition: transform 180ms ease, background 180ms ease, border-color 180ms ease, color 180ms ease;
+    }
+
+    .button:hover {
+      transform: translateY(-1px);
+      border-color: rgba(37, 94, 219, 0.45);
+      color: var(--primary-strong);
+    }
+
+    .button.primary {
+      border-color: var(--primary);
+      background: var(--primary);
+      color: #fff;
+    }
+
+    .button.primary:hover {
+      background: var(--primary-strong);
+      color: #fff;
+    }
+
+    .button[aria-pressed="true"] {
+      border-color: var(--ink);
+      background: var(--ink);
+      color: #fff;
+    }
+
+    .source-note {
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: rgba(255, 255, 255, 0.82);
+      box-shadow: var(--shadow);
+      padding: 18px;
+    }
+
+    .source-note h2 {
+      font-size: 1rem;
+      margin-bottom: 10px;
+    }
+
+    .source-note p {
+      margin: 0;
+      color: var(--ink-muted);
+    }
+
+    .quick-stats {
+      max-width: var(--max);
+      margin: 0 auto;
+      padding: 12px 20px 42px;
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 12px;
+    }
+
+    .stat {
+      min-height: 124px;
+      padding: 18px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: var(--surface);
+    }
+
+    .stat strong {
+      display: block;
+      margin-bottom: 8px;
+      font-size: 1.65rem;
+      line-height: 1;
+    }
+
+    .stat span {
+      color: var(--ink-muted);
+      font-weight: 650;
+    }
+
+    .band {
+      border-top: 1px solid var(--line);
+      background: rgba(255, 255, 255, 0.58);
+    }
+
+    .section {
+      max-width: var(--max);
+      margin: 0 auto;
+      padding: 54px 20px;
+    }
+
+    .section-head {
+      display: grid;
+      grid-template-columns: minmax(0, 0.82fr) minmax(260px, 0.48fr);
+      gap: 28px;
+      align-items: end;
+      margin-bottom: 22px;
+    }
+
+    .section h2 {
+      font-size: clamp(1.8rem, 4vw, 3rem);
+    }
+
+    .section-lede {
+      margin: 12px 0 0;
+      color: var(--ink-muted);
+      max-width: 760px;
+    }
+
+    .phase-filter {
+      display: flex;
+      justify-content: flex-end;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .filter-button {
+      min-height: 44px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      padding: 8px 12px;
+      background: var(--surface);
+      color: var(--ink-muted);
+      font: inherit;
+      font-weight: 760;
+      cursor: pointer;
+      transition: background 180ms ease, color 180ms ease, border-color 180ms ease;
+    }
+
+    .filter-button:hover,
+    .filter-button[aria-pressed="true"] {
+      border-color: var(--primary);
+      background: rgba(37, 94, 219, 0.1);
+      color: var(--primary-strong);
+    }
+
+    .timeline {
+      position: relative;
+      display: grid;
+      gap: 16px;
+    }
+
+    .phase-card {
+      display: grid;
+      grid-template-columns: 112px minmax(0, 1fr);
+      gap: 18px;
+      padding: 20px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: var(--surface);
+      box-shadow: 0 8px 24px rgba(23, 32, 51, 0.06);
+    }
+
+    .phase-card[hidden] {
+      display: none;
+    }
+
+    .phase-index {
+      display: grid;
+      align-content: start;
+      gap: 10px;
+    }
+
+    .phase-number {
+      width: 76px;
+      height: 76px;
+      display: grid;
+      place-items: center;
+      border-radius: 50%;
+      background: var(--ink);
+      color: #fff;
+      font-size: 1.35rem;
+      font-weight: 820;
+    }
+
+    .phase-window {
+      width: fit-content;
+      padding: 4px 8px;
+      border-radius: 999px;
+      background: var(--surface-soft);
+      color: var(--ink-muted);
+      font-size: 0.82rem;
+      font-weight: 760;
+    }
+
+    .phase-main {
+      min-width: 0;
+    }
+
+    .phase-title-row {
+      display: flex;
+      justify-content: space-between;
+      gap: 16px;
+      align-items: start;
+      margin-bottom: 8px;
+    }
+
+    .phase-title-row h3 {
+      font-size: clamp(1.25rem, 2.5vw, 1.8rem);
+    }
+
+    .phase-status {
+      min-width: fit-content;
+      padding: 5px 9px;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      color: var(--primary-strong);
+      background: rgba(37, 94, 219, 0.08);
+      font-size: 0.82rem;
+      font-weight: 780;
+    }
+
+    .phase-summary {
+      margin: 0 0 18px;
+      color: var(--ink-muted);
+    }
+
+    .phase-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 14px;
+      margin-top: 16px;
+    }
+
+    .plan-panel {
+      padding: 14px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: #fbfdff;
+    }
+
+    .plan-panel h4 {
+      margin: 0 0 8px;
+      font-size: 0.92rem;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: var(--ink-muted);
+    }
+
+    .plan-panel ul {
+      margin: 0;
+      padding-left: 20px;
+    }
+
+    .plan-panel li + li {
+      margin-top: 7px;
+    }
+
+    details {
+      margin-top: 14px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: var(--surface);
+    }
+
+    summary {
+      min-height: 44px;
+      padding: 10px 13px;
+      cursor: pointer;
+      font-weight: 780;
+      color: var(--ink);
+    }
+
+    .detail-body {
+      padding: 0 13px 13px;
+      color: var(--ink-muted);
+    }
+
+    .detail-body p {
+      margin-top: 0;
+    }
+
+    .architecture {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      gap: 10px;
+    }
+
+    .node {
+      min-height: 178px;
+      padding: 16px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: var(--surface);
+      position: relative;
+    }
+
+    .node::after {
+      content: "";
+      position: absolute;
+      top: 50%;
+      right: -10px;
+      width: 10px;
+      height: 2px;
+      background: var(--line);
+    }
+
+    .node:last-child::after {
+      display: none;
+    }
+
+    .node-label {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      color: var(--primary-strong);
+      font-size: 0.84rem;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    .node h3 {
+      margin-top: 12px;
+      font-size: 1.1rem;
+    }
+
+    .node p {
+      margin: 8px 0 0;
+      color: var(--ink-muted);
+      font-size: 0.96rem;
+    }
+
+    .risk-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 14px;
+    }
+
+    .risk {
+      border-left: 4px solid var(--amber);
+      padding: 16px;
+      border-radius: var(--radius);
+      background: var(--surface);
+      box-shadow: 0 8px 20px rgba(23, 32, 51, 0.06);
+    }
+
+    .risk h3 {
+      font-size: 1.08rem;
+    }
+
+    .risk p {
+      margin: 8px 0 0;
+      color: var(--ink-muted);
+    }
+
+    .acceptance {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 14px;
+    }
+
+    .checklist {
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: var(--surface);
+      padding: 18px;
+    }
+
+    .checklist h3 {
+      font-size: 1.15rem;
+      margin-bottom: 10px;
+    }
+
+    .checklist ul {
+      list-style: none;
+      margin: 0;
+      padding: 0;
+      display: grid;
+      gap: 9px;
+    }
+
+    .checklist li {
+      display: grid;
+      grid-template-columns: 22px minmax(0, 1fr);
+      gap: 8px;
+      align-items: start;
+      color: var(--ink-muted);
+    }
+
+    .checkmark {
+      width: 18px;
+      height: 18px;
+      margin-top: 3px;
+      border-radius: 5px;
+      border: 2px solid var(--green);
+      display: grid;
+      place-items: center;
+    }
+
+    .checkmark svg {
+      width: 13px;
+      height: 13px;
+      stroke: var(--green);
+      stroke-width: 3;
+      fill: none;
+    }
+
+    .foot {
+      border-top: 1px solid var(--line);
+      background: var(--ink);
+      color: #d8e1ee;
+    }
+
+    .foot-inner {
+      max-width: var(--max);
+      margin: 0 auto;
+      padding: 32px 20px;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(260px, 0.7fr);
+      gap: 24px;
+    }
+
+    .foot h2 {
+      font-size: 1.35rem;
+      color: #fff;
+    }
+
+    .foot p {
+      margin: 10px 0 0;
+      color: #b7c4d8;
+    }
+
+    .foot a {
+      color: #dbeafe;
+    }
+
+    .source-links {
+      display: grid;
+      gap: 8px;
+      margin: 0;
+      padding-left: 18px;
+    }
+
+    .icon {
+      width: 18px;
+      height: 18px;
+      stroke: currentColor;
+      stroke-width: 2;
+      fill: none;
+      flex: 0 0 auto;
+    }
+
+    .muted {
+      color: var(--ink-muted);
+    }
+
+    @media (max-width: 980px) {
+      .hero,
+      .section-head,
+      .foot-inner {
+        grid-template-columns: 1fr;
+      }
+
+      .section-head {
+        align-items: start;
+      }
+
+      .phase-filter {
+        justify-content: flex-start;
+      }
+
+      .quick-stats,
+      .architecture {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .node::after {
+        display: none;
+      }
+
+      .phase-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    @media (max-width: 680px) {
+      .topbar-inner {
+        align-items: flex-start;
+        flex-direction: column;
+      }
+
+      .nav {
+        justify-content: flex-start;
+      }
+
+      .hero {
+        padding-top: 42px;
+      }
+
+      .quick-stats,
+      .architecture,
+      .risk-grid,
+      .acceptance {
+        grid-template-columns: 1fr;
+      }
+
+      .phase-card {
+        grid-template-columns: 1fr;
+      }
+
+      .phase-title-row {
+        flex-direction: column;
+      }
+
+      .phase-number {
+        width: 60px;
+        height: 60px;
+      }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *,
+      *::before,
+      *::after {
+        scroll-behavior: auto !important;
+        transition-duration: 0.001ms !important;
+        animation-duration: 0.001ms !important;
+        animation-iteration-count: 1 !important;
+      }
+    }
+  </style>
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to main content</a>
+  <header class="topbar">
+    <div class="topbar-inner">
+      <div class="brand" aria-label="Second Brain Research Agent">
+        <span class="mark" aria-hidden="true">
+          <svg class="icon" viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h10"></path></svg>
+        </span>
+        <span>Second Brain Plan</span>
+      </div>
+      <nav class="nav" aria-label="Page sections">
+        <a href="#roadmap">Roadmap</a>
+        <a href="#architecture">Architecture</a>
+        <a href="#risks">Risks</a>
+        <a href="#acceptance">Acceptance</a>
+      </nav>
+    </div>
+  </header>
+
+  <main id="main">
+    <section class="hero" aria-labelledby="page-title">
+      <div>
+        <div class="eyebrow">
+          <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v18M3 12h18"></path></svg>
+          Autonomous research agent roadmap
+        </div>
+        <h1 id="page-title">Turn saved links into a thinking system.</h1>
+        <p class="hero-copy">
+          This project starts with unread X bookmarks and YouTube videos, then grows into a personal research agent that reads, summarizes, connects ideas, and sends a daily 5pm digest.
+        </p>
+        <div class="hero-actions" aria-label="Primary navigation">
+          <a class="button primary" href="#roadmap">
+            <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"></path></svg>
+            View roadmap
+          </a>
+          <a class="button" href="#risks">
+            <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 9v4M12 17h.01M10.3 4.7 2.8 18a2 2 0 0 0 1.7 3h15a2 2 0 0 0 1.7-3L13.7 4.7a2 2 0 0 0-3.4 0Z"></path></svg>
+            Feasibility notes
+          </a>
+        </div>
+      </div>
+      <aside class="source-note" aria-labelledby="intent-title">
+        <h2 id="intent-title">Core intent</h2>
+        <p>
+          The UI here is only the presentation layer. The actual product plan is about ingestion, transcript extraction, source-grounded summaries, cross-source synthesis, digest generation, feedback learning, and later multi-user support.
+        </p>
+      </aside>
+    </section>
+
+    <section class="quick-stats" aria-label="Plan summary">
+      <div class="stat"><strong>4</strong><span>implementation phases</span></div>
+      <div class="stat"><strong>2</strong><span>first data sources: X and YouTube</span></div>
+      <div class="stat"><strong>5pm</strong><span>target digest delivery time</span></div>
+      <div class="stat"><strong>1</strong><span>north star: autonomous research agent</span></div>
+    </section>
+
+    <section id="roadmap" class="band">
+      <div class="section">
+        <div class="section-head">
+          <div>
+            <h2>Roadmap</h2>
+            <p class="section-lede">
+              The phases are sequenced to validate source access first, then add memory, synthesis, automation, and finally user isolation.
+            </p>
+          </div>
+          <div class="phase-filter" role="toolbar" aria-label="Filter roadmap phases">
+            <button class="filter-button" type="button" data-filter="all" aria-pressed="true">All</button>
+            <button class="filter-button" type="button" data-filter="1" aria-pressed="false">Phase 1</button>
+            <button class="filter-button" type="button" data-filter="2" aria-pressed="false">Phase 2</button>
+            <button class="filter-button" type="button" data-filter="3" aria-pressed="false">Phase 3</button>
+            <button class="filter-button" type="button" data-filter="4" aria-pressed="false">Phase 4</button>
+          </div>
+        </div>
+        <div id="phase-list" class="timeline" aria-live="polite"></div>
+      </div>
+    </section>
+
+    <section id="architecture" class="section" aria-labelledby="architecture-title">
+      <div class="section-head">
+        <div>
+          <h2 id="architecture-title">Functional Gist</h2>
+          <p class="section-lede">
+            The product is a pipeline. Each stage should be testable without depending on the final UI.
+          </p>
+        </div>
+      </div>
+      <div class="architecture">
+        <article class="node">
+          <span class="node-label">01 Input</span>
+          <h3>Saved sources</h3>
+          <p>X bookmarks, YouTube videos, and later notes from Apple Notes, WhatsApp, Obsidian, screenshots, and scribbles.</p>
+        </article>
+        <article class="node">
+          <span class="node-label">02 Extract</span>
+          <h3>Raw material</h3>
+          <p>Tweet text, author metadata, video metadata, transcripts, timestamps, captions, and original source URLs.</p>
+        </article>
+        <article class="node">
+          <span class="node-label">03 Understand</span>
+          <h3>Structured notes</h3>
+          <p>Summaries, quotes, notable insights, entities, topics, best video moments, and confidence notes.</p>
+        </article>
+        <article class="node">
+          <span class="node-label">04 Connect</span>
+          <h3>Theme graph</h3>
+          <p>Related tweets and videos are clustered so the system can surface patterns instead of isolated summaries.</p>
+        </article>
+        <article class="node">
+          <span class="node-label">05 Deliver</span>
+          <h3>Personal digest</h3>
+          <p>A 5pm email turns saved material into a short, useful newsletter with feedback signals for learning.</p>
+        </article>
+      </div>
+    </section>
+
+    <section id="risks" class="band">
+      <div class="section">
+        <div class="section-head">
+          <div>
+            <h2>Feasibility And Risks</h2>
+            <p class="section-lede">
+              These are product constraints, not UI details. They should drive the first implementation decisions.
+            </p>
+          </div>
+        </div>
+        <div class="risk-grid">
+          <article class="risk">
+            <h3>X bookmark access</h3>
+            <p>
+              X supports bookmarked post lookup through the X API for the authenticated user, but it requires approved developer access and user OAuth scopes including bookmark read, tweet read, and users read.
+            </p>
+          </article>
+          <article class="risk">
+            <h3>YouTube Watch Later access</h3>
+            <p>
+              YouTube's official API documentation says some playlists cannot be listed, including Watch Later. The MVP should verify this directly, then fall back to a dedicated playlist or manual link import if blocked.
+            </p>
+          </article>
+          <article class="risk">
+            <h3>Transcript coverage</h3>
+            <p>
+              Captions may be unavailable, private, auto-generated, multilingual, or restricted. The system should store transcript status and avoid pretending every video has a complete transcript.
+            </p>
+          </article>
+          <article class="risk">
+            <h3>Source-grounded summaries</h3>
+            <p>
+              Every insight must trace back to an original tweet, quote, or video timestamp. This avoids a generic AI digest that cannot be trusted later.
+            </p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section id="acceptance" class="section" aria-labelledby="acceptance-title">
+      <div class="section-head">
+        <div>
+          <h2 id="acceptance-title">Acceptance Criteria</h2>
+          <p class="section-lede">
+            Each phase has a concrete finish line so the project does not collapse into an abstract second-brain platform.
+          </p>
+        </div>
+      </div>
+      <div id="acceptance-list" class="acceptance"></div>
+    </section>
+  </main>
+
+  <footer class="foot">
+    <div class="foot-inner">
+      <div>
+        <h2>Planning sources</h2>
+        <p>
+          The technical caveats in this plan were checked against current official docs. The page itself remains a static presentation artifact.
+        </p>
+      </div>
+      <ul class="source-links">
+        <li><a href="https://docs.x.com/x-api/posts/bookmarks/quickstart/bookmarks-lookup">X API Bookmarks Lookup</a></li>
+        <li><a href="https://docs.x.com/x-api/posts/bookmarks/introduction">X API Bookmarks Overview</a></li>
+        <li><a href="https://developers.google.com/youtube/v3/docs/playlists/list">YouTube API playlists.list</a></li>
+        <li><a href="https://developers.google.com/youtube/v3/docs/captions/list">YouTube API captions.list</a></li>
+      </ul>
+    </div>
+  </footer>
+
+  <script>
+    const phases = [
+      {
+        id: "1",
+        label: "Phase 1",
+        title: "MVP: prove ingestion and summarization",
+        window: "First proof",
+        status: "Feasibility first",
+        summary: "Connect to X and YouTube paths, extract a small sample, summarize it with source references, and learn where official APIs block the desired flow.",
+        build: [
+          "Set up OAuth for X with bookmark read, tweet read, and users read scopes.",
+          "Fetch 5 recent bookmarks and preserve tweet text, author, created time, public metrics, and source URL.",
+          "Summarize each bookmark with the original post quoted or linked."
+        ],
+        product: [
+          "Show whether the saved item is worth reading now, later, or skipping.",
+          "Keep the output short enough to replace the unread-bookmark backlog with a clear next action.",
+          "Avoid theme inference until the raw ingestion path is trustworthy."
+        ],
+        validation: [
+          "X bookmark request succeeds against the authenticated user.",
+          "YouTube Watch Later access is tested and either works or is documented as blocked.",
+          "At least one transcript path is tested on real videos."
+        ],
+        details: "For YouTube, start by testing official playlist access. If Watch Later cannot be listed, switch the MVP to a dedicated import playlist or manual URL inbox. This keeps the product goal intact without depending on an unsupported endpoint."
+      },
+      {
+        id: "2",
+        label: "Phase 2",
+        title: "Understand the user and connect themes",
+        window: "Core product",
+        status: "Memory layer",
+        summary: "Move from isolated summaries to a personal knowledge layer that recognizes repeated interests across tweets and videos.",
+        build: [
+          "Store normalized records for sources, excerpts, summaries, tags, timestamps, and model outputs.",
+          "Add embeddings or another retrieval layer for semantic similarity across saved items.",
+          "Create topic clusters that connect related tweets, videos, and notes."
+        ],
+        product: [
+          "Detect themes the user repeatedly saves, such as AI agents, marketing workflows, startup strategy, or research methods.",
+          "Blend similar ideas across formats instead of keeping tweet and video summaries separate.",
+          "Make the system explain why two items are connected."
+        ],
+        validation: [
+          "A tweet and video about the same concept can be surfaced together.",
+          "Each generated insight includes source links and enough context to verify it.",
+          "The user can mark outputs as useful, stale, obvious, or not relevant."
+        ],
+        details: "This phase turns the product from a summarizer into a second brain. The core test is whether the system can reveal a useful connection the user would otherwise miss."
+      },
+      {
+        id: "3",
+        label: "Phase 3",
+        title: "Daily newsletter and self-learning loop",
+        window: "Automation",
+        status: "Digest engine",
+        summary: "Generate and send a 5pm personal email from saved material, then use feedback to make tomorrow's digest sharper.",
+        build: [
+          "Create scheduled digest generation for 5pm in the user's configured timezone.",
+          "Rank items by novelty, relevance, source quality, and backlog age.",
+          "Send email with source quotes, YouTube timestamps, synthesized themes, and follow-up links."
+        ],
+        product: [
+          "Make the email feel like a personal research newsletter, not a generic summary dump.",
+          "Include best moments from videos so long content becomes skim-friendly.",
+          "Add lightweight feedback actions such as more like this, less like this, expand, and archive."
+        ],
+        validation: [
+          "A digest is generated from mixed X and YouTube inputs.",
+          "Every section includes source attribution.",
+          "Feedback changes ranking or selection in a later digest."
+        ],
+        details: "Polish should serve trust and retention: clearer source cards, better timestamps, confidence labels, and digest sections that help the user decide what to read or watch next."
+      },
+      {
+        id: "4",
+        label: "Phase 4",
+        title: "Multi-user product foundation",
+        window: "Scale",
+        status: "User isolation",
+        summary: "Add the account, permission, privacy, and operations layer needed to support more than one person safely.",
+        build: [
+          "Add authentication, per-user OAuth connections, encrypted token storage, and account-scoped data.",
+          "Move ingestion and digest generation into background jobs with retries and observability.",
+          "Add export, deletion, consent, and source-connection management."
+        ],
+        product: [
+          "Let each user configure sources, digest timing, content preferences, and retention rules.",
+          "Keep the product self-learning per user rather than training one shared preference profile.",
+          "Make onboarding validate source access before promising digest quality."
+        ],
+        validation: [
+          "Two users cannot see each other's data or source tokens.",
+          "A failed source connection does not break another user's digest.",
+          "A user can disconnect, export, or delete their stored data."
+        ],
+        details: "This phase should not start until the single-user loop is actually useful. Multi-user support adds security and operations work that is only worth doing after the product shape is proven."
+      }
+    ];
+
+    const phaseList = document.querySelector("#phase-list");
+    const acceptanceList = document.querySelector("#acceptance-list");
+    const filterButtons = document.querySelectorAll("[data-filter]");
+
+    function iconCheck() {
+      return '<span class="checkmark" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"></path></svg></span>';
+    }
+
+    function listItems(items) {
+      return items.map((item) => `<li>${item}</li>`).join("");
+    }
+
+    function renderPhases(active = "all") {
+      phaseList.innerHTML = phases.map((phase) => {
+        const hidden = active !== "all" && active !== phase.id ? " hidden" : "";
+        return `
+          <article class="phase-card" data-phase="${phase.id}"${hidden}>
+            <div class="phase-index">
+              <div class="phase-number" aria-label="${phase.label}">${phase.id}</div>
+              <div class="phase-window">${phase.window}</div>
+            </div>
+            <div class="phase-main">
+              <div class="phase-title-row">
+                <h3>${phase.title}</h3>
+                <span class="phase-status">${phase.status}</span>
+              </div>
+              <p class="phase-summary">${phase.summary}</p>
+              <div class="phase-grid">
+                <section class="plan-panel" aria-label="${phase.label} implementation">
+                  <h4>Build</h4>
+                  <ul>${listItems(phase.build)}</ul>
+                </section>
+                <section class="plan-panel" aria-label="${phase.label} product behavior">
+                  <h4>Product behavior</h4>
+                  <ul>${listItems(phase.product)}</ul>
+                </section>
+                <section class="plan-panel" aria-label="${phase.label} validation">
+                  <h4>Validation</h4>
+                  <ul>${listItems(phase.validation)}</ul>
+                </section>
+              </div>
+              <details>
+                <summary>Implementation note</summary>
+                <div class="detail-body"><p>${phase.details}</p></div>
+              </details>
+            </div>
+          </article>
+        `;
+      }).join("");
+    }
+
+    function renderAcceptance() {
+      acceptanceList.innerHTML = phases.map((phase) => `
+        <article class="checklist">
+          <h3>${phase.label}: ${phase.window}</h3>
+          <ul>
+            ${phase.validation.map((item) => `<li>${iconCheck()}<span>${item}</span></li>`).join("")}
+          </ul>
+        </article>
+      `).join("");
+    }
+
+    filterButtons.forEach((button) => {
+      button.addEventListener("click", () => {
+        const active = button.dataset.filter;
+        filterButtons.forEach((candidate) => {
+          candidate.setAttribute("aria-pressed", String(candidate === button));
+        });
+        renderPhases(active);
+      });
+    });
+
+    renderPhases();
+    renderAcceptance();
+  </script>
+</body>
+</html>
