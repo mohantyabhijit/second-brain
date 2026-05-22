@@ -45,6 +45,7 @@ export type ValidationItemViewModel = ValidationItem & {
 
 export type SummaryCardViewModel = {
   id: string;
+  source: "x" | "youtube" | "insight" | "action";
   title: string;
   body: string;
   quote?: string;
@@ -52,6 +53,7 @@ export type SummaryCardViewModel = {
   decision: Decision;
   decisionLabel: string;
   confidenceLabel: string;
+  cacheStatus?: string;
 };
 
 export type TranscriptItemViewModel = {
@@ -135,6 +137,7 @@ export function toKnowledgeInboxViewModel(run: KnowledgeRunResult, isRunning: bo
   const validationPassCount = run.validation.filter((item) => item.status === "pass").length;
   const totalFetched = run.xBookmarks.length + run.youtubeItems.length;
   const transcriptCount = run.youtubeItems.filter((item) => item.transcriptStatus === "available").length;
+  const cachedCount = (run.processing ?? []).filter((item) => item.status === "cached").length;
   const progress = run.validation.length ? Math.round((validationPassCount / run.validation.length) * 100) : 0;
 
   return {
@@ -169,6 +172,9 @@ export function toKnowledgeInboxViewModel(run: KnowledgeRunResult, isRunning: bo
     metrics: [
       { label: "Captured items", value: String(totalFetched) },
       { label: "Summaries", value: String(run.summaries.length) },
+      { label: "Insights", value: String(run.insights.length) },
+      { label: "Action items", value: String(run.actionItems.length) },
+      { label: "Cache hits", value: String(cachedCount) },
       { label: "Transcripts", value: String(transcriptCount) },
       { label: "Open blockers", value: String(run.blockers.length) }
     ],
@@ -222,18 +228,46 @@ export function toKnowledgeInboxViewModel(run: KnowledgeRunResult, isRunning: bo
     },
     summaries: {
       title: "Review Queue",
-      description: "Reading decisions with attribution preserved.",
+      description: "Reading decisions, insights, action items, and cache-aware synthesis with attribution preserved.",
       icon: "link",
-      items: run.summaries.map((summary) => ({
-        id: `${summary.source}-${summary.id}`,
-        title: summary.title,
-        body: summary.summary,
-        quote: summary.quote,
-        sourceUrl: summary.sourceUrl,
-        decision: summary.decision,
-        decisionLabel: decisionLabels[summary.decision],
-        confidenceLabel: `${summary.confidence} confidence`
-      })),
+      items: [
+        ...run.summaries.map((summary) => ({
+          id: `${summary.source}-${summary.id}`,
+          source: summary.source,
+          title: summary.title,
+          body: summary.summary,
+          quote: summary.quote,
+          sourceUrl: summary.sourceUrl,
+          decision: summary.decision,
+          decisionLabel: decisionLabels[summary.decision],
+          confidenceLabel: `${summary.confidence} confidence`,
+          cacheStatus: summary.cacheStatus
+        })),
+        ...run.insights.map((insight) => ({
+          id: `insight-${insight.id}`,
+          source: "insight" as const,
+          title: insight.title,
+          body: insight.insight,
+          quote: insight.evidence,
+          sourceUrl: insight.sourceUrl,
+          decision: "read_now" as Decision,
+          decisionLabel: "Insight",
+          confidenceLabel: `${insight.confidence} confidence`,
+          cacheStatus: insight.cacheStatus
+        })),
+        ...run.actionItems.map((action) => ({
+          id: `action-${action.id}`,
+          source: "action" as const,
+          title: action.title,
+          body: action.action,
+          quote: action.rationale,
+          sourceUrl: action.sourceUrl,
+          decision: action.priority === "low" ? ("later" as Decision) : ("read_now" as Decision),
+          decisionLabel: `${action.priority} priority`,
+          confidenceLabel: action.cacheStatus === "cached" ? "cached" : "generated",
+          cacheStatus: action.cacheStatus
+        }))
+      ],
       empty: {
         icon: "spark",
         title: "No summaries yet",

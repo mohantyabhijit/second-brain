@@ -44,6 +44,60 @@ func (s *Store) ReadLatest(ctx context.Context) (*knowledge.Result, error) {
 }
 
 func (s *Store) SaveLatest(ctx context.Context, result knowledge.Result) error {
+	return s.SaveRun(ctx, result, nil)
+}
+
+func (s *Store) ReadCachedSyntheses(ctx context.Context, keys []knowledge.SynthesisCacheKey) (map[string]knowledge.SynthesisRecord, error) {
+	latest, err := s.ReadLatest(ctx)
+	if err != nil || latest == nil {
+		return map[string]knowledge.SynthesisRecord{}, err
+	}
+	wanted := map[string]knowledge.SynthesisCacheKey{}
+	for _, key := range keys {
+		wanted[key.String()] = key
+	}
+	insightsBySource := map[string][]knowledge.Insight{}
+	for _, insight := range latest.Insights {
+		insightsBySource[insight.Source+":"+insight.SourceID] = append(insightsBySource[insight.Source+":"+insight.SourceID], insight)
+	}
+	actionsBySource := map[string][]knowledge.ActionItem{}
+	for _, action := range latest.ActionItems {
+		actionsBySource[action.Source+":"+action.SourceID] = append(actionsBySource[action.Source+":"+action.SourceID], action)
+	}
+
+	cached := map[string]knowledge.SynthesisRecord{}
+	for _, summary := range latest.Summaries {
+		key := knowledge.SynthesisCacheKey{
+			SourceType:    knowledge.SourceType(summary.Source),
+			ExternalID:    summary.ID,
+			CaptureHash:   summary.CaptureHash,
+			PromptVersion: summary.PromptVersion,
+			Model:         summary.Model,
+		}
+		if _, ok := wanted[key.String()]; !ok {
+			continue
+		}
+		sourceKey := summary.Source + ":" + summary.ID
+		generatedAt := latest.GeneratedAt
+		if summary.GeneratedAt != nil {
+			generatedAt = *summary.GeneratedAt
+		}
+		cached[key.String()] = knowledge.SynthesisRecord{
+			SourceType:    key.SourceType,
+			ExternalID:    key.ExternalID,
+			CaptureHash:   key.CaptureHash,
+			PromptVersion: key.PromptVersion,
+			Model:         key.Model,
+			Summary:       summary,
+			Insights:      insightsBySource[sourceKey],
+			ActionItems:   actionsBySource[sourceKey],
+			GeneratedAt:   generatedAt,
+		}
+	}
+	return cached, nil
+}
+
+func (s *Store) SaveRun(ctx context.Context, result knowledge.Result, sources []knowledge.ProcessedSource) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 

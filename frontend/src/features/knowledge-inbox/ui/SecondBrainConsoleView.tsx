@@ -12,7 +12,7 @@ type SecondBrainConsoleViewProps = {
   onRun: () => void;
 };
 
-type FeedSource = "Summary" | "Quote" | "X" | "YouTube" | "Newsletter";
+type FeedSource = "Summary" | "Quote" | "Insight" | "Action" | "X" | "YouTube" | "Newsletter";
 
 type FeedItem = {
   id: string;
@@ -490,6 +490,8 @@ function sourceMark(source: FeedSource) {
   if (source === "X") return "X";
   if (source === "YouTube") return "Y";
   if (source === "Newsletter") return "N";
+  if (source === "Insight") return "I";
+  if (source === "Action") return "A";
   if (source === "Quote") return "Q";
   return "S";
 }
@@ -498,12 +500,17 @@ function expandedDetail(item: FeedItem) {
   if (item.source === "X") return "Original post view preserves author, source text, quote, and engagement context for attribution.";
   if (item.source === "YouTube") return "Video view preserves transcript status, channel context, and the quote that supports the summary.";
   if (item.source === "Newsletter") return "Newsletter view groups related summary and quote material into a digest-ready issue.";
+  if (item.source === "Insight") return "Insight view keeps the synthesized claim attached to the source evidence that supports it.";
+  if (item.source === "Action") return "Action view keeps the recommended next step attached to the source rationale.";
   return "Expanded view keeps the short summary, quote, source context, and review decision together.";
 }
 
 function metricDetail(label: string, value: string) {
   if (label === "Captured items") return `${value} total items are currently available from the connected sources.`;
   if (label === "Summaries") return `${value} summaries are ready for review in this run.`;
+  if (label === "Insights") return `${value} source-grounded insights are ready for review in this run.`;
+  if (label === "Action items") return `${value} possible follow-up actions were extracted from saved material.`;
+  if (label === "Cache hits") return `${value} source captures reused existing synthesis instead of recomputing.`;
   if (label === "Transcripts") return `${value} YouTube transcripts are currently usable for evidence.`;
   return `${value} blockers need attention before the inbox can be trusted end to end.`;
 }
@@ -548,17 +555,19 @@ function getFeedItems(model: KnowledgeInboxViewModel, activePage: KnowledgeInbox
 
 function summaryToFeedItem(summary: SummaryCardViewModel): FeedItem {
   const isX = summary.id.startsWith("x-");
+  const source = summary.source === "insight" ? "Insight" : summary.source === "action" ? "Action" : summary.quote ? "Quote" : "Summary";
+  const eyebrow = summary.source === "insight" ? "Insight" : summary.source === "action" ? "Action item" : isX ? "X" : "YouTube";
   return {
     id: summary.id,
-    source: summary.quote ? "Quote" : "Summary",
-    eyebrow: isX ? "X" : "YouTube",
+    source,
+    eyebrow,
     title: summary.title,
     body: summary.body,
     quote: summary.quote,
     author: isX ? "X" : "YouTube",
     timestamp: "Summary",
     sourceUrl: summary.sourceUrl,
-    stats: `${summary.decisionLabel} - ${summary.confidenceLabel}`
+    stats: `${summary.decisionLabel} - ${summary.confidenceLabel}${summary.cacheStatus ? ` - ${summary.cacheStatus}` : ""}`
   };
 }
 

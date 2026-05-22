@@ -2,6 +2,13 @@ package knowledge
 
 import "time"
 
+type SourceType string
+
+const (
+	SourceTypeX       SourceType = "x"
+	SourceTypeYouTube SourceType = "youtube"
+)
+
 type SourceStatus string
 
 const (
@@ -58,15 +65,70 @@ type YouTubeItem struct {
 }
 
 type Summary struct {
-	ID         string   `json:"id"`
-	Source     string   `json:"source"`
-	Title      string   `json:"title"`
-	SourceURL  string   `json:"sourceUrl"`
-	Decision   Decision `json:"decision"`
-	Summary    string   `json:"summary"`
-	Quote      string   `json:"quote,omitempty"`
-	Confidence string   `json:"confidence"`
-	Notes      []string `json:"notes"`
+	ID            string     `json:"id"`
+	Source        string     `json:"source"`
+	Title         string     `json:"title"`
+	SourceURL     string     `json:"sourceUrl"`
+	Decision      Decision   `json:"decision"`
+	Summary       string     `json:"summary"`
+	Quote         string     `json:"quote,omitempty"`
+	Confidence    string     `json:"confidence"`
+	Notes         []string   `json:"notes"`
+	CacheStatus   string     `json:"cacheStatus,omitempty"`
+	CaptureHash   string     `json:"captureHash,omitempty"`
+	PromptVersion string     `json:"promptVersion,omitempty"`
+	Model         string     `json:"model,omitempty"`
+	GeneratedAt   *time.Time `json:"generatedAt,omitempty"`
+}
+
+type Insight struct {
+	ID          string     `json:"id"`
+	Source      string     `json:"source"`
+	SourceID    string     `json:"sourceId"`
+	Title       string     `json:"title"`
+	Insight     string     `json:"insight"`
+	Evidence    string     `json:"evidence"`
+	SourceURL   string     `json:"sourceUrl"`
+	Confidence  string     `json:"confidence"`
+	CacheStatus string     `json:"cacheStatus,omitempty"`
+	GeneratedAt *time.Time `json:"generatedAt,omitempty"`
+}
+
+type ActionItem struct {
+	ID          string     `json:"id"`
+	Source      string     `json:"source"`
+	SourceID    string     `json:"sourceId"`
+	Title       string     `json:"title"`
+	Action      string     `json:"action"`
+	Rationale   string     `json:"rationale"`
+	SourceURL   string     `json:"sourceUrl"`
+	Priority    string     `json:"priority"`
+	CacheStatus string     `json:"cacheStatus,omitempty"`
+	GeneratedAt *time.Time `json:"generatedAt,omitempty"`
+}
+
+type SourceArtifact struct {
+	Source      string `json:"source"`
+	SourceID    string `json:"sourceId"`
+	Kind        string `json:"kind"`
+	Bucket      string `json:"bucket"`
+	Path        string `json:"path"`
+	Checksum    string `json:"checksum"`
+	ContentType string `json:"contentType"`
+	ByteSize    int    `json:"byteSize"`
+	Stored      bool   `json:"stored"`
+	Error       string `json:"error,omitempty"`
+}
+
+type ProcessingEvent struct {
+	Source        string `json:"source"`
+	SourceID      string `json:"sourceId"`
+	Title         string `json:"title"`
+	CaptureHash   string `json:"captureHash"`
+	PromptVersion string `json:"promptVersion"`
+	Model         string `json:"model"`
+	Status        string `json:"status"`
+	Detail        string `json:"detail"`
 }
 
 type Result struct {
@@ -76,9 +138,51 @@ type Result struct {
 		YouTube SourceStatus `json:"youtube"`
 		OneCLI  SourceStatus `json:"onecli"`
 	} `json:"sourceStatus"`
-	XBookmarks   []XBookmark      `json:"xBookmarks"`
-	YouTubeItems []YouTubeItem    `json:"youtubeItems"`
-	Summaries    []Summary        `json:"summaries"`
-	Validation   []ValidationItem `json:"validation"`
-	Blockers     []string         `json:"blockers"`
+	XBookmarks   []XBookmark       `json:"xBookmarks"`
+	YouTubeItems []YouTubeItem     `json:"youtubeItems"`
+	Summaries    []Summary         `json:"summaries"`
+	Insights     []Insight         `json:"insights"`
+	ActionItems  []ActionItem      `json:"actionItems"`
+	Artifacts    []SourceArtifact  `json:"artifacts,omitempty"`
+	Processing   []ProcessingEvent `json:"processing,omitempty"`
+	Validation   []ValidationItem  `json:"validation"`
+	Blockers     []string          `json:"blockers"`
+}
+
+type SynthesisCacheKey struct {
+	SourceType    SourceType
+	ExternalID    string
+	CaptureHash   string
+	PromptVersion string
+	Model         string
+}
+
+func (key SynthesisCacheKey) String() string {
+	return string(key.SourceType) + ":" + key.ExternalID + ":" + key.CaptureHash + ":" + key.PromptVersion + ":" + key.Model
+}
+
+type SynthesisRecord struct {
+	SourceType    SourceType
+	ExternalID    string
+	CaptureHash   string
+	PromptVersion string
+	Model         string
+	Summary       Summary
+	Insights      []Insight
+	ActionItems   []ActionItem
+	GeneratedAt   time.Time
+}
+
+type ProcessedSource struct {
+	SourceType  SourceType
+	ExternalID  string
+	SourceURL   string
+	Title       string
+	AuthorName  string
+	Username    string
+	PublishedAt string
+	CaptureHash string
+	Artifact    SourceArtifact
+	Synthesis   SynthesisRecord
+	Cached      bool
 }
