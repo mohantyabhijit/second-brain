@@ -67,9 +67,10 @@ func (s *Store) ReadCachedSyntheses(ctx context.Context, keys []knowledge.Synthe
 			select ks.summary, ks.insights, ks.action_items, ks.generated_at
 			from knowledge_syntheses ks
 			join source_items si on si.id = ks.source_item_id
+			left join source_captures sc on sc.id = ks.source_capture_id
 			where si.source_type = $1
 			  and si.external_id = $2
-			  and ks.capture_hash = $3
+			  and coalesce(sc.capture_hash, ks.capture_hash) = $3
 			  and ks.prompt_version = $4
 			  and ks.model = $5
 			limit 1
@@ -124,25 +125,42 @@ func (s *Store) SaveRun(ctx context.Context, result knowledge.Result, sources []
 		if err != nil {
 			return err
 		}
-		sourceIDs[sourceKey(source.SourceType, source.ExternalID)] = sourceItemID
-		if source.Artifact.Path != "" {
-			if err := upsertSourceObject(ctx, tx, sourceItemID, source.Artifact); err != nil {
-				return err
-			}
-		}
-		chunkIDs, err := upsertSourceChunks(ctx, tx, sourceItemID, source)
+		sourceCaptureID, err := upsertSourceCapture(ctx, tx, sourceItemID, source)
 		if err != nil {
 			return err
 		}
-		if err := upsertEmbeddings(ctx, tx, sourceItemID, chunkIDs, source); err != nil {
-			return err
-		}
-		if !source.Cached {
-			if err := upsertSynthesis(ctx, tx, sourceItemID, source.Synthesis); err != nil {
+		sourceIDs[sourceKey(source.SourceType, source.ExternalID)] = sourceItemID
+		var summaryObjectID string
+		if source.Artifact.Path != "" {
+			if _, err := upsertSourceObject(ctx, tx, sourceItemID, sourceCaptureID, source, source.Artifact); err != nil {
 				return err
 			}
 		}
-		if err := enqueueGraphSync(ctx, tx, sourceItemID, source); err != nil {
+		if source.SummaryArtifact.Path != "" {
+			var err error
+			summaryObjectID, err = upsertSourceObject(ctx, tx, sourceItemID, sourceCaptureID, source, source.SummaryArtifact)
+			if err != nil {
+				return err
+			}
+		}
+		chunkIDs, err := upsertSourceChunks(ctx, tx, sourceItemID, sourceCaptureID, source)
+		if err != nil {
+			return err
+		}
+		if err := upsertEmbeddings(ctx, tx, sourceItemID, sourceCaptureID, chunkIDs, source); err != nil {
+			return err
+		}
+		if !source.Cached {
+			if err := upsertSynthesis(ctx, tx, sourceItemID, sourceCaptureID, source, summaryObjectID); err != nil {
+				return err
+			}
+		}
+		if source.Cached && summaryObjectID != "" {
+			if err := updateSynthesisSummaryObject(ctx, tx, sourceCaptureID, source.Synthesis, summaryObjectID); err != nil {
+				return err
+			}
+		}
+		if err := enqueueGraphSync(ctx, tx, sourceItemID, sourceCaptureID, source); err != nil {
 			return err
 		}
 	}
@@ -174,10 +192,12 @@ func (s *Store) SaveRun(ctx context.Context, result knowledge.Result, sources []
 func upsertSourceItem(ctx context.Context, tx pgx.Tx, source knowledge.ProcessedSource) (string, error) {
 	var id string
 	publishedAt := parseOptionalTime(source.PublishedAt)
+	ownerID := ownerIDForSource(source)
 	err := tx.QueryRow(ctx, `
 		insert into source_items (
 			owner_id,
 			source_type,
+			content_type,
 			external_id,
 			source_url,
 			title,
@@ -185,28 +205,65 @@ func upsertSourceItem(ctx context.Context, tx pgx.Tx, source knowledge.Processed
 			username,
 			published_at,
 			capture_hash,
+			latest_capture_hash,
 			processing_state,
 			last_seen_at
 		)
-		values ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'processed', now())
+		values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'processed', now())
 		on conflict (owner_id, source_type, external_id) do update set
+			content_type = excluded.content_type,
 			source_url = excluded.source_url,
 			title = excluded.title,
 			author_name = excluded.author_name,
 			username = excluded.username,
 			published_at = excluded.published_at,
 			capture_hash = excluded.capture_hash,
+			latest_capture_hash = excluded.latest_capture_hash,
 			processing_state = excluded.processing_state,
 			last_seen_at = now()
 		returning id
-	`, source.OwnerID, string(source.SourceType), source.ExternalID, source.SourceURL, source.Title, source.AuthorName, source.Username, publishedAt, source.CaptureHash).Scan(&id)
+	`, ownerID, string(source.SourceType), contentTypeForSource(source), source.ExternalID, source.SourceURL, source.Title, source.AuthorName, source.Username, publishedAt, source.CaptureHash, source.CaptureHash).Scan(&id)
 	return id, err
 }
 
-func upsertSourceObject(ctx context.Context, tx pgx.Tx, sourceItemID string, artifact knowledge.SourceArtifact) error {
-	_, err := tx.Exec(ctx, `
-		insert into source_objects (
+func upsertSourceCapture(ctx context.Context, tx pgx.Tx, sourceItemID string, source knowledge.ProcessedSource) (string, error) {
+	ownerID := ownerIDForSource(source)
+	metadata, err := json.Marshal(map[string]any{
+		"sourceType":  source.SourceType,
+		"contentType": contentTypeForSource(source),
+		"externalId":  source.ExternalID,
+		"sourceUrl":   source.SourceURL,
+		"title":       source.Title,
+		"authorName":  source.AuthorName,
+		"username":    source.Username,
+	})
+	if err != nil {
+		return "", err
+	}
+	var id string
+	err = tx.QueryRow(ctx, `
+		insert into source_captures (
+			owner_id,
 			source_item_id,
+			capture_hash,
+			metadata
+		)
+		values ($1, $2, $3, $4)
+		on conflict (source_item_id, capture_hash) do update set
+			metadata = source_captures.metadata
+		returning id
+	`, ownerID, sourceItemID, source.CaptureHash, metadata).Scan(&id)
+	return id, err
+}
+
+func upsertSourceObject(ctx context.Context, tx pgx.Tx, sourceItemID string, sourceCaptureID string, source knowledge.ProcessedSource, artifact knowledge.SourceArtifact) (string, error) {
+	ownerID := ownerIDForSource(source)
+	var id string
+	err := tx.QueryRow(ctx, `
+		insert into source_objects (
+			owner_id,
+			source_item_id,
+			source_capture_id,
 			kind,
 			bucket,
 			path,
@@ -214,18 +271,24 @@ func upsertSourceObject(ctx context.Context, tx pgx.Tx, sourceItemID string, art
 			content_type,
 			byte_size
 		)
-		values ($1, $2, $3, $4, $5, $6, $7)
-		on conflict (source_item_id, kind, checksum) do update set
-			bucket = excluded.bucket,
-			path = excluded.path,
+		values ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+		on conflict (bucket, path) do update set
+			owner_id = excluded.owner_id,
+			source_item_id = excluded.source_item_id,
+			source_capture_id = excluded.source_capture_id,
+			kind = excluded.kind,
+			checksum = excluded.checksum,
 			content_type = excluded.content_type,
 			byte_size = excluded.byte_size,
 			captured_at = now()
-	`, sourceItemID, artifact.Kind, artifact.Bucket, artifact.Path, artifact.Checksum, artifact.ContentType, artifact.ByteSize)
-	return err
+		returning id
+	`, ownerID, sourceItemID, sourceCaptureID, artifact.Kind, artifact.Bucket, artifact.Path, artifact.Checksum, artifact.ContentType, artifact.ByteSize).Scan(&id)
+	return id, err
 }
 
-func upsertSynthesis(ctx context.Context, tx pgx.Tx, sourceItemID string, synthesis knowledge.SynthesisRecord) error {
+func upsertSynthesis(ctx context.Context, tx pgx.Tx, sourceItemID string, sourceCaptureID string, source knowledge.ProcessedSource, summaryObjectID string) error {
+	synthesis := source.Synthesis
+	ownerID := ownerIDForSource(source)
 	summaryRaw, err := json.Marshal(synthesis.Summary)
 	if err != nil {
 		return err
@@ -240,44 +303,66 @@ func upsertSynthesis(ctx context.Context, tx pgx.Tx, sourceItemID string, synthe
 	}
 	_, err = tx.Exec(ctx, `
 		insert into knowledge_syntheses (
+			owner_id,
 			source_item_id,
+			source_capture_id,
 			capture_hash,
 			prompt_version,
 			model,
 			summary,
 			insights,
 			action_items,
+			summary_object_id,
 			generated_at
 		)
-		values ($1, $2, $3, $4, $5, $6, $7, $8)
-		on conflict (source_item_id, capture_hash, prompt_version, model) do update set
+		values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+		on conflict (source_capture_id, prompt_version, model) do update set
+			owner_id = excluded.owner_id,
+			source_item_id = excluded.source_item_id,
+			capture_hash = excluded.capture_hash,
 			summary = excluded.summary,
 			insights = excluded.insights,
 			action_items = excluded.action_items,
+			summary_object_id = excluded.summary_object_id,
 			generated_at = excluded.generated_at
-	`, sourceItemID, synthesis.CaptureHash, synthesis.PromptVersion, synthesis.Model, string(summaryRaw), string(insightsRaw), string(actionsRaw), synthesis.GeneratedAt)
+	`, ownerID, sourceItemID, sourceCaptureID, synthesis.CaptureHash, synthesis.PromptVersion, synthesis.Model, string(summaryRaw), string(insightsRaw), string(actionsRaw), nullableUUID(summaryObjectID), synthesis.GeneratedAt)
 	return err
 }
 
-func upsertSourceChunks(ctx context.Context, tx pgx.Tx, sourceItemID string, source knowledge.ProcessedSource) (map[int]string, error) {
+func updateSynthesisSummaryObject(ctx context.Context, tx pgx.Tx, sourceCaptureID string, synthesis knowledge.SynthesisRecord, summaryObjectID string) error {
+	_, err := tx.Exec(ctx, `
+		update knowledge_syntheses
+		set summary_object_id = $1
+		where source_capture_id = $2
+		  and prompt_version = $3
+		  and model = $4
+	`, summaryObjectID, sourceCaptureID, synthesis.PromptVersion, synthesis.Model)
+	return err
+}
+
+func upsertSourceChunks(ctx context.Context, tx pgx.Tx, sourceItemID string, sourceCaptureID string, source knowledge.ProcessedSource) (map[int]string, error) {
 	chunkIDs := map[int]string{}
+	ownerID := ownerIDForSource(source)
 	for _, chunk := range source.Chunks {
 		var id string
 		err := tx.QueryRow(ctx, `
 			insert into source_chunks (
 				owner_id,
 				source_item_id,
+				source_capture_id,
 				chunk_index,
 				content,
 				token_estimate,
 				checksum
 			)
-			values ($1, $2, $3, $4, $5, $6)
-			on conflict (source_item_id, chunk_index, checksum) do update set
+			values ($1, $2, $3, $4, $5, $6, $7)
+			on conflict (source_capture_id, chunk_index, checksum) do update set
+				owner_id = excluded.owner_id,
+				source_item_id = excluded.source_item_id,
 				content = excluded.content,
 				token_estimate = excluded.token_estimate
 			returning id
-		`, source.OwnerID, sourceItemID, chunk.Index, chunk.Content, chunk.TokenEstimate, chunk.Checksum).Scan(&id)
+		`, ownerID, sourceItemID, sourceCaptureID, chunk.Index, chunk.Content, chunk.TokenEstimate, chunk.Checksum).Scan(&id)
 		if err != nil {
 			return chunkIDs, err
 		}
@@ -286,7 +371,8 @@ func upsertSourceChunks(ctx context.Context, tx pgx.Tx, sourceItemID string, sou
 	return chunkIDs, nil
 }
 
-func upsertEmbeddings(ctx context.Context, tx pgx.Tx, sourceItemID string, chunkIDs map[int]string, source knowledge.ProcessedSource) error {
+func upsertEmbeddings(ctx context.Context, tx pgx.Tx, sourceItemID string, sourceCaptureID string, chunkIDs map[int]string, source knowledge.ProcessedSource) error {
+	ownerID := ownerIDForSource(source)
 	for _, embedding := range source.Embeddings {
 		var chunkID any
 		if embedding.ChunkIndex != nil {
@@ -298,6 +384,7 @@ func upsertEmbeddings(ctx context.Context, tx pgx.Tx, sourceItemID string, chunk
 			insert into source_embeddings (
 				owner_id,
 				source_item_id,
+				source_capture_id,
 				source_chunk_id,
 				embedding_type,
 				embedding_key,
@@ -306,11 +393,14 @@ func upsertEmbeddings(ctx context.Context, tx pgx.Tx, sourceItemID string, chunk
 				dimensions,
 				embedding
 			)
-			values ($1, $2, $3, $4, $5, $6, $7, $8, $9::vector)
+			values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::vector)
 			on conflict (owner_id, embedding_key, model) do update set
+				source_item_id = excluded.source_item_id,
+				source_capture_id = excluded.source_capture_id,
+				source_chunk_id = excluded.source_chunk_id,
 				dimensions = excluded.dimensions,
 				embedding = excluded.embedding
-		`, source.OwnerID, sourceItemID, chunkID, embedding.Type, embeddingKey(source, embedding), embedding.Label, embedding.Model, embedding.Dimensions, embedding.Vector)
+		`, ownerID, sourceItemID, sourceCaptureID, chunkID, embedding.Type, embeddingKey(source, embedding), embedding.Label, embedding.Model, embedding.Dimensions, embedding.Vector)
 		if err != nil {
 			return err
 		}
@@ -319,27 +409,28 @@ func upsertEmbeddings(ctx context.Context, tx pgx.Tx, sourceItemID string, chunk
 }
 
 func embeddingKey(source knowledge.ProcessedSource, embedding knowledge.EmbeddingRecord) string {
-	key := string(source.SourceType) + ":" + source.ExternalID + ":" + embedding.Type + ":" + embedding.Label
+	key := string(source.SourceType) + ":" + source.ExternalID + ":" + source.CaptureHash + ":" + embedding.Type + ":" + embedding.Label
 	if embedding.ChunkIndex != nil {
 		key += fmt.Sprintf(":%d", *embedding.ChunkIndex)
 	}
 	return key
 }
 
-func enqueueGraphSync(ctx context.Context, tx pgx.Tx, sourceItemID string, source knowledge.ProcessedSource) error {
+func enqueueGraphSync(ctx context.Context, tx pgx.Tx, sourceItemID string, sourceCaptureID string, source knowledge.ProcessedSource) error {
 	payload := map[string]any{
-		"sourceType":    source.SourceType,
-		"externalId":    source.ExternalID,
-		"sourceUrl":     source.SourceURL,
-		"title":         source.Title,
-		"captureHash":   source.CaptureHash,
-		"summary":       source.Synthesis.Summary,
-		"insights":      source.Synthesis.Insights,
-		"actionItems":   source.Synthesis.ActionItems,
-		"entities":      source.Entities,
-		"artifact":      source.Artifact,
-		"promptVersion": source.Synthesis.PromptVersion,
-		"model":         source.Synthesis.Model,
+		"sourceType":      source.SourceType,
+		"externalId":      source.ExternalID,
+		"sourceUrl":       source.SourceURL,
+		"title":           source.Title,
+		"sourceCaptureId": sourceCaptureID,
+		"captureHash":     source.CaptureHash,
+		"summary":         source.Synthesis.Summary,
+		"insights":        source.Synthesis.Insights,
+		"actionItems":     source.Synthesis.ActionItems,
+		"entities":        source.Entities,
+		"artifact":        source.Artifact,
+		"promptVersion":   source.Synthesis.PromptVersion,
+		"model":           source.Synthesis.Model,
 	}
 	raw, err := json.Marshal(payload)
 	if err != nil {
@@ -354,7 +445,7 @@ func enqueueGraphSync(ctx context.Context, tx pgx.Tx, sourceItemID string, sourc
 			payload
 		)
 		values ($1, 'source_item', $2, 'source_item.processed', $3)
-	`, source.OwnerID, sourceItemID, string(raw))
+	`, ownerIDForSource(source), sourceItemID, string(raw))
 	return err
 }
 
@@ -518,11 +609,42 @@ func ownerIDFromSources(sources []knowledge.ProcessedSource) string {
 	return "00000000-0000-0000-0000-000000000001"
 }
 
+func ownerIDForSource(source knowledge.ProcessedSource) string {
+	if source.OwnerID != "" {
+		return source.OwnerID
+	}
+	return "00000000-0000-0000-0000-000000000001"
+}
+
+func contentTypeForSource(source knowledge.ProcessedSource) string {
+	if source.ContentType != "" {
+		return source.ContentType
+	}
+	switch source.SourceType {
+	case knowledge.SourceTypeYouTube:
+		return "video"
+	case knowledge.SourceTypeX:
+		if source.Artifact.Kind == "article" {
+			return "article"
+		}
+		return "post"
+	default:
+		return "document"
+	}
+}
+
 func nullableRunID(runID string) any {
 	if runID == "" {
 		return nil
 	}
 	return runID
+}
+
+func nullableUUID(value string) any {
+	if value == "" {
+		return nil
+	}
+	return value
 }
 
 func parseOptionalTime(value string) *time.Time {

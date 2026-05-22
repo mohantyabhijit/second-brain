@@ -40,8 +40,11 @@ func TestCandidatesFromBookmarksNormalizeSourceMetadata(t *testing.T) {
 	if candidates[0].title != "Deep research note" || candidates[0].artifactKind != "article" || candidates[0].body != "long article body" {
 		t.Fatalf("unexpected article candidate: %#v", candidates[0])
 	}
-	if got := candidates[0].storagePath(); got != "x/article-1/article.txt" {
+	if got := candidates[0].storagePath("hash-1"); got != "x/article-1/hash-1/article.txt" {
 		t.Fatalf("unexpected article storage path: %q", got)
+	}
+	if got := candidates[0].itemContentType(); got != "article" {
+		t.Fatalf("unexpected article content type: %q", got)
 	}
 	if candidates[1].title != "@grace" || candidates[1].artifactKind != "tweet" || candidates[1].body != "agent workflow tweet" {
 		t.Fatalf("unexpected tweet candidate: %#v", candidates[1])
@@ -103,8 +106,11 @@ func TestCandidatesFromVideosRequiresAvailableTranscriptText(t *testing.T) {
 	if candidates[0].title != "Untitled YouTube video" || candidates[0].body != "translated transcript text" {
 		t.Fatalf("unexpected first video candidate: %#v", candidates[0])
 	}
-	if got := candidates[0].storagePath(); got != "youtube/video-1/transcript.txt" {
+	if got := candidates[0].storagePath("hash-1"); got != "youtube/video-1/hash-1/transcript.txt" {
 		t.Fatalf("unexpected first video storage path: %q", got)
+	}
+	if got := candidates[0].itemContentType(); got != "video" {
+		t.Fatalf("unexpected video content type: %q", got)
 	}
 	if candidates[1].title != "Original only" || candidates[1].body != "original transcript text" {
 		t.Fatalf("unexpected second video candidate: %#v", candidates[1])

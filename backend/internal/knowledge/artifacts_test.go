@@ -23,13 +23,14 @@ func TestWriteEvidenceArtifactRecordsMetadataWithoutStorageCredentials(t *testin
 	}
 	service := NewService(config.Config{SupabaseStorageBucket: "sources"}, cacheStore{}, http.DefaultClient)
 
-	artifact := service.writeEvidenceArtifact(context.Background(), candidate, candidate.captureHash())
+	captureHash := candidate.captureHash()
+	artifact := service.writeEvidenceArtifact(context.Background(), candidate, captureHash)
 
 	expectedChecksumBytes := sha256.Sum256([]byte("source body"))
 	if artifact.Source != "x" || artifact.SourceID != "tweet-1" || artifact.Kind != "tweet" {
 		t.Fatalf("unexpected artifact identity: %#v", artifact)
 	}
-	if artifact.Path != "x/tweet-1/tweet.txt" || artifact.Bucket != "sources" {
+	if artifact.Path != "x/tweet-1/"+captureHash+"/tweet.txt" || artifact.Bucket != "sources" {
 		t.Fatalf("unexpected artifact location: %#v", artifact)
 	}
 	if artifact.ByteSize != len("source body") {
@@ -91,7 +92,8 @@ func TestWriteEvidenceArtifactUploadsToSupabaseStorage(t *testing.T) {
 		SupabaseStorageBucket: "sources",
 	}, cacheStore{}, client)
 
-	artifact := service.writeEvidenceArtifact(context.Background(), candidate, candidate.captureHash())
+	captureHash := candidate.captureHash()
+	artifact := service.writeEvidenceArtifact(context.Background(), candidate, captureHash)
 
 	if !artifact.Stored || artifact.Error != "" {
 		t.Fatalf("expected stored artifact without error, got %#v", artifact)
@@ -99,7 +101,7 @@ func TestWriteEvidenceArtifactUploadsToSupabaseStorage(t *testing.T) {
 	if captured.method != http.MethodPut {
 		t.Fatalf("expected PUT upload, got %s", captured.method)
 	}
-	if captured.path != "/storage/v1/object/sources/youtube/video%20id/transcript.txt" {
+	if captured.path != "/storage/v1/object/sources/youtube/video%20id/"+captureHash+"/transcript.txt" {
 		t.Fatalf("unexpected upload path: %q", captured.path)
 	}
 	if captured.authorization != "Bearer service-role" || captured.apiKey != "service-role" {
@@ -110,5 +112,44 @@ func TestWriteEvidenceArtifactUploadsToSupabaseStorage(t *testing.T) {
 	}
 	if captured.body != "transcript body" {
 		t.Fatalf("unexpected upload body: %q", captured.body)
+	}
+}
+
+func TestWriteSynthesisArtifactRecordsProcessedOutputMetadata(t *testing.T) {
+	candidate := sourceCandidate{
+		sourceType:   SourceTypeX,
+		externalID:   "tweet-1",
+		sourceURL:    "https://x.com/example/status/tweet-1",
+		title:        "Source tweet",
+		body:         "source body",
+		artifactKind: "tweet",
+		contentType:  "text/plain; charset=utf-8",
+	}
+	record := SynthesisRecord{
+		CaptureHash:   "capture-1",
+		PromptVersion: "prompt/v1",
+		Model:         "model one",
+		Summary: Summary{
+			ID:      "tweet-1",
+			Source:  "x",
+			Summary: "Processed summary",
+		},
+	}
+	service := NewService(config.Config{SupabaseStorageBucket: "sources"}, cacheStore{}, http.DefaultClient)
+
+	artifact := service.writeSynthesisArtifact(context.Background(), candidate, "capture-1", record)
+
+	if artifact.Kind != "summary_json" || artifact.ContentType != "application/json; charset=utf-8" {
+		t.Fatalf("unexpected synthesis artifact metadata: %#v", artifact)
+	}
+	expectedPath := "artifacts/x/tweet-1/capture-1/prompt_v1/model-one/summary.json"
+	if artifact.Path != expectedPath {
+		t.Fatalf("unexpected synthesis artifact path: %q", artifact.Path)
+	}
+	if artifact.ByteSize == 0 || artifact.Checksum == "" {
+		t.Fatalf("expected serialized synthesis artifact, got %#v", artifact)
+	}
+	if !strings.Contains(artifact.Error, "Supabase Storage credentials missing") {
+		t.Fatalf("expected missing credentials error, got %q", artifact.Error)
 	}
 }

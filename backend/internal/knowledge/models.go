@@ -225,22 +225,24 @@ type SynthesisRecord struct {
 }
 
 type ProcessedSource struct {
-	OwnerID     string
-	SourceType  SourceType
-	ExternalID  string
-	SourceURL   string
-	Title       string
-	AuthorName  string
-	Username    string
-	PublishedAt string
-	CaptureHash string
-	Artifact    SourceArtifact
-	Synthesis   SynthesisRecord
-	Chunks      []SourceChunk
-	Embeddings  []EmbeddingRecord
-	Entities    []EntityRecord
-	Keywords    []string
-	Cached      bool
+	OwnerID         string
+	SourceType      SourceType
+	ContentType     string
+	ExternalID      string
+	SourceURL       string
+	Title           string
+	AuthorName      string
+	Username        string
+	PublishedAt     string
+	CaptureHash     string
+	Artifact        SourceArtifact
+	SummaryArtifact SourceArtifact
+	Synthesis       SynthesisRecord
+	Chunks          []SourceChunk
+	Embeddings      []EmbeddingRecord
+	Entities        []EntityRecord
+	Keywords        []string
+	Cached          bool
 }
 
 type SourceChunk struct {
