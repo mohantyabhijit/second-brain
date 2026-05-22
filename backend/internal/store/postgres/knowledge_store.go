@@ -123,45 +123,45 @@ func (s *Store) SaveRun(ctx context.Context, result knowledge.Result, sources []
 	for _, source := range sources {
 		sourceItemID, err := upsertSourceItem(ctx, tx, source)
 		if err != nil {
-			return err
+			return fmt.Errorf("upsert source item %s:%s: %w", source.SourceType, source.ExternalID, err)
 		}
 		sourceCaptureID, err := upsertSourceCapture(ctx, tx, sourceItemID, source)
 		if err != nil {
-			return err
+			return fmt.Errorf("upsert source capture %s:%s: %w", source.SourceType, source.ExternalID, err)
 		}
 		sourceIDs[sourceKey(source.SourceType, source.ExternalID)] = sourceItemID
 		var summaryObjectID string
 		if source.Artifact.Path != "" {
 			if _, err := upsertSourceObject(ctx, tx, sourceItemID, sourceCaptureID, source, source.Artifact); err != nil {
-				return err
+				return fmt.Errorf("upsert source object %s:%s:%s: %w", source.SourceType, source.ExternalID, source.Artifact.Kind, err)
 			}
 		}
 		if source.SummaryArtifact.Path != "" {
 			var err error
 			summaryObjectID, err = upsertSourceObject(ctx, tx, sourceItemID, sourceCaptureID, source, source.SummaryArtifact)
 			if err != nil {
-				return err
+				return fmt.Errorf("upsert summary object %s:%s: %w", source.SourceType, source.ExternalID, err)
 			}
 		}
 		chunkIDs, err := upsertSourceChunks(ctx, tx, sourceItemID, sourceCaptureID, source)
 		if err != nil {
-			return err
+			return fmt.Errorf("upsert source chunks %s:%s: %w", source.SourceType, source.ExternalID, err)
 		}
 		if err := upsertEmbeddings(ctx, tx, sourceItemID, sourceCaptureID, chunkIDs, source); err != nil {
-			return err
+			return fmt.Errorf("upsert embeddings %s:%s: %w", source.SourceType, source.ExternalID, err)
 		}
 		if !source.Cached {
 			if err := upsertSynthesis(ctx, tx, sourceItemID, sourceCaptureID, source, summaryObjectID); err != nil {
-				return err
+				return fmt.Errorf("upsert synthesis %s:%s: %w", source.SourceType, source.ExternalID, err)
 			}
 		}
 		if source.Cached && summaryObjectID != "" {
 			if err := updateSynthesisSummaryObject(ctx, tx, sourceCaptureID, source.Synthesis, summaryObjectID); err != nil {
-				return err
+				return fmt.Errorf("update synthesis summary object %s:%s: %w", source.SourceType, source.ExternalID, err)
 			}
 		}
 		if err := enqueueGraphSync(ctx, tx, sourceItemID, sourceCaptureID, source); err != nil {
-			return err
+			return fmt.Errorf("enqueue graph sync %s:%s: %w", source.SourceType, source.ExternalID, err)
 		}
 	}
 
@@ -252,7 +252,7 @@ func upsertSourceCapture(ctx context.Context, tx pgx.Tx, sourceItemID string, so
 		on conflict (source_item_id, capture_hash) do update set
 			metadata = source_captures.metadata
 		returning id
-	`, ownerID, sourceItemID, source.CaptureHash, metadata).Scan(&id)
+	`, ownerID, sourceItemID, source.CaptureHash, string(metadata)).Scan(&id)
 	return id, err
 }
 
