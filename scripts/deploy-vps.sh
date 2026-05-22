@@ -138,12 +138,27 @@ cat > /tmp/second-brain-nginx-block <<'NGINX'
 NGINX
 
 nginx_site="/etc/nginx/sites-available/abhijitmohanty.com"
-sudo perl -0pi -e 's/\n    # BEGIN second-brain.*?    # END second-brain\n\n//s' "$nginx_site"
-sudo awk '
-  NR == FNR { block = block $0 "\n"; next }
-  $0 == "    # Static files with 404 fallback" { printf "%s", block }
-  { print }
-' /tmp/second-brain-nginx-block "$nginx_site" | sudo tee /tmp/abhijitmohanty.com.new >/dev/null
+sudo cp "$nginx_site" /tmp/abhijitmohanty.com.new
+sudo chown deploy:deploy /tmp/abhijitmohanty.com.new
+python3 <<'PY'
+from pathlib import Path
+
+site = Path("/tmp/abhijitmohanty.com.new")
+block = Path("/tmp/second-brain-nginx-block").read_text()
+text = site.read_text()
+start = "    # BEGIN second-brain"
+end = "    # END second-brain"
+while start in text:
+    start_index = text.index(start)
+    end_index = text.index(end, start_index) + len(end)
+    text = text[:start_index].rstrip() + "\n\n" + text[end_index:].lstrip("\n")
+
+anchor = "    # Static files with 404 fallback"
+if anchor not in text:
+    raise SystemExit(f"nginx insertion anchor not found: {anchor}")
+
+site.write_text(text.replace(anchor, block + anchor, 1))
+PY
 sudo install -m 0644 /tmp/abhijitmohanty.com.new "$nginx_site"
 sudo nginx -t
 sudo systemctl reload nginx
