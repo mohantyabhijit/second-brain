@@ -154,6 +154,7 @@ while start in text:
     text = text[:start_index].rstrip() + "\n\n" + text[end_index:].lstrip("\n")
 
 anchor = "    # Static files with 404 fallback"
+text = text.replace("}" + anchor, "}\n\n" + anchor)
 if anchor not in text:
     raise SystemExit(f"nginx insertion anchor not found: {anchor}")
 
