@@ -222,6 +222,7 @@ func (s *Service) Run(ctx context.Context) (Result, error) {
 	}
 
 	result.Themes = buildThemeClusters(processed)
+	result.InsightClusters = buildInsightClusters(processed)
 	result.Connections = buildSourceConnections(processed)
 	digest := buildDigestIssue(s.cfg.DigestTimezone, result.GeneratedAt, result.Summaries, result.Themes, result.Connections)
 	digest.OwnerID = s.cfg.OwnerID
@@ -254,6 +255,7 @@ func (s *Service) Run(ctx context.Context) (Result, error) {
 		validation("Hindi transcript translation", anyHindiTranscriptTranslated(youtubeItems), "Hindi transcript translated to English locally.", "No Hindi transcript was translated to English."),
 		validation("Source-grounded summaries", len(result.Summaries) > 0, fmt.Sprintf("%d summary item(s) generated.", len(result.Summaries)), "No summaries generated."),
 		validation("Insight extraction", len(result.Insights) > 0, fmt.Sprintf("%d insight(s) available.", len(result.Insights)), "No insights generated."),
+		validation("Insight grouping", len(result.InsightClusters) > 0 || len(result.Insights) > 0, fmt.Sprintf("%d insight cluster(s) available.", len(result.InsightClusters)), "No insights reached grouping."),
 		validation("Action item extraction", len(result.ActionItems) > 0, fmt.Sprintf("%d action item(s) available.", len(result.ActionItems)), "No action items generated."),
 		validation("Recompute control", anyCachedProcessing(result.Processing) || len(processed) > 0, "Source captures use prompt-versioned cache keys.", "No source captures reached the synthesis cache."),
 	}
@@ -275,6 +277,7 @@ func (s *Service) Run(ctx context.Context) (Result, error) {
 		"artifacts", len(result.Artifacts),
 		"stored_artifacts", countStoredArtifacts(result.Artifacts),
 		"themes", len(result.Themes),
+		"insight_clusters", len(result.InsightClusters),
 		"connections", len(result.Connections),
 		"blockers", len(result.Blockers),
 	)
@@ -318,6 +321,7 @@ func (s *Service) processSourceCandidates(ctx context.Context, candidates []sour
 	}
 	model := s.synthesisModel()
 	keys := make([]SynthesisCacheKey, 0, len(candidates))
+	sourceKeys := make([]SynthesisCacheKey, 0, len(candidates))
 	captureHashes := make(map[string]string, len(candidates))
 	for _, candidate := range candidates {
 		captureHash := candidate.captureHash()
@@ -329,12 +333,23 @@ func (s *Service) processSourceCandidates(ctx context.Context, candidates []sour
 			PromptVersion: synthesisPromptVersion,
 			Model:         model,
 		})
+		sourceKeys = append(sourceKeys, SynthesisCacheKey{
+			SourceType:    candidate.sourceType,
+			ExternalID:    candidate.externalID,
+			PromptVersion: synthesisPromptVersion,
+			Model:         model,
+		})
 	}
 	cached, err := s.store.ReadCachedSyntheses(ctx, keys)
 	blockers := []string{}
 	if err != nil {
 		blockers = append(blockers, "synthesis cache lookup failed: "+err.Error())
 		cached = map[string]SynthesisRecord{}
+	}
+	sourceCached, err := s.store.ReadCachedSyntheses(ctx, sourceKeys)
+	if err != nil {
+		blockers = append(blockers, "source cache lookup failed: "+err.Error())
+		sourceCached = map[string]SynthesisRecord{}
 	}
 
 	processed := make([]ProcessedSource, len(candidates))
@@ -351,7 +366,7 @@ func (s *Service) processSourceCandidates(ctx context.Context, candidates []sour
 			defer wg.Done()
 			for index := range jobs {
 				candidate := candidates[index]
-				source := s.processSourceCandidate(ctx, candidate, captureHashes[string(candidate.sourceType)+":"+candidate.externalID], cached)
+				source := s.processSourceCandidate(ctx, candidate, captureHashes[string(candidate.sourceType)+":"+candidate.externalID], cached, sourceCached)
 				mu.Lock()
 				processed[index] = source
 				mu.Unlock()
@@ -366,7 +381,7 @@ func (s *Service) processSourceCandidates(ctx context.Context, candidates []sour
 	return processed, blockers
 }
 
-func (s *Service) processSourceCandidate(ctx context.Context, candidate sourceCandidate, captureHash string, cached map[string]SynthesisRecord) ProcessedSource {
+func (s *Service) processSourceCandidate(ctx context.Context, candidate sourceCandidate, captureHash string, cached map[string]SynthesisRecord, sourceCached map[string]SynthesisRecord) ProcessedSource {
 	key := SynthesisCacheKey{
 		SourceType:    candidate.sourceType,
 		ExternalID:    candidate.externalID,
@@ -375,6 +390,14 @@ func (s *Service) processSourceCandidate(ctx context.Context, candidate sourceCa
 		Model:         s.synthesisModel(),
 	}
 	record, ok := cached[key.String()]
+	if !ok {
+		sourceKey := key
+		sourceKey.CaptureHash = ""
+		record, ok = sourceCached[sourceKey.String()]
+		if ok {
+			captureHash = record.CaptureHash
+		}
+	}
 	if ok {
 		record.Summary.CacheStatus = "cached"
 		for index := range record.Insights {

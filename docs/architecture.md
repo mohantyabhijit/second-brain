@@ -47,9 +47,11 @@ Core tables:
 - `source_captures`: immutable captures of a source item keyed by capture hash, so the same post can change without losing prior processed versions.
 - `source_objects`: pointers to Supabase Storage objects and their checksums, attached to the source item and source capture.
 - `source_chunks`: chunked evidence text derived from source captures and generated summaries.
-- `source_embeddings`: pgvector-backed embeddings for chunks, summaries, and extracted entity labels, scoped to the capture that produced them.
-- `knowledge_syntheses`: prompt-versioned summaries, insights, and action items keyed by source capture, prompt version, and model.
+- `source_embeddings`: pgvector-backed embeddings for chunks, summaries, extracted entity labels, and compatibility insight vectors, scoped to the capture that produced them.
+- `knowledge_syntheses`: prompt-versioned summaries, insights, and action items keyed by source capture, prompt version, and model. The JSON insight payload remains as a run artifact for compatibility.
+- `insights`, `insight_evidence`, and `insight_embeddings`: first-class insight records with raw, canonical, abstract, and practical forms, grounded evidence, and vectors for similarity search.
 - `knowledge_runs`: ingestion and refresh audit log for UI replay and debugging.
+- `insight_clusters` and `cluster_memberships`: many-to-many groupings of similar insights. These group insights, not posts, so one source can contribute to several recurring patterns.
 - `theme_clusters` and `source_connections_evidence`: derived cross-source understanding for recurring themes and related-source explanations.
 - `feedback_events`: explicit user signals such as useful, obvious, stale, irrelevant, more like this, and less like this.
 - `digest_issues` and `digest_deliveries`: idempotent daily digest generation and email delivery status.
@@ -82,6 +84,7 @@ Expected vector tables:
 
 - `chunk_embeddings`: semantic retrieval over source chunks.
 - `summary_embeddings`: retrieval over generated summaries.
+- `insight_embeddings`: similarity search over canonical insight text plus domain, type, and topics.
 - `entity_embeddings`: retrieval over entity labels and descriptions.
 
 Embedding rows must record the model name and dimensionality. Do not compare embeddings produced by different models in the same vector index.

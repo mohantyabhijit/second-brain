@@ -83,16 +83,48 @@ type Summary struct {
 }
 
 type Insight struct {
-	ID          string     `json:"id"`
-	Source      string     `json:"source"`
-	SourceID    string     `json:"sourceId"`
-	Title       string     `json:"title"`
-	Insight     string     `json:"insight"`
-	Evidence    string     `json:"evidence"`
-	SourceURL   string     `json:"sourceUrl"`
-	Confidence  string     `json:"confidence"`
-	CacheStatus string     `json:"cacheStatus,omitempty"`
-	GeneratedAt *time.Time `json:"generatedAt,omitempty"`
+	ID                 string               `json:"id"`
+	Source             string               `json:"source"`
+	SourceID           string               `json:"sourceId"`
+	Title              string               `json:"title"`
+	Insight            string               `json:"insight"`
+	RawInsight         string               `json:"rawInsight,omitempty"`
+	CanonicalInsight   string               `json:"canonicalInsight,omitempty"`
+	AbstractInsight    string               `json:"abstractInsight,omitempty"`
+	PracticalText      string               `json:"practicalText,omitempty"`
+	Mechanism          string               `json:"mechanism,omitempty"`
+	InsightType        string               `json:"insightType,omitempty"`
+	Domain             string               `json:"domain,omitempty"`
+	Topics             []string             `json:"topics,omitempty"`
+	Entities           []string             `json:"entities,omitempty"`
+	Evidence           string               `json:"evidence"`
+	EvidenceRefs       []InsightEvidenceRef `json:"evidenceRefs,omitempty"`
+	SourceURL          string               `json:"sourceUrl"`
+	Confidence         string               `json:"confidence"`
+	ExplicitOrInferred string               `json:"explicitOrInferred,omitempty"`
+	ImportanceScore    float64              `json:"importanceScore,omitempty"`
+	NoveltyScore       float64              `json:"noveltyScore,omitempty"`
+	ActionabilityScore float64              `json:"actionabilityScore,omitempty"`
+	EmbeddingText      string               `json:"embeddingText,omitempty"`
+	CacheStatus        string               `json:"cacheStatus,omitempty"`
+	GeneratedAt        *time.Time           `json:"generatedAt,omitempty"`
+}
+
+type InsightEvidenceRef struct {
+	ChunkID    string `json:"chunkId,omitempty"`
+	ChunkIndex *int   `json:"chunkIndex,omitempty"`
+	Quote      string `json:"quote"`
+}
+
+type InsightCluster struct {
+	ID                       string   `json:"id"`
+	Label                    string   `json:"label"`
+	CanonicalInsight         string   `json:"canonicalInsight"`
+	Summary                  string   `json:"summary"`
+	Layer                    string   `json:"layer"`
+	Score                    float64  `json:"score"`
+	RepresentativeInsightIDs []string `json:"representativeInsightIds"`
+	InsightIDs               []string `json:"insightIds"`
 }
 
 type ActionItem struct {
@@ -187,18 +219,19 @@ type Result struct {
 		YouTube SourceStatus `json:"youtube"`
 		OneCLI  SourceStatus `json:"onecli"`
 	} `json:"sourceStatus"`
-	XBookmarks   []XBookmark        `json:"xBookmarks"`
-	YouTubeItems []YouTubeItem      `json:"youtubeItems"`
-	Summaries    []Summary          `json:"summaries"`
-	Insights     []Insight          `json:"insights"`
-	ActionItems  []ActionItem       `json:"actionItems"`
-	Artifacts    []SourceArtifact   `json:"artifacts,omitempty"`
-	Processing   []ProcessingEvent  `json:"processing,omitempty"`
-	Themes       []ThemeCluster     `json:"themes,omitempty"`
-	Connections  []SourceConnection `json:"connections,omitempty"`
-	Digest       *DigestIssue       `json:"digest,omitempty"`
-	Validation   []ValidationItem   `json:"validation"`
-	Blockers     []string           `json:"blockers"`
+	XBookmarks      []XBookmark        `json:"xBookmarks"`
+	YouTubeItems    []YouTubeItem      `json:"youtubeItems"`
+	Summaries       []Summary          `json:"summaries"`
+	Insights        []Insight          `json:"insights"`
+	ActionItems     []ActionItem       `json:"actionItems"`
+	Artifacts       []SourceArtifact   `json:"artifacts,omitempty"`
+	Processing      []ProcessingEvent  `json:"processing,omitempty"`
+	Themes          []ThemeCluster     `json:"themes,omitempty"`
+	InsightClusters []InsightCluster   `json:"insightClusters,omitempty"`
+	Connections     []SourceConnection `json:"connections,omitempty"`
+	Digest          *DigestIssue       `json:"digest,omitempty"`
+	Validation      []ValidationItem   `json:"validation"`
+	Blockers        []string           `json:"blockers"`
 }
 
 type RefreshStatus struct {

@@ -63,9 +63,28 @@ export type KnowledgeInsight = {
   sourceId: string;
   title: string;
   insight: string;
+  rawInsight?: string;
+  canonicalInsight?: string;
+  abstractInsight?: string;
+  practicalText?: string;
+  mechanism?: string;
+  insightType?: string;
+  domain?: string;
+  topics?: string[];
+  entities?: string[];
   evidence: string;
+  evidenceRefs?: Array<{
+    chunkId?: string;
+    chunkIndex?: number;
+    quote: string;
+  }>;
   sourceUrl: string;
   confidence: "high" | "medium" | "low";
+  explicitOrInferred?: "explicit" | "inferred";
+  importanceScore?: number;
+  noveltyScore?: number;
+  actionabilityScore?: number;
+  embeddingText?: string;
   cacheStatus?: "generated" | "cached";
   generatedAt?: string;
 };
@@ -100,6 +119,17 @@ export type ThemeCluster = {
   evidence: string;
   score: number;
   sources: string[];
+};
+
+export type InsightCluster = {
+  id: string;
+  label: string;
+  canonicalInsight: string;
+  summary: string;
+  layer: string;
+  score: number;
+  representativeInsightIds: string[];
+  insightIds: string[];
 };
 
 export type SourceConnection = {
@@ -146,6 +176,7 @@ export type KnowledgeRunResult = {
   actionItems: KnowledgeActionItem[];
   processing?: ProcessingEvent[];
   themes?: ThemeCluster[];
+  insightClusters?: InsightCluster[];
   connections?: SourceConnection[];
   digest?: DigestIssue;
   validation: ValidationItem[];

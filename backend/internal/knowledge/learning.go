@@ -82,6 +82,24 @@ func (s *Service) enrichProcessedSources(ctx context.Context, sources []Processe
 			Dimensions: embeddingDimensions,
 		})
 		plans = append(plans, embeddingPlan{sourceIndex: index, recordIndex: len(sources[index].Embeddings) - 1, text: sources[index].Synthesis.Summary.Summary})
+		for _, insight := range sources[index].Synthesis.Insights {
+			embeddingText := insight.EmbeddingText
+			if embeddingText == "" {
+				embeddingText = insightEmbeddingText(
+					fallback(insight.CanonicalInsight, insight.Insight),
+					fallback(insight.Domain, "general"),
+					fallback(insight.InsightType, "principle"),
+					insight.Topics,
+				)
+			}
+			sources[index].Embeddings = append(sources[index].Embeddings, EmbeddingRecord{
+				Type:       "insight",
+				Label:      insight.ID,
+				Model:      model,
+				Dimensions: embeddingDimensions,
+			})
+			plans = append(plans, embeddingPlan{sourceIndex: index, recordIndex: len(sources[index].Embeddings) - 1, text: embeddingText})
+		}
 		for _, entity := range sources[index].Entities {
 			sources[index].Embeddings = append(sources[index].Embeddings, EmbeddingRecord{
 				Type:       "entity",
@@ -311,6 +329,88 @@ func buildThemeClusters(sources []ProcessedSource) []ThemeCluster {
 		return clusters[:8]
 	}
 	return clusters
+}
+
+func buildInsightClusters(sources []ProcessedSource) []InsightCluster {
+	type clusterAccumulator struct {
+		key      string
+		label    string
+		insights []Insight
+	}
+	accumulators := map[string]*clusterAccumulator{}
+	for _, source := range sources {
+		for _, insight := range source.Synthesis.Insights {
+			key := insightClusterKey(insight)
+			if key == "" {
+				continue
+			}
+			accumulator, ok := accumulators[key]
+			if !ok {
+				accumulator = &clusterAccumulator{
+					key:   key,
+					label: insightClusterLabel(insight, key),
+				}
+				accumulators[key] = accumulator
+			}
+			accumulator.insights = append(accumulator.insights, insight)
+		}
+	}
+	clusters := []InsightCluster{}
+	for _, accumulator := range accumulators {
+		if len(accumulator.insights) < 2 {
+			continue
+		}
+		insightIDs := make([]string, 0, len(accumulator.insights))
+		examples := make([]string, 0, min(3, len(accumulator.insights)))
+		for _, insight := range accumulator.insights {
+			insightIDs = append(insightIDs, insight.ID)
+			if len(examples) < 3 {
+				examples = append(examples, fallback(insight.CanonicalInsight, insight.Insight))
+			}
+		}
+		clusters = append(clusters, InsightCluster{
+			ID:                       "insight-cluster-" + storagePathSegment(accumulator.key),
+			Label:                    accumulator.label,
+			CanonicalInsight:         examples[0],
+			Summary:                  "Recurring mechanism across insights: " + strings.Join(examples, " / "),
+			Layer:                    "similar_insight",
+			Score:                    float64(len(insightIDs)),
+			RepresentativeInsightIDs: insightIDs[:min(3, len(insightIDs))],
+			InsightIDs:               insightIDs,
+		})
+	}
+	sort.Slice(clusters, func(i, j int) bool {
+		if clusters[i].Score == clusters[j].Score {
+			return clusters[i].Label < clusters[j].Label
+		}
+		return clusters[i].Score > clusters[j].Score
+	})
+	if len(clusters) > 8 {
+		return clusters[:8]
+	}
+	return clusters
+}
+
+func insightClusterKey(insight Insight) string {
+	key := strings.ToLower(strings.TrimSpace(insight.Mechanism))
+	if key == "" {
+		key = strings.ToLower(strings.TrimSpace(insight.CanonicalInsight))
+	}
+	if key == "" && len(insight.Topics) > 0 {
+		key = strings.Join(insight.Topics[:min(2, len(insight.Topics))], "-")
+	}
+	return strings.Trim(key, ". ")
+}
+
+func insightClusterLabel(insight Insight, key string) string {
+	label := strings.TrimSpace(insight.Mechanism)
+	if label == "" {
+		label = strings.TrimSpace(insight.CanonicalInsight)
+	}
+	if label == "" {
+		label = key
+	}
+	return truncate(canonicalInsightText(label), 96)
 }
 
 func buildSourceConnections(sources []ProcessedSource) []SourceConnection {

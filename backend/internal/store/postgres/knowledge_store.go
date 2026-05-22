@@ -121,6 +121,7 @@ func (s *Store) SaveRun(ctx context.Context, result knowledge.Result, sources []
 	defer tx.Rollback(ctx)
 
 	sourceIDs := map[string]string{}
+	allInsightIDs := map[string]string{}
 	for _, source := range sources {
 		sourceItemID, err := upsertSourceItem(ctx, tx, source)
 		if err != nil {
@@ -155,8 +156,19 @@ func (s *Store) SaveRun(ctx context.Context, result knowledge.Result, sources []
 			return fmt.Errorf("upsert embeddings %s:%s: %w", source.SourceType, source.ExternalID, err)
 		}
 		if !source.Cached {
-			if err := upsertSynthesis(ctx, tx, sourceItemID, sourceCaptureID, source, summaryObjectID); err != nil {
+			synthesisID, err := upsertSynthesis(ctx, tx, sourceItemID, sourceCaptureID, source, summaryObjectID)
+			if err != nil {
 				return fmt.Errorf("upsert synthesis %s:%s: %w", source.SourceType, source.ExternalID, err)
+			}
+			insightIDs, err := upsertInsights(ctx, tx, sourceItemID, sourceCaptureID, synthesisID, chunkIDs, source)
+			if err != nil {
+				return fmt.Errorf("upsert insights %s:%s: %w", source.SourceType, source.ExternalID, err)
+			}
+			for externalID, insightID := range insightIDs {
+				allInsightIDs[externalID] = insightID
+			}
+			if err := upsertInsightEmbeddings(ctx, tx, insightIDs, source); err != nil {
+				return fmt.Errorf("upsert insight embeddings %s:%s: %w", source.SourceType, source.ExternalID, err)
 			}
 		}
 		if source.Cached && summaryObjectID != "" {
@@ -180,6 +192,9 @@ func (s *Store) SaveRun(ctx context.Context, result knowledge.Result, sources []
 		return err
 	}
 	if err := saveThemes(ctx, tx, ownerID, runID, result.Themes, sourceIDs); err != nil {
+		return err
+	}
+	if err := saveInsightClusters(ctx, tx, ownerID, result.InsightClusters, allInsightIDs); err != nil {
 		return err
 	}
 	if err := saveConnections(ctx, tx, ownerID, runID, result.Connections, sourceIDs); err != nil {
@@ -289,22 +304,23 @@ func upsertSourceObject(ctx context.Context, tx pgx.Tx, sourceItemID string, sou
 	return id, err
 }
 
-func upsertSynthesis(ctx context.Context, tx pgx.Tx, sourceItemID string, sourceCaptureID string, source knowledge.ProcessedSource, summaryObjectID string) error {
+func upsertSynthesis(ctx context.Context, tx pgx.Tx, sourceItemID string, sourceCaptureID string, source knowledge.ProcessedSource, summaryObjectID string) (string, error) {
 	synthesis := source.Synthesis
 	ownerID := ownerIDForSource(source)
 	summaryRaw, err := json.Marshal(synthesis.Summary)
 	if err != nil {
-		return err
+		return "", err
 	}
 	insightsRaw, err := json.Marshal(synthesis.Insights)
 	if err != nil {
-		return err
+		return "", err
 	}
 	actionsRaw, err := json.Marshal(synthesis.ActionItems)
 	if err != nil {
-		return err
+		return "", err
 	}
-	_, err = tx.Exec(ctx, `
+	var id string
+	err = tx.QueryRow(ctx, `
 		insert into knowledge_syntheses (
 			owner_id,
 			source_item_id,
@@ -328,8 +344,102 @@ func upsertSynthesis(ctx context.Context, tx pgx.Tx, sourceItemID string, source
 			action_items = excluded.action_items,
 			summary_object_id = excluded.summary_object_id,
 			generated_at = excluded.generated_at
-	`, ownerID, sourceItemID, sourceCaptureID, synthesis.CaptureHash, synthesis.PromptVersion, synthesis.Model, string(summaryRaw), string(insightsRaw), string(actionsRaw), nullableUUID(summaryObjectID), synthesis.GeneratedAt)
-	return err
+		returning id
+	`, ownerID, sourceItemID, sourceCaptureID, synthesis.CaptureHash, synthesis.PromptVersion, synthesis.Model, string(summaryRaw), string(insightsRaw), string(actionsRaw), nullableUUID(summaryObjectID), synthesis.GeneratedAt).Scan(&id)
+	return id, err
+}
+
+func upsertInsights(ctx context.Context, tx pgx.Tx, sourceItemID string, sourceCaptureID string, synthesisID string, chunkIDs map[int]string, source knowledge.ProcessedSource) (map[string]string, error) {
+	ownerID := ownerIDForSource(source)
+	insightIDs := map[string]string{}
+	for _, insight := range source.Synthesis.Insights {
+		var id string
+		err := tx.QueryRow(ctx, `
+			insert into insights (
+				owner_id,
+				source_item_id,
+				source_capture_id,
+				knowledge_synthesis_id,
+				external_insight_id,
+				title,
+				raw_text,
+				canonical_text,
+				abstract_text,
+				practical_text,
+				mechanism,
+				insight_type,
+				domain,
+				topics,
+				entities,
+				confidence,
+				explicit_or_inferred,
+				importance_score,
+				novelty_score,
+				actionability_score,
+				embedding_text,
+				generated_at
+			)
+			values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22)
+			on conflict (source_capture_id, external_insight_id) do update set
+				owner_id = excluded.owner_id,
+				source_item_id = excluded.source_item_id,
+				knowledge_synthesis_id = excluded.knowledge_synthesis_id,
+				title = excluded.title,
+				raw_text = excluded.raw_text,
+				canonical_text = excluded.canonical_text,
+				abstract_text = excluded.abstract_text,
+				practical_text = excluded.practical_text,
+				mechanism = excluded.mechanism,
+				insight_type = excluded.insight_type,
+				domain = excluded.domain,
+				topics = excluded.topics,
+				entities = excluded.entities,
+				confidence = excluded.confidence,
+				explicit_or_inferred = excluded.explicit_or_inferred,
+				importance_score = excluded.importance_score,
+				novelty_score = excluded.novelty_score,
+				actionability_score = excluded.actionability_score,
+				embedding_text = excluded.embedding_text,
+				generated_at = excluded.generated_at,
+				updated_at = now()
+			returning id
+		`, ownerID, sourceItemID, sourceCaptureID, synthesisID, insight.ID, insight.Title, fallbackText(insight.RawInsight, insight.Insight), fallbackText(insight.CanonicalInsight, insight.Insight), insight.AbstractInsight, insight.PracticalText, insight.Mechanism, insight.InsightType, insight.Domain, insight.Topics, insight.Entities, insight.Confidence, insight.ExplicitOrInferred, insight.ImportanceScore, insight.NoveltyScore, insight.ActionabilityScore, insight.EmbeddingText, insight.GeneratedAt).Scan(&id)
+		if err != nil {
+			return insightIDs, err
+		}
+		insightIDs[insight.ID] = id
+		refs := insight.EvidenceRefs
+		if len(refs) == 0 && insight.Evidence != "" {
+			refs = []knowledge.InsightEvidenceRef{{Quote: insight.Evidence}}
+		}
+		for index, ref := range refs {
+			var chunkID any
+			if ref.ChunkIndex != nil {
+				if id, ok := chunkIDs[*ref.ChunkIndex]; ok {
+					chunkID = id
+				}
+			}
+			if _, err := tx.Exec(ctx, `
+				insert into insight_evidence (
+					insight_id,
+					source_item_id,
+					source_capture_id,
+					source_chunk_id,
+					evidence_index,
+					evidence_text
+				)
+				values ($1, $2, $3, $4, $5, $6)
+				on conflict (insight_id, evidence_index) do update set
+					source_item_id = excluded.source_item_id,
+					source_capture_id = excluded.source_capture_id,
+					source_chunk_id = excluded.source_chunk_id,
+					evidence_text = excluded.evidence_text
+			`, id, sourceItemID, sourceCaptureID, chunkID, index, ref.Quote); err != nil {
+				return insightIDs, err
+			}
+		}
+	}
+	return insightIDs, nil
 }
 
 func updateSynthesisSummaryObject(ctx context.Context, tx pgx.Tx, sourceCaptureID string, synthesis knowledge.SynthesisRecord, summaryObjectID string) error {
@@ -411,6 +521,39 @@ func upsertEmbeddings(ctx context.Context, tx pgx.Tx, sourceItemID string, sourc
 	return nil
 }
 
+func upsertInsightEmbeddings(ctx context.Context, tx pgx.Tx, insightIDs map[string]string, source knowledge.ProcessedSource) error {
+	ownerID := ownerIDForSource(source)
+	for _, embedding := range source.Embeddings {
+		if embedding.Type != "insight" {
+			continue
+		}
+		insightID, ok := insightIDs[embedding.Label]
+		if !ok || embedding.Vector == "" {
+			continue
+		}
+		embeddingKey := string(source.SourceType) + ":" + source.ExternalID + ":" + source.CaptureHash + ":insight:" + embedding.Label
+		_, err := tx.Exec(ctx, `
+			insert into insight_embeddings (
+				owner_id,
+				insight_id,
+				embedding_key,
+				model,
+				dimensions,
+				embedding
+			)
+			values ($1, $2, $3, $4, $5, $6::vector)
+			on conflict (owner_id, embedding_key, model) do update set
+				insight_id = excluded.insight_id,
+				dimensions = excluded.dimensions,
+				embedding = excluded.embedding
+		`, ownerID, insightID, embeddingKey, embedding.Model, embedding.Dimensions, embedding.Vector)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func embeddingKey(source knowledge.ProcessedSource, embedding knowledge.EmbeddingRecord) string {
 	key := string(source.SourceType) + ":" + source.ExternalID + ":" + source.CaptureHash + ":" + embedding.Type + ":" + embedding.Label
 	if embedding.ChunkIndex != nil {
@@ -474,6 +617,53 @@ func saveThemes(ctx context.Context, tx pgx.Tx, ownerID string, runID string, th
 				on conflict (theme_cluster_id, source_item_id) do update set
 					evidence = excluded.evidence
 			`, themeID, sourceItemID, theme.Evidence); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func saveInsightClusters(ctx context.Context, tx pgx.Tx, ownerID string, clusters []knowledge.InsightCluster, insightIDs map[string]string) error {
+	for _, cluster := range clusters {
+		var clusterID string
+		err := tx.QueryRow(ctx, `
+			insert into insight_clusters (
+				owner_id,
+				external_cluster_key,
+				label,
+				canonical_insight,
+				cluster_summary,
+				cluster_layer
+			)
+			values ($1, $2, $3, $4, $5, $6)
+			on conflict (owner_id, cluster_layer, external_cluster_key) do update set
+				label = excluded.label,
+				canonical_insight = excluded.canonical_insight,
+				cluster_summary = excluded.cluster_summary,
+				updated_at = now()
+			returning id
+		`, ownerID, cluster.ID, cluster.Label, cluster.CanonicalInsight, cluster.Summary, fallbackText(cluster.Layer, "similar_insight")).Scan(&clusterID)
+		if err != nil {
+			return err
+		}
+		for _, externalInsightID := range cluster.InsightIDs {
+			insightID, ok := insightIDs[externalInsightID]
+			if !ok {
+				continue
+			}
+			if _, err := tx.Exec(ctx, `
+				insert into cluster_memberships (
+					cluster_id,
+					insight_id,
+					similarity_score,
+					membership_confidence
+				)
+				values ($1, $2, $3, 'medium')
+				on conflict (cluster_id, insight_id) do update set
+					similarity_score = excluded.similarity_score,
+					membership_confidence = excluded.membership_confidence
+			`, clusterID, insightID, 1.0); err != nil {
 				return err
 			}
 		}
@@ -648,6 +838,13 @@ func nullableUUID(value string) any {
 		return nil
 	}
 	return value
+}
+
+func fallbackText(value string, fallbackValue string) string {
+	if value != "" {
+		return value
+	}
+	return fallbackValue
 }
 
 func parseOptionalTime(value string) *time.Time {
