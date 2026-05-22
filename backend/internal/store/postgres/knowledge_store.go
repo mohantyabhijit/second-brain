@@ -272,12 +272,11 @@ func upsertSourceObject(ctx context.Context, tx pgx.Tx, sourceItemID string, sou
 			byte_size
 		)
 		values ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-		on conflict (bucket, path) do update set
+		on conflict (source_capture_id, kind, checksum) do update set
 			owner_id = excluded.owner_id,
 			source_item_id = excluded.source_item_id,
-			source_capture_id = excluded.source_capture_id,
-			kind = excluded.kind,
-			checksum = excluded.checksum,
+			bucket = excluded.bucket,
+			path = excluded.path,
 			content_type = excluded.content_type,
 			byte_size = excluded.byte_size,
 			captured_at = now()
