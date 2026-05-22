@@ -5,9 +5,15 @@ import { useKnowledgeInboxController } from "./model/useKnowledgeInboxController
 import { toKnowledgeInboxViewModel } from "./presentation/viewModel";
 import { SecondBrainConsoleView } from "./ui/SecondBrainConsoleView";
 
-export default function KnowledgeInboxContainer() {
+export type KnowledgeInboxPage = "home" | "daily-newsletter" | "original-x-posts" | "original-youtube-posts";
+
+type KnowledgeInboxContainerProps = {
+  initialPage?: KnowledgeInboxPage;
+};
+
+export default function KnowledgeInboxContainer({ initialPage = "home" }: KnowledgeInboxContainerProps) {
   const { run, isRunning, error, runValidation } = useKnowledgeInboxController();
   const model = useMemo(() => toKnowledgeInboxViewModel(run, isRunning, error), [run, isRunning, error]);
 
-  return <SecondBrainConsoleView model={model} onRun={runValidation} />;
+  return <SecondBrainConsoleView activePage={initialPage} model={model} onRun={runValidation} />;
 }
