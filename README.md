@@ -79,8 +79,15 @@ npm run onecli:save-secrets
 ## Validation
 
 ```bash
+npm run ci
+```
+
+For targeted checks:
+
+```bash
+npm run frontend:test
+npm run backend:test
 npm run typecheck
 npm run lint
 npm run build
-npm run backend:test
 ```

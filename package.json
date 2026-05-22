@@ -9,8 +9,11 @@
     "build": "npm --prefix frontend run build",
     "lint": "npm --prefix frontend run lint",
     "typecheck": "npm --prefix frontend run typecheck",
+    "frontend:test": "npm --prefix frontend run test",
     "backend:dev": "bash scripts/run-backend-onecli.sh",
-    "backend:test": "cd backend && go test ./...",
+    "backend:test": "cd backend && GOCACHE=$PWD/../.cache/go-build go test ./...",
+    "test": "npm run frontend:test && npm run backend:test",
+    "ci": "npm run typecheck && npm run lint && npm run test && npm run build",
     "db:migrate": "bash scripts/migrate-supabase.sh",
     "onecli:check": "/Users/abhijitmohanty/.local/bin/onecli auth status && /Users/abhijitmohanty/.local/bin/onecli secrets list --project second-brain",
     "onecli:save-secrets": "bash scripts/save-onecli-secrets.sh"
