@@ -31,8 +31,11 @@ export type IntakeRowViewModel = {
   id: string;
   source: string;
   item: string;
+  body: string;
   author: string;
   status: string;
+  timestamp: string;
+  stats?: string;
   sourceUrl: string;
 };
 
@@ -54,8 +57,11 @@ export type SummaryCardViewModel = {
 export type TranscriptItemViewModel = {
   id: string;
   title: string;
+  author: string;
   statusLabel: string;
   detail: string;
+  timestamp: string;
+  sourceUrl: string;
 };
 
 export type EmptyStateViewModel = {
@@ -119,10 +125,10 @@ const decisionLabels: Record<Decision, string> = {
 };
 
 const navItems: NavigationItemViewModel[] = [
-  { label: "Sources", href: "#sources" },
-  { label: "Intake", href: "#intake" },
-  { label: "Review", href: "#review" },
-  { label: "Quality", href: "#quality" }
+  { label: "Home", href: "/" },
+  { label: "Daily Newsletter", href: "/daily-newsletter" },
+  { label: "Original X Posts", href: "/original-x-posts" },
+  { label: "Original YouTube Posts", href: "/original-youtube-posts" }
 ];
 
 export function toKnowledgeInboxViewModel(run: KnowledgeRunResult, isRunning: boolean, error: string | null): KnowledgeInboxViewModel {
@@ -175,16 +181,22 @@ export function toKnowledgeInboxViewModel(run: KnowledgeRunResult, isRunning: bo
           id: `x-${bookmark.id}`,
           source: "X",
           item: bookmark.title ?? bookmark.text,
+          body: bookmark.previewText ?? bookmark.body ?? bookmark.text,
           author: bookmark.username ? `@${bookmark.username}` : bookmark.authorName ?? bookmark.authorId ?? "Unknown",
           status: bookmark.contentType === "article" ? "Article captured" : "Post captured",
+          timestamp: formatSourceDate(bookmark.createdAt),
+          stats: formatPublicMetrics(bookmark.publicMetrics),
           sourceUrl: bookmark.sourceUrl
         })),
         ...run.youtubeItems.map((item): IntakeRowViewModel => ({
           id: `youtube-${item.videoId}`,
           source: "YouTube",
           item: item.title,
+          body: item.transcriptPreview ?? item.transcriptOriginalPreview ?? item.transcriptError ?? "Transcript not available in this run.",
           author: item.channelTitle ?? "Unknown",
           status: transcriptLabel(item),
+          timestamp: formatSourceDate(item.publishedAt),
+          stats: item.transcriptStatus === "available" ? "transcript available" : item.transcriptStatus,
           sourceUrl: item.sourceUrl
         }))
       ],
@@ -235,8 +247,11 @@ export function toKnowledgeInboxViewModel(run: KnowledgeRunResult, isRunning: bo
       items: run.youtubeItems.map((item) => ({
         id: item.videoId,
         title: item.title,
+        author: item.channelTitle ?? "YouTube",
         statusLabel: transcriptLabel(item),
-        detail: item.transcriptPreview ?? item.transcriptError ?? "Not tested in this run."
+        detail: item.transcriptPreview ?? item.transcriptOriginalPreview ?? item.transcriptError ?? "Not tested in this run.",
+        timestamp: formatSourceDate(item.publishedAt),
+        sourceUrl: item.sourceUrl
       })),
       empty: {
         icon: "youtube",
@@ -280,4 +295,22 @@ function formatGeneratedAt(generatedAt: string) {
     timeStyle: "short",
     timeZone: "UTC"
   }).format(new Date(generatedAt));
+}
+
+function formatSourceDate(value: string | undefined) {
+  if (!value) return "Source date unknown";
+  return new Intl.DateTimeFormat("en", {
+    dateStyle: "medium",
+    timeZone: "UTC"
+  }).format(new Date(value));
+}
+
+function formatPublicMetrics(metrics: Record<string, number> | undefined) {
+  if (!metrics) return undefined;
+
+  return Object.entries(metrics)
+    .filter(([, value]) => value > 0)
+    .slice(0, 3)
+    .map(([key, value]) => `${value} ${key.replace(/_/g, " ")}`)
+    .join(" - ");
 }

@@ -27,8 +27,8 @@ func main() {
 	var store knowledge.Store
 	var closeStore func()
 	if cfg.SupabaseDatabaseURL == "" {
-		logger.Warn("SUPABASE_DB_URL missing; using local knowledge run file", "path", "../data/runtime/latest-knowledge-run.json")
-		store = localfile.New("../data/runtime/latest-knowledge-run.json")
+		logger.Warn("SUPABASE_DB_URL missing; using local knowledge run file", "path", cfg.KnowledgeRunPath)
+		store = localfile.New(cfg.KnowledgeRunPath)
 		closeStore = func() {}
 	} else {
 		postgresStore, err := postgres.New(ctx, cfg.SupabaseDatabaseURL)
