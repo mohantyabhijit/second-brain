@@ -14,6 +14,7 @@ type Config struct {
 	AllowedOrigins               []string
 	OneCLIBin                    string
 	OneCLIGateway                bool
+	KnowledgeRunPath             string
 	YouTubePlaylistID            string
 	YouTubeTranscriptTestVideoID string
 	OpenAITranslationModel       string
@@ -27,6 +28,7 @@ func Load() Config {
 		AllowedOrigins:               csv(value("ALLOWED_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000")),
 		OneCLIBin:                    value("ONECLI_BIN", "/Users/abhijitmohanty/.local/bin/onecli"),
 		OneCLIGateway:                os.Getenv("ONECLI_GATEWAY") == "true",
+		KnowledgeRunPath:             value("KNOWLEDGE_RUN_PATH", "../data/runtime/latest-knowledge-run.json"),
 		YouTubePlaylistID:            value("YOUTUBE_PLAYLIST_ID", defaultYouTubePlaylistID),
 		YouTubeTranscriptTestVideoID: os.Getenv("YOUTUBE_TRANSCRIPT_TEST_VIDEO_ID"),
 		OpenAITranslationModel:       value("OPENAI_TRANSLATION_MODEL", "gpt-4o-mini"),

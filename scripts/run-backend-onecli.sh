@@ -22,6 +22,7 @@ if [[ -z "${SUPABASE_DB_URL:-}" ]]; then
 fi
 
 export ONECLI_GATEWAY=true
+export KNOWLEDGE_RUN_PATH="${KNOWLEDGE_RUN_PATH:-$ROOT_DIR/data/runtime/latest-knowledge-run.json}"
 
 cd "$BACKEND_DIR"
 exec "$ONECLI" run --project "$PROJECT" -- go run ./cmd/api
