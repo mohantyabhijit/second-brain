@@ -10,6 +10,9 @@ export const initialKnowledgeRun: KnowledgeRunResult = {
   xBookmarks: [],
   youtubeItems: [],
   summaries: [],
+  insights: [],
+  actionItems: [],
+  processing: [],
   validation: [
     {
       label: "X bookmark request",

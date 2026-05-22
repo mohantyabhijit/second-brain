@@ -48,8 +48,50 @@ export type KnowledgeSummary = {
   decision: Decision;
   summary: string;
   quote?: string;
-  confidence: "medium" | "low";
+  confidence: "high" | "medium" | "low";
   notes: string[];
+  cacheStatus?: "generated" | "cached";
+  captureHash?: string;
+  promptVersion?: string;
+  model?: string;
+  generatedAt?: string;
+};
+
+export type KnowledgeInsight = {
+  id: string;
+  source: "x" | "youtube";
+  sourceId: string;
+  title: string;
+  insight: string;
+  evidence: string;
+  sourceUrl: string;
+  confidence: "high" | "medium" | "low";
+  cacheStatus?: "generated" | "cached";
+  generatedAt?: string;
+};
+
+export type KnowledgeActionItem = {
+  id: string;
+  source: "x" | "youtube";
+  sourceId: string;
+  title: string;
+  action: string;
+  rationale: string;
+  sourceUrl: string;
+  priority: "high" | "medium" | "low";
+  cacheStatus?: "generated" | "cached";
+  generatedAt?: string;
+};
+
+export type ProcessingEvent = {
+  source: "x" | "youtube";
+  sourceId: string;
+  title: string;
+  captureHash: string;
+  promptVersion: string;
+  model: string;
+  status: "generated" | "cached";
+  detail: string;
 };
 
 export type KnowledgeRunResult = {
@@ -62,6 +104,9 @@ export type KnowledgeRunResult = {
   xBookmarks: SavedXItem[];
   youtubeItems: SavedYouTubeItem[];
   summaries: KnowledgeSummary[];
+  insights: KnowledgeInsight[];
+  actionItems: KnowledgeActionItem[];
+  processing?: ProcessingEvent[];
   validation: ValidationItem[];
   blockers: string[];
 };

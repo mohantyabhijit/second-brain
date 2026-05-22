@@ -35,6 +35,9 @@ function normalizeKnowledgeRun(result: KnowledgeRunResult): KnowledgeRunResult {
     xBookmarks: result.xBookmarks ?? [],
     youtubeItems: result.youtubeItems ?? [],
     summaries: result.summaries ?? [],
+    insights: result.insights ?? [],
+    actionItems: result.actionItems ?? [],
+    processing: result.processing ?? [],
     validation: result.validation ?? [],
     blockers: result.blockers ?? []
   };

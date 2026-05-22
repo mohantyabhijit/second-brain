@@ -17,6 +17,8 @@ backend/Go API
 
 Supabase is the canonical data layer. Neo4j is a derived graph index for multi-hop reasoning and relationship-heavy retrieval.
 
+`design/architecture-overview.md` keeps the current system diagram for the ingestion, artifact, synthesis, and read-model flow.
+
 ## Structure
 
 ```text
@@ -24,12 +26,13 @@ frontend/   Next.js React app
 backend/    Go API, ingestion pipeline, persistence adapters
 supabase/   Database migrations for Postgres and pgvector
 docs/       Architecture and operating notes
+design/     Durable diagrams and design artifacts
 scripts/    Local setup helpers
 ```
 
 ## Local Setup
 
-Apply the Supabase migration in `supabase/migrations`, enable `pgvector`, create private Supabase Storage buckets, then set `SUPABASE_DB_URL` to the pooled Postgres connection string. Neo4j credentials are server-side settings once the graph sync is implemented.
+Apply the Supabase migrations in `supabase/migrations`, enable `pgvector`, create private Supabase Storage buckets, then set `SUPABASE_DB_URL` to the pooled Postgres connection string. Neo4j credentials are server-side settings once the graph sync is implemented.
 
 ```bash
 cp backend/.env.example backend/.env
@@ -67,6 +70,7 @@ export YOUTUBE_API_KEY=...
 export YOUTUBE_ACCESS_TOKEN=...
 export SUPADATA_API_KEY=...
 export OPENAI_API_KEY=...
+export SUPABASE_SERVICE_ROLE_KEY=...
 npm run onecli:save-secrets
 ```
 

@@ -21,7 +21,7 @@ Key paths:
 - `cmd/api`: process bootstrap and graceful shutdown.
 - `internal/config`: environment parsing.
 - `internal/httpapi`: routing, JSON responses, and CORS.
-- `internal/knowledge`: ingestion, transcript checks, validation, and summarization.
+- `internal/knowledge`: source intake, transcript checks, artifact writes, validation, and prompt synthesis.
 - `internal/store/postgres`: Supabase Postgres persistence.
 
 The frontend never uses the Supabase database connection directly. It calls the Go API for product data, and the Go API uses the Supabase pooled Postgres connection string. The frontend may use Supabase publishable keys for auth session cookies only.
@@ -39,15 +39,16 @@ Supabase remains the canonical source of truth. Neo4j is a derived graph index t
 
 ## Relational Database
 
-The first migration creates `public.knowledge_runs`, storing each refresh result as JSONB. This keeps the app flexible while preserving complete run output for later normalization.
+The first migration creates `public.knowledge_runs`, storing each refresh result as JSONB. The normalized source model now sits beside that audit log so the app can avoid recomputing work it has already done.
 
-As the source model stabilizes, split the JSON payload into normalized relational tables such as:
+Core tables:
 
-- `source_items`: saved posts, videos, documents, and external URLs.
+- `source_items`: saved X posts, YouTube videos, documents, and external URLs keyed by source type and external ID.
 - `source_objects`: pointers to Supabase Storage objects and their checksums.
-- `chunks`: retrievable text units with source offsets and provenance.
-- `summaries`: generated summaries tied to source items and chunks.
-- `knowledge_runs`: ingestion and refresh audit log.
+- `knowledge_syntheses`: prompt-versioned summaries, insights, and action items keyed by source item, capture hash, prompt version, and model.
+- `knowledge_runs`: ingestion and refresh audit log for UI replay and debugging.
+
+The recompute rule is: if the same source item has the same capture hash, prompt version, and model, reuse the `knowledge_syntheses` row instead of running synthesis again.
 
 ## Object Storage
 
@@ -56,11 +57,14 @@ Supabase Storage is the object store for source material and generated artifacts
 Use object paths that make provenance obvious, for example:
 
 ```text
-sources/youtube/{video_id}/transcript.json
-sources/web/{source_item_id}/snapshot.html
-sources/documents/{source_item_id}/original.pdf
+youtube/{video_id}/transcript.txt
+x/{tweet_id}/article.txt
+web/{source_item_id}/snapshot.html
+documents/{source_item_id}/original.pdf
 exports/{run_id}/knowledge-pack.json
 ```
+
+The backend writes private objects through Supabase Storage using `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, and `SUPABASE_STORAGE_BUCKET`. Local demos can still record artifact metadata when Storage credentials are missing, but production should treat Storage writes as required.
 
 ## Vector Database
 

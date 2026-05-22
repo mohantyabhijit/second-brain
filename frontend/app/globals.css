@@ -334,6 +334,14 @@ h1 {
   background: var(--blue);
 }
 
+.feed-avatar.insight {
+  background: #5b5bd6;
+}
+
+.feed-avatar.action {
+  background: #0f766e;
+}
+
 .feed-main {
   min-width: 0;
 }
@@ -392,6 +400,14 @@ h1 {
 
 .feed-source.newsletter {
   color: var(--blue-dark);
+}
+
+.feed-source.insight {
+  color: #4545b8;
+}
+
+.feed-source.action {
+  color: #0f766e;
 }
 
 .summary-column p,

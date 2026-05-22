@@ -11,6 +11,9 @@ type Config struct {
 	Env                          string
 	Port                         string
 	SupabaseDatabaseURL          string
+	SupabaseURL                  string
+	SupabaseStorageKey           string
+	SupabaseStorageBucket        string
 	AllowedOrigins               []string
 	OneCLIBin                    string
 	OneCLIGateway                bool
@@ -18,6 +21,7 @@ type Config struct {
 	YouTubePlaylistID            string
 	YouTubeTranscriptTestVideoID string
 	OpenAITranslationModel       string
+	OpenAISynthesisModel         string
 }
 
 func Load() Config {
@@ -25,6 +29,9 @@ func Load() Config {
 		Env:                          value("APP_ENV", "development"),
 		Port:                         value("PORT", "8080"),
 		SupabaseDatabaseURL:          os.Getenv("SUPABASE_DB_URL"),
+		SupabaseURL:                  os.Getenv("SUPABASE_URL"),
+		SupabaseStorageKey:           os.Getenv("SUPABASE_SERVICE_ROLE_KEY"),
+		SupabaseStorageBucket:        value("SUPABASE_STORAGE_BUCKET", "sources"),
 		AllowedOrigins:               csv(value("ALLOWED_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000")),
 		OneCLIBin:                    value("ONECLI_BIN", "/Users/abhijitmohanty/.local/bin/onecli"),
 		OneCLIGateway:                os.Getenv("ONECLI_GATEWAY") == "true",
@@ -32,6 +39,7 @@ func Load() Config {
 		YouTubePlaylistID:            value("YOUTUBE_PLAYLIST_ID", defaultYouTubePlaylistID),
 		YouTubeTranscriptTestVideoID: os.Getenv("YOUTUBE_TRANSCRIPT_TEST_VIDEO_ID"),
 		OpenAITranslationModel:       value("OPENAI_TRANSLATION_MODEL", "gpt-4o-mini"),
+		OpenAISynthesisModel:         value("OPENAI_SYNTHESIS_MODEL", "gpt-4o-mini"),
 	}
 }
 
