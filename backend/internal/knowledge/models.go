@@ -62,6 +62,7 @@ type YouTubeItem struct {
 	TranscriptPreview           string   `json:"transcriptPreview,omitempty"`
 	TranscriptOriginalPreview   string   `json:"transcriptOriginalPreview,omitempty"`
 	TranscriptError             string   `json:"transcriptError,omitempty"`
+	CachedCaptureHash           string   `json:"-"`
 }
 
 type Summary struct {
@@ -198,6 +199,14 @@ type Result struct {
 	Digest       *DigestIssue       `json:"digest,omitempty"`
 	Validation   []ValidationItem   `json:"validation"`
 	Blockers     []string           `json:"blockers"`
+}
+
+type RefreshStatus struct {
+	ID         string     `json:"id"`
+	Status     string     `json:"status"`
+	StartedAt  time.Time  `json:"startedAt"`
+	FinishedAt *time.Time `json:"finishedAt,omitempty"`
+	Error      string     `json:"error,omitempty"`
 }
 
 type SynthesisCacheKey struct {

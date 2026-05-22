@@ -1,7 +1,7 @@
 "use client";
 
 import { startTransition, useCallback, useEffect, useState } from "react";
-import { generateDailyDigest, readLatestKnowledgeRun, runKnowledgeInboxValidation, saveKnowledgeFeedback } from "../api/knowledgeRuns";
+import { generateDailyDigest, readKnowledgeRefreshStatus, readLatestKnowledgeRun, saveKnowledgeFeedback, startKnowledgeInboxRefresh } from "../api/knowledgeRuns";
 import type { FeedbackSignal, KnowledgeRunResult } from "../contracts";
 import { initialKnowledgeRun } from "./initialKnowledgeRun";
 
@@ -29,8 +29,18 @@ export function useKnowledgeInboxController() {
     setIsRunning(true);
     setError(null);
     try {
-      const payload = await runKnowledgeInboxValidation();
-      startTransition(() => setRun(payload));
+      let status = await startKnowledgeInboxRefresh();
+      while (status.status === "running") {
+        await delay(2500);
+        status = await readKnowledgeRefreshStatus();
+      }
+      if (status.status === "failed") {
+        throw new Error(status.error || "Knowledge inbox validation failed.");
+      }
+      const latest = await readLatestKnowledgeRun();
+      if (latest) {
+        startTransition(() => setRun(latest));
+      }
     } catch (runError) {
       setError(runError instanceof Error ? runError.message : "Knowledge inbox validation failed.");
     } finally {
@@ -48,4 +58,10 @@ export function useKnowledgeInboxController() {
   }, []);
 
   return { run, isRunning, error, runValidation, saveFeedback, generateDigest };
+}
+
+function delay(ms: number) {
+  return new Promise((resolve) => {
+    window.setTimeout(resolve, ms);
+  });
 }

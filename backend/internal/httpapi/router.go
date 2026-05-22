@@ -31,13 +31,12 @@ func NewRouter(cfg config.Config, service *knowledge.Service, logger *slog.Logge
 	}
 
 	runInbox := func(w http.ResponseWriter, r *http.Request) {
-		result, err := service.Run(r.Context())
-		if err != nil {
-			logger.Error("run knowledge inbox", "error", err)
-			httputil.Error(w, http.StatusInternalServerError, "run knowledge inbox")
-			return
-		}
-		httputil.JSON(w, http.StatusOK, result)
+		status := service.StartRefresh()
+		httputil.JSON(w, http.StatusAccepted, status)
+	}
+
+	readRefreshStatus := func(w http.ResponseWriter, r *http.Request) {
+		httputil.JSON(w, http.StatusOK, service.RefreshStatus())
 	}
 
 	saveFeedback := func(w http.ResponseWriter, r *http.Request) {
@@ -64,6 +63,7 @@ func NewRouter(cfg config.Config, service *knowledge.Service, logger *slog.Logge
 	}
 
 	mux.HandleFunc("GET /api/knowledge-runs/latest", readLatest)
+	mux.HandleFunc("GET /api/knowledge-runs/refresh", readRefreshStatus)
 	mux.HandleFunc("POST /api/knowledge-runs/refresh", runInbox)
 	mux.HandleFunc("POST /api/feedback", saveFeedback)
 	mux.HandleFunc("POST /api/digests/generate", generateDigest)

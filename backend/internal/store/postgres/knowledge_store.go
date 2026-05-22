@@ -70,9 +70,10 @@ func (s *Store) ReadCachedSyntheses(ctx context.Context, keys []knowledge.Synthe
 			left join source_captures sc on sc.id = ks.source_capture_id
 			where si.source_type = $1
 			  and si.external_id = $2
-			  and coalesce(sc.capture_hash, ks.capture_hash) = $3
+			  and ($3 = '' or coalesce(sc.capture_hash, ks.capture_hash) = $3)
 			  and ks.prompt_version = $4
 			  and ks.model = $5
+			order by ks.generated_at desc
 			limit 1
 		`, string(key.SourceType), key.ExternalID, key.CaptureHash, key.PromptVersion, key.Model).Scan(&summaryRaw, &insightsRaw, &actionsRaw, &generatedAt)
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -96,7 +97,7 @@ func (s *Store) ReadCachedSyntheses(ctx context.Context, keys []knowledge.Synthe
 		cached[key.String()] = knowledge.SynthesisRecord{
 			SourceType:    key.SourceType,
 			ExternalID:    key.ExternalID,
-			CaptureHash:   key.CaptureHash,
+			CaptureHash:   summary.CaptureHash,
 			PromptVersion: key.PromptVersion,
 			Model:         key.Model,
 			Summary:       summary,
@@ -130,6 +131,9 @@ func (s *Store) SaveRun(ctx context.Context, result knowledge.Result, sources []
 			return fmt.Errorf("upsert source capture %s:%s: %w", source.SourceType, source.ExternalID, err)
 		}
 		sourceIDs[sourceKey(source.SourceType, source.ExternalID)] = sourceItemID
+		if source.Cached {
+			continue
+		}
 		var summaryObjectID string
 		if source.Artifact.Path != "" {
 			if _, err := upsertSourceObject(ctx, tx, sourceItemID, sourceCaptureID, source, source.Artifact); err != nil {

@@ -124,6 +124,14 @@ export type DigestIssue = {
 
 export type FeedbackSignal = "useful" | "obvious" | "stale" | "irrelevant" | "more_like_this" | "less_like_this" | "archive" | "expand";
 
+export type RefreshStatus = {
+  id: string;
+  status: "idle" | "running" | "completed" | "failed";
+  startedAt: string;
+  finishedAt?: string;
+  error?: string;
+};
+
 export type KnowledgeRunResult = {
   generatedAt: string;
   sourceStatus: {

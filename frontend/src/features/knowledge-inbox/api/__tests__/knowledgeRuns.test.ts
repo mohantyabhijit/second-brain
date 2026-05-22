@@ -48,16 +48,16 @@ describe("knowledge run API client", () => {
     });
   });
 
-  it("sends refresh requests as POST and surfaces backend errors", async () => {
+  it("starts refresh requests as async POST jobs and surfaces backend errors", async () => {
     vi.stubEnv("NEXT_PUBLIC_API_BASE_URL", "https://api.example.test");
     vi.stubGlobal(
       "fetch",
       vi.fn(async () => new Response("provider unavailable", { status: 503 }))
     );
 
-    const { runKnowledgeInboxValidation } = await import("../knowledgeRuns");
+    const { startKnowledgeInboxRefresh } = await import("../knowledgeRuns");
 
-    await expect(runKnowledgeInboxValidation()).rejects.toThrow("provider unavailable");
+    await expect(startKnowledgeInboxRefresh()).rejects.toThrow("provider unavailable");
     expect(fetch).toHaveBeenCalledWith("https://api.example.test/api/knowledge-runs/refresh", {
       method: "POST",
       headers: { "Content-Type": "application/json" }

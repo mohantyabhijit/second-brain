@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/abhijitmohanty/second-brain/backend/internal/config"
 	"github.com/abhijitmohanty/second-brain/backend/internal/knowledge"
@@ -58,16 +59,21 @@ func TestRouterReadsAndRefreshesKnowledgeRunsWithoutProviderSecrets(t *testing.T
 
 	refresh := httptest.NewRecorder()
 	router.ServeHTTP(refresh, httptest.NewRequest(http.MethodPost, "/api/knowledge-runs/refresh", nil))
-	if refresh.Code != http.StatusOK {
-		t.Fatalf("expected refresh status 200, got %d: %s", refresh.Code, refresh.Body.String())
+	if refresh.Code != http.StatusAccepted {
+		t.Fatalf("expected refresh status 202, got %d: %s", refresh.Code, refresh.Body.String())
 	}
 
-	var result knowledge.Result
-	if err := json.Unmarshal(refresh.Body.Bytes(), &result); err != nil {
+	var status knowledge.RefreshStatus
+	if err := json.Unmarshal(refresh.Body.Bytes(), &status); err != nil {
 		t.Fatalf("decode refresh response: %v", err)
 	}
+	if status.Status != "running" {
+		t.Fatalf("expected running refresh status, got %#v", status)
+	}
+
+	result := waitForLatestRun(t, router)
 	if len(result.Validation) == 0 {
-		t.Fatal("expected validation checks in refresh response")
+		t.Fatal("expected validation checks in persisted refresh response")
 	}
 	if len(result.Blockers) < 2 {
 		t.Fatalf("expected missing-secret blockers, got %#v", result.Blockers)
@@ -87,6 +93,30 @@ func TestRouterReadsAndRefreshesKnowledgeRunsWithoutProviderSecrets(t *testing.T
 	if !strings.Contains(latestAfterRefresh.Body.String(), "\"latest\"") {
 		t.Fatalf("expected persisted latest run payload, got %s", latestAfterRefresh.Body.String())
 	}
+}
+
+func waitForLatestRun(t *testing.T, router http.Handler) knowledge.Result {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		latestAfterRefresh := httptest.NewRecorder()
+		router.ServeHTTP(latestAfterRefresh, httptest.NewRequest(http.MethodGet, "/api/knowledge-runs/latest", nil))
+		if latestAfterRefresh.Code != http.StatusOK {
+			t.Fatalf("expected latest-after-refresh status 200, got %d", latestAfterRefresh.Code)
+		}
+		var payload struct {
+			Latest *knowledge.Result `json:"latest"`
+		}
+		if err := json.Unmarshal(latestAfterRefresh.Body.Bytes(), &payload); err != nil {
+			t.Fatalf("decode latest-after-refresh response: %v", err)
+		}
+		if payload.Latest != nil {
+			return *payload.Latest
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatal("timed out waiting for async refresh to persist latest run")
+	return knowledge.Result{}
 }
 
 func testRouter(t *testing.T) http.Handler {
