@@ -86,13 +86,30 @@ func (candidate sourceCandidate) captureHash() string {
 	return hex.EncodeToString(hash[:])
 }
 
-func (candidate sourceCandidate) storagePath() string {
+func (candidate sourceCandidate) itemContentType() string {
 	switch candidate.sourceType {
 	case SourceTypeX:
-		return "x/" + candidate.externalID + "/" + candidate.artifactKind + ".txt"
+		if candidate.artifactKind == "article" {
+			return "article"
+		}
+		return "post"
 	case SourceTypeYouTube:
-		return "youtube/" + candidate.externalID + "/" + candidate.artifactKind + ".txt"
+		return "video"
 	default:
-		return "unknown/" + candidate.externalID + "/" + candidate.artifactKind + ".txt"
+		return "document"
+	}
+}
+
+func (candidate sourceCandidate) storagePath(captureHash string) string {
+	if captureHash == "" {
+		captureHash = candidate.captureHash()
+	}
+	switch candidate.sourceType {
+	case SourceTypeX:
+		return "x/" + candidate.externalID + "/" + captureHash + "/" + candidate.artifactKind + ".txt"
+	case SourceTypeYouTube:
+		return "youtube/" + candidate.externalID + "/" + captureHash + "/" + candidate.artifactKind + ".txt"
+	default:
+		return "unknown/" + candidate.externalID + "/" + captureHash + "/" + candidate.artifactKind + ".txt"
 	}
 }

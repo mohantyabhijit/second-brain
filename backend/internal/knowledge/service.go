@@ -113,6 +113,9 @@ func (s *Service) Run(ctx context.Context) (Result, error) {
 		result.Insights = append(result.Insights, item.Synthesis.Insights...)
 		result.ActionItems = append(result.ActionItems, item.Synthesis.ActionItems...)
 		result.Artifacts = append(result.Artifacts, item.Artifact)
+		if item.SummaryArtifact.Path != "" {
+			result.Artifacts = append(result.Artifacts, item.SummaryArtifact)
+		}
 		status := "generated"
 		detail := "Generated synthesis for current source capture."
 		if item.Cached {
@@ -121,6 +124,9 @@ func (s *Service) Run(ctx context.Context) (Result, error) {
 		}
 		if item.Artifact.Error != "" {
 			detail += " " + item.Artifact.Error
+		}
+		if item.SummaryArtifact.Error != "" {
+			detail += " " + item.SummaryArtifact.Error
 		}
 		result.Processing = append(result.Processing, ProcessingEvent{
 			Source:        string(item.SourceType),
@@ -262,6 +268,7 @@ func (s *Service) processSourceCandidates(ctx context.Context, candidates []sour
 		}
 		artifact := s.writeEvidenceArtifact(ctx, candidate, captureHash)
 		record, ok := cached[key.String()]
+		artifactRecord := record
 		if ok {
 			record.Summary.CacheStatus = "cached"
 			for index := range record.Insights {
@@ -272,19 +279,23 @@ func (s *Service) processSourceCandidates(ctx context.Context, candidates []sour
 			}
 		} else {
 			record = s.synthesizeCandidate(ctx, candidate, captureHash, "generated")
+			artifactRecord = record
 		}
+		summaryArtifact := s.writeSynthesisArtifact(ctx, candidate, captureHash, artifactRecord)
 		processed = append(processed, ProcessedSource{
-			SourceType:  candidate.sourceType,
-			ExternalID:  candidate.externalID,
-			SourceURL:   candidate.sourceURL,
-			Title:       candidate.title,
-			AuthorName:  candidate.authorName,
-			Username:    candidate.username,
-			PublishedAt: candidate.publishedAt,
-			CaptureHash: captureHash,
-			Artifact:    artifact,
-			Synthesis:   record,
-			Cached:      ok,
+			SourceType:      candidate.sourceType,
+			ContentType:     candidate.itemContentType(),
+			ExternalID:      candidate.externalID,
+			SourceURL:       candidate.sourceURL,
+			Title:           candidate.title,
+			AuthorName:      candidate.authorName,
+			Username:        candidate.username,
+			PublishedAt:     candidate.publishedAt,
+			CaptureHash:     captureHash,
+			Artifact:        artifact,
+			SummaryArtifact: summaryArtifact,
+			Synthesis:       record,
+			Cached:          ok,
 		})
 	}
 	return processed, blockers

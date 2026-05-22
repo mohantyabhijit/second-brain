@@ -44,17 +44,18 @@ The first migration creates `public.knowledge_runs`, storing each refresh result
 Core tables:
 
 - `source_items`: saved X posts, YouTube videos, documents, and external URLs keyed by source type and external ID.
-- `source_objects`: pointers to Supabase Storage objects and their checksums.
-- `source_chunks`: chunked evidence text derived from source objects and generated summaries.
-- `source_embeddings`: pgvector-backed embeddings for chunks, summaries, and extracted entity labels.
-- `knowledge_syntheses`: prompt-versioned summaries, insights, and action items keyed by source item, capture hash, prompt version, and model.
+- `source_captures`: immutable captures of a source item keyed by capture hash, so the same post can change without losing prior processed versions.
+- `source_objects`: pointers to Supabase Storage objects and their checksums, attached to the source item and source capture.
+- `source_chunks`: chunked evidence text derived from source captures and generated summaries.
+- `source_embeddings`: pgvector-backed embeddings for chunks, summaries, and extracted entity labels, scoped to the capture that produced them.
+- `knowledge_syntheses`: prompt-versioned summaries, insights, and action items keyed by source capture, prompt version, and model.
 - `knowledge_runs`: ingestion and refresh audit log for UI replay and debugging.
 - `theme_clusters` and `source_connections_evidence`: derived cross-source understanding for recurring themes and related-source explanations.
 - `feedback_events`: explicit user signals such as useful, obvious, stale, irrelevant, more like this, and less like this.
 - `digest_issues` and `digest_deliveries`: idempotent daily digest generation and email delivery status.
 - `graph_sync_outbox`: pending Neo4j sync events derived from canonical source records.
 
-The recompute rule is: if the same source item has the same capture hash, prompt version, and model, reuse the `knowledge_syntheses` row instead of running synthesis again.
+The recompute rule is: if the same source capture has the same prompt version and model, reuse the `knowledge_syntheses` row instead of running synthesis again. Source identity dedupe uses `(owner_id, source_type, external_id)`; content-version dedupe uses `(source_item_id, capture_hash)`.
 
 ## Object Storage
 
@@ -63,10 +64,11 @@ Supabase Storage is the object store for source material and generated artifacts
 Use object paths that make provenance obvious, for example:
 
 ```text
-youtube/{video_id}/transcript.txt
-x/{tweet_id}/article.txt
-web/{source_item_id}/snapshot.html
+youtube/{video_id}/{capture_hash}/transcript.txt
+x/{tweet_id}/{capture_hash}/article.txt
+web/{source_item_id}/{capture_hash}/snapshot.html
 documents/{source_item_id}/original.pdf
+artifacts/{source_type}/{external_id}/{capture_hash}/{prompt_version}/{model}/summary.json
 exports/{run_id}/knowledge-pack.json
 ```
 
