@@ -17,6 +17,7 @@ type sourceCandidate struct {
 	body         string
 	artifactKind string
 	contentType  string
+	cachedHash   string
 }
 
 func candidatesFromBookmarks(bookmarks []XBookmark) []sourceCandidate {
@@ -70,12 +71,16 @@ func candidatesFromVideos(items []YouTubeItem) []sourceCandidate {
 			body:         body,
 			artifactKind: "transcript",
 			contentType:  "text/plain; charset=utf-8",
+			cachedHash:   item.CachedCaptureHash,
 		})
 	}
 	return candidates
 }
 
 func (candidate sourceCandidate) captureHash() string {
+	if candidate.cachedHash != "" {
+		return candidate.cachedHash
+	}
 	hash := sha256.Sum256([]byte(strings.Join([]string{
 		string(candidate.sourceType),
 		candidate.externalID,

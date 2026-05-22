@@ -1,4 +1,4 @@
-import type { FeedbackSignal, KnowledgeRunResult } from "../contracts";
+import type { FeedbackSignal, KnowledgeRunResult, RefreshStatus } from "../contracts";
 
 const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8080";
 
@@ -24,9 +24,12 @@ export async function readLatestKnowledgeRun() {
   return payload.latest ? normalizeKnowledgeRun(payload.latest) : null;
 }
 
-export async function runKnowledgeInboxValidation() {
-  const payload = await request<KnowledgeRunResult>("/api/knowledge-runs/refresh", { method: "POST" });
-  return normalizeKnowledgeRun(payload);
+export async function startKnowledgeInboxRefresh() {
+  return request<RefreshStatus>("/api/knowledge-runs/refresh", { method: "POST" });
+}
+
+export async function readKnowledgeRefreshStatus() {
+  return request<RefreshStatus>("/api/knowledge-runs/refresh");
 }
 
 export async function saveKnowledgeFeedback(input: {

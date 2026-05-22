@@ -74,18 +74,23 @@ func (s *Store) ReadCachedSyntheses(ctx context.Context, keys []knowledge.Synthe
 			PromptVersion: summary.PromptVersion,
 			Model:         summary.Model,
 		}
-		if _, ok := wanted[key.String()]; !ok {
-			continue
+		cacheKey := key.String()
+		if _, ok := wanted[cacheKey]; !ok {
+			key.CaptureHash = ""
+			cacheKey = key.String()
+			if _, ok := wanted[cacheKey]; !ok {
+				continue
+			}
 		}
 		sourceKey := summary.Source + ":" + summary.ID
 		generatedAt := latest.GeneratedAt
 		if summary.GeneratedAt != nil {
 			generatedAt = *summary.GeneratedAt
 		}
-		cached[key.String()] = knowledge.SynthesisRecord{
+		cached[cacheKey] = knowledge.SynthesisRecord{
 			SourceType:    key.SourceType,
 			ExternalID:    key.ExternalID,
-			CaptureHash:   key.CaptureHash,
+			CaptureHash:   summary.CaptureHash,
 			PromptVersion: key.PromptVersion,
 			Model:         key.Model,
 			Summary:       summary,

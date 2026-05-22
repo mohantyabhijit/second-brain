@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os/exec"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/abhijitmohanty/second-brain/backend/internal/config"
@@ -21,10 +22,12 @@ type Store interface {
 }
 
 type Service struct {
-	cfg    config.Config
-	store  Store
-	client *http.Client
-	logger *slog.Logger
+	cfg       config.Config
+	store     Store
+	client    *http.Client
+	logger    *slog.Logger
+	refreshMu sync.Mutex
+	refresh   RefreshStatus
 }
 
 func NewService(cfg config.Config, store Store, client *http.Client) *Service {
@@ -42,6 +45,55 @@ func (s *Service) SetLogger(logger *slog.Logger) {
 
 func (s *Service) ReadLatest(ctx context.Context) (*Result, error) {
 	return s.store.ReadLatest(ctx)
+}
+
+func (s *Service) StartRefresh() RefreshStatus {
+	s.refreshMu.Lock()
+	if s.refresh.Status == "running" {
+		status := s.refresh
+		s.refreshMu.Unlock()
+		return status
+	}
+	status := RefreshStatus{
+		ID:        fmt.Sprintf("refresh-%d", time.Now().UTC().UnixNano()),
+		Status:    "running",
+		StartedAt: time.Now().UTC(),
+	}
+	s.refresh = status
+	s.refreshMu.Unlock()
+
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+		defer cancel()
+		_, err := s.Run(ctx)
+		finishedAt := time.Now().UTC()
+
+		s.refreshMu.Lock()
+		defer s.refreshMu.Unlock()
+		s.refresh.FinishedAt = &finishedAt
+		if err != nil {
+			s.refresh.Status = "failed"
+			s.refresh.Error = err.Error()
+			return
+		}
+		s.refresh.Status = "completed"
+		s.refresh.Error = ""
+	}()
+
+	return status
+}
+
+func (s *Service) RefreshStatus() RefreshStatus {
+	s.refreshMu.Lock()
+	defer s.refreshMu.Unlock()
+	if s.refresh.ID == "" {
+		return RefreshStatus{
+			ID:        "idle",
+			Status:    "idle",
+			StartedAt: time.Now().UTC(),
+		}
+	}
+	return s.refresh
 }
 
 func (s *Service) Run(ctx context.Context) (Result, error) {
@@ -66,34 +118,61 @@ func (s *Service) Run(ctx context.Context) (Result, error) {
 	result.SourceStatus.YouTube = SourceNeedsSecrets
 	s.logger.Info("onecli status checked", "status", result.SourceStatus.OneCLI)
 
-	xStart := time.Now()
-	xBookmarks, err := s.fetchXBookmarks(ctx, 10)
-	if err != nil {
-		s.logger.Warn("x bookmark fetch blocked", "duration_ms", time.Since(xStart).Milliseconds(), "error", err)
-		blockers = append(blockers, err.Error())
+	type xFetchResult struct {
+		items    []XBookmark
+		err      error
+		duration time.Duration
+	}
+	type youtubeFetchResult struct {
+		items    []YouTubeItem
+		err      error
+		blocked  bool
+		duration time.Duration
+	}
+	xFetch := make(chan xFetchResult, 1)
+	youtubeFetch := make(chan youtubeFetchResult, 1)
+
+	go func() {
+		xStart := time.Now()
+		items, err := s.fetchXBookmarks(ctx, 10)
+		xFetch <- xFetchResult{items: items, err: err, duration: time.Since(xStart)}
+	}()
+
+	if s.cfg.YouTubePlaylistID == "" {
+		youtubeFetch <- youtubeFetchResult{
+			err:     fmt.Errorf("YOUTUBE_PLAYLIST_ID is missing. Use a dedicated Second Brain Inbox playlist because Watch Later is blocked by the YouTube API."),
+			blocked: true,
+		}
 	} else {
-		s.logger.Info("x bookmark fetch completed", "duration_ms", time.Since(xStart).Milliseconds(), "count", len(xBookmarks))
+		go func() {
+			youtubeStart := time.Now()
+			items, err := s.fetchYouTubeInboxItems(ctx, s.cfg.YouTubePlaylistID, s.cfg.YouTubeTranscriptTestVideoID)
+			youtubeFetch <- youtubeFetchResult{items: items, err: err, blocked: err != nil, duration: time.Since(youtubeStart)}
+		}()
 	}
 
-	youtubeBlocked := false
-	youtubeItems := []YouTubeItem{}
-	if s.cfg.YouTubePlaylistID == "" {
-		blockers = append(blockers, "YOUTUBE_PLAYLIST_ID is missing. Use a dedicated Second Brain Inbox playlist because Watch Later is blocked by the YouTube API.")
+	xResult := <-xFetch
+	xBookmarks := xResult.items
+	if xResult.err != nil {
+		s.logger.Warn("x bookmark fetch blocked", "duration_ms", xResult.duration.Milliseconds(), "error", xResult.err)
+		blockers = append(blockers, xResult.err.Error())
 	} else {
-		youtubeStart := time.Now()
-		youtubeItems, err = s.fetchYouTubeInboxItems(ctx, s.cfg.YouTubePlaylistID, s.cfg.YouTubeTranscriptTestVideoID)
-		if err != nil {
-			youtubeBlocked = true
-			s.logger.Warn("youtube inbox fetch blocked", "duration_ms", time.Since(youtubeStart).Milliseconds(), "error", err)
-			blockers = append(blockers, err.Error())
-		} else {
-			s.logger.Info(
-				"youtube inbox fetch completed",
-				"duration_ms", time.Since(youtubeStart).Milliseconds(),
-				"count", len(youtubeItems),
-				"transcripts_available", countAvailableTranscripts(youtubeItems),
-			)
-		}
+		s.logger.Info("x bookmark fetch completed", "duration_ms", xResult.duration.Milliseconds(), "count", len(xBookmarks))
+	}
+
+	youtubeResult := <-youtubeFetch
+	youtubeBlocked := youtubeResult.blocked
+	youtubeItems := youtubeResult.items
+	if youtubeResult.err != nil {
+		s.logger.Warn("youtube inbox fetch blocked", "duration_ms", youtubeResult.duration.Milliseconds(), "error", youtubeResult.err)
+		blockers = append(blockers, youtubeResult.err.Error())
+	} else {
+		s.logger.Info(
+			"youtube inbox fetch completed",
+			"duration_ms", youtubeResult.duration.Milliseconds(),
+			"count", len(youtubeItems),
+			"transcripts_available", countAvailableTranscripts(youtubeItems),
+		)
 	}
 
 	result.XBookmarks = xBookmarks
@@ -112,7 +191,9 @@ func (s *Service) Run(ctx context.Context) (Result, error) {
 		result.Summaries = append(result.Summaries, item.Synthesis.Summary)
 		result.Insights = append(result.Insights, item.Synthesis.Insights...)
 		result.ActionItems = append(result.ActionItems, item.Synthesis.ActionItems...)
-		result.Artifacts = append(result.Artifacts, item.Artifact)
+		if item.Artifact.Path != "" {
+			result.Artifacts = append(result.Artifacts, item.Artifact)
+		}
 		if item.SummaryArtifact.Path != "" {
 			result.Artifacts = append(result.Artifacts, item.SummaryArtifact)
 		}
@@ -256,49 +337,85 @@ func (s *Service) processSourceCandidates(ctx context.Context, candidates []sour
 		cached = map[string]SynthesisRecord{}
 	}
 
-	processed := make([]ProcessedSource, 0, len(candidates))
-	for _, candidate := range candidates {
-		captureHash := captureHashes[string(candidate.sourceType)+":"+candidate.externalID]
-		key := SynthesisCacheKey{
-			SourceType:    candidate.sourceType,
-			ExternalID:    candidate.externalID,
-			CaptureHash:   captureHash,
-			PromptVersion: synthesisPromptVersion,
-			Model:         model,
-		}
-		artifact := s.writeEvidenceArtifact(ctx, candidate, captureHash)
-		record, ok := cached[key.String()]
-		artifactRecord := record
-		if ok {
-			record.Summary.CacheStatus = "cached"
-			for index := range record.Insights {
-				record.Insights[index].CacheStatus = "cached"
-			}
-			for index := range record.ActionItems {
-				record.ActionItems[index].CacheStatus = "cached"
-			}
-		} else {
-			record = s.synthesizeCandidate(ctx, candidate, captureHash, "generated")
-			artifactRecord = record
-		}
-		summaryArtifact := s.writeSynthesisArtifact(ctx, candidate, captureHash, artifactRecord)
-		processed = append(processed, ProcessedSource{
-			SourceType:      candidate.sourceType,
-			ContentType:     candidate.itemContentType(),
-			ExternalID:      candidate.externalID,
-			SourceURL:       candidate.sourceURL,
-			Title:           candidate.title,
-			AuthorName:      candidate.authorName,
-			Username:        candidate.username,
-			PublishedAt:     candidate.publishedAt,
-			CaptureHash:     captureHash,
-			Artifact:        artifact,
-			SummaryArtifact: summaryArtifact,
-			Synthesis:       record,
-			Cached:          ok,
-		})
+	processed := make([]ProcessedSource, len(candidates))
+	jobs := make(chan int)
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+	workerCount := 4
+	if len(candidates) < workerCount {
+		workerCount = len(candidates)
 	}
+	for worker := 0; worker < workerCount; worker++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for index := range jobs {
+				candidate := candidates[index]
+				source := s.processSourceCandidate(ctx, candidate, captureHashes[string(candidate.sourceType)+":"+candidate.externalID], cached)
+				mu.Lock()
+				processed[index] = source
+				mu.Unlock()
+			}
+		}()
+	}
+	for index := range candidates {
+		jobs <- index
+	}
+	close(jobs)
+	wg.Wait()
 	return processed, blockers
+}
+
+func (s *Service) processSourceCandidate(ctx context.Context, candidate sourceCandidate, captureHash string, cached map[string]SynthesisRecord) ProcessedSource {
+	key := SynthesisCacheKey{
+		SourceType:    candidate.sourceType,
+		ExternalID:    candidate.externalID,
+		CaptureHash:   captureHash,
+		PromptVersion: synthesisPromptVersion,
+		Model:         s.synthesisModel(),
+	}
+	record, ok := cached[key.String()]
+	if ok {
+		record.Summary.CacheStatus = "cached"
+		for index := range record.Insights {
+			record.Insights[index].CacheStatus = "cached"
+		}
+		for index := range record.ActionItems {
+			record.ActionItems[index].CacheStatus = "cached"
+		}
+		return ProcessedSource{
+			SourceType:  candidate.sourceType,
+			ContentType: candidate.itemContentType(),
+			ExternalID:  candidate.externalID,
+			SourceURL:   candidate.sourceURL,
+			Title:       candidate.title,
+			AuthorName:  candidate.authorName,
+			Username:    candidate.username,
+			PublishedAt: candidate.publishedAt,
+			CaptureHash: captureHash,
+			Synthesis:   record,
+			Cached:      true,
+		}
+	}
+
+	artifact := s.writeEvidenceArtifact(ctx, candidate, captureHash)
+	record = s.synthesizeCandidate(ctx, candidate, captureHash, "generated")
+	summaryArtifact := s.writeSynthesisArtifact(ctx, candidate, captureHash, record)
+	return ProcessedSource{
+		SourceType:      candidate.sourceType,
+		ContentType:     candidate.itemContentType(),
+		ExternalID:      candidate.externalID,
+		SourceURL:       candidate.sourceURL,
+		Title:           candidate.title,
+		AuthorName:      candidate.authorName,
+		Username:        candidate.username,
+		PublishedAt:     candidate.publishedAt,
+		CaptureHash:     captureHash,
+		Artifact:        artifact,
+		SummaryArtifact: summaryArtifact,
+		Synthesis:       record,
+		Cached:          false,
+	}
 }
 
 func (s *Service) oneCLIStatus(ctx context.Context) SourceStatus {

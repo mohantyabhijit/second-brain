@@ -57,8 +57,45 @@ func (s *Service) fetchYouTubeInboxItems(ctx context.Context, playlistID string,
 		return nil, err
 	}
 
+	cachedVideos := map[string]SynthesisRecord{}
+	keys := make([]SynthesisCacheKey, 0, len(items))
+	for _, item := range items {
+		if transcriptVideoID != "" && item.VideoID != transcriptVideoID {
+			continue
+		}
+		keys = append(keys, SynthesisCacheKey{
+			SourceType:    SourceTypeYouTube,
+			ExternalID:    item.VideoID,
+			PromptVersion: synthesisPromptVersion,
+			Model:         s.synthesisModel(),
+		})
+	}
+	if len(keys) > 0 {
+		cached, err := s.store.ReadCachedSyntheses(ctx, keys)
+		if err != nil {
+			s.logger.Warn("youtube synthesis cache lookup failed", "error", err)
+		} else {
+			for _, key := range keys {
+				if record, ok := cached[key.String()]; ok {
+					cachedVideos[key.ExternalID] = record
+				}
+			}
+		}
+	}
+
 	for index, item := range items {
 		if transcriptVideoID != "" && item.VideoID != transcriptVideoID {
+			continue
+		}
+		if record, ok := cachedVideos[item.VideoID]; ok {
+			items[index] = mergeTranscript(item, YouTubeItem{
+				TranscriptStatus:            "available",
+				TranscriptPreview:           fallback(record.Summary.Quote, record.Summary.Summary),
+				TranscriptLang:              "cached",
+				TranscriptSourceLang:        "cached",
+				TranscriptTranslationStatus: "none",
+				CachedCaptureHash:           record.CaptureHash,
+			})
 			continue
 		}
 		transcript := s.fetchSupadataTranscript(ctx, item.VideoID)

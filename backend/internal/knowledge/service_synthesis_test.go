@@ -87,4 +87,12 @@ func TestProcessSourceCandidatesUsesCachedSynthesis(t *testing.T) {
 	if processed[0].Synthesis.Summary.CacheStatus != "cached" {
 		t.Fatalf("expected cached status, got %q", processed[0].Synthesis.Summary.CacheStatus)
 	}
+	if processed[0].Artifact.Path != "" || processed[0].SummaryArtifact.Path != "" {
+		t.Fatalf("expected cached source to skip artifact rewrites, got %#v %#v", processed[0].Artifact, processed[0].SummaryArtifact)
+	}
+
+	enriched := service.enrichProcessedSources(context.Background(), processed)
+	if len(enriched[0].Embeddings) != 0 {
+		t.Fatalf("expected cached source to skip embedding recompute, got %d embedding(s)", len(enriched[0].Embeddings))
+	}
 }

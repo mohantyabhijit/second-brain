@@ -40,6 +40,12 @@ type embeddingResponse struct {
 }
 
 func (s *Service) enrichProcessedSources(ctx context.Context, sources []ProcessedSource) []ProcessedSource {
+	type embeddingPlan struct {
+		sourceIndex int
+		recordIndex int
+		text        string
+	}
+	plans := []embeddingPlan{}
 	for index := range sources {
 		sources[index].OwnerID = s.cfg.OwnerID
 		sources[index].Chunks = chunkText(sources[index].Synthesis.Summary.ID, sources[index].Synthesis.Summary.Summary+" "+sources[index].Synthesis.Summary.Quote)
@@ -52,44 +58,50 @@ func (s *Service) enrichProcessedSources(ctx context.Context, sources []Processe
 			sources[index].Synthesis.Summary.Quote,
 		}, " "), 8)
 		sources[index].Entities = entitiesFromKeywords(sources[index].Keywords, sources[index].Synthesis.Summary.Quote)
-		sources[index].Embeddings = s.embeddingRecordsForSource(ctx, sources[index])
+		if sources[index].Cached {
+			continue
+		}
+
+		model := s.embeddingModel()
+		if len(sources[index].Chunks) > 0 {
+			chunk := sources[index].Chunks[0]
+			chunkIndex := chunk.Index
+			sources[index].Embeddings = append(sources[index].Embeddings, EmbeddingRecord{
+				Type:       "chunk",
+				Label:      sources[index].Title,
+				Model:      model,
+				Dimensions: embeddingDimensions,
+				ChunkIndex: &chunkIndex,
+			})
+			plans = append(plans, embeddingPlan{sourceIndex: index, recordIndex: len(sources[index].Embeddings) - 1, text: chunk.Content})
+		}
+		sources[index].Embeddings = append(sources[index].Embeddings, EmbeddingRecord{
+			Type:       "summary",
+			Label:      sources[index].Title,
+			Model:      model,
+			Dimensions: embeddingDimensions,
+		})
+		plans = append(plans, embeddingPlan{sourceIndex: index, recordIndex: len(sources[index].Embeddings) - 1, text: sources[index].Synthesis.Summary.Summary})
+		for _, entity := range sources[index].Entities {
+			sources[index].Embeddings = append(sources[index].Embeddings, EmbeddingRecord{
+				Type:       "entity",
+				Label:      entity.Label,
+				Model:      model,
+				Dimensions: embeddingDimensions,
+			})
+			plans = append(plans, embeddingPlan{sourceIndex: index, recordIndex: len(sources[index].Embeddings) - 1, text: entity.Label + " " + entity.Evidence})
+		}
+	}
+
+	inputs := make([]string, 0, len(plans))
+	for _, plan := range plans {
+		inputs = append(inputs, plan.text)
+	}
+	vectors := s.embeddingLiterals(ctx, inputs)
+	for index, plan := range plans {
+		sources[plan.sourceIndex].Embeddings[plan.recordIndex].Vector = vectors[index]
 	}
 	return sources
-}
-
-func (s *Service) embeddingRecordsForSource(ctx context.Context, source ProcessedSource) []EmbeddingRecord {
-	records := []EmbeddingRecord{}
-	model := s.embeddingModel()
-
-	if len(source.Chunks) > 0 {
-		chunk := source.Chunks[0]
-		chunkIndex := chunk.Index
-		records = append(records, EmbeddingRecord{
-			Type:       "chunk",
-			Label:      source.Title,
-			Model:      model,
-			Dimensions: embeddingDimensions,
-			Vector:     s.embeddingLiteral(ctx, chunk.Content),
-			ChunkIndex: &chunkIndex,
-		})
-	}
-	records = append(records, EmbeddingRecord{
-		Type:       "summary",
-		Label:      source.Title,
-		Model:      model,
-		Dimensions: embeddingDimensions,
-		Vector:     s.embeddingLiteral(ctx, source.Synthesis.Summary.Summary),
-	})
-	for _, entity := range source.Entities {
-		records = append(records, EmbeddingRecord{
-			Type:       "entity",
-			Label:      entity.Label,
-			Model:      model,
-			Dimensions: embeddingDimensions,
-			Vector:     s.embeddingLiteral(ctx, entity.Label+" "+entity.Evidence),
-		})
-	}
-	return records
 }
 
 func (s *Service) embeddingModel() string {
@@ -99,33 +111,56 @@ func (s *Service) embeddingModel() string {
 	return s.cfg.OpenAIEmbeddingModel
 }
 
-func (s *Service) embeddingLiteral(ctx context.Context, text string) string {
+func (s *Service) embeddingLiterals(ctx context.Context, texts []string) []string {
+	if len(texts) == 0 {
+		return nil
+	}
 	if strings.TrimSpace(os.Getenv("OPENAI_API_KEY")) == "" && !s.cfg.OneCLIGateway {
-		return deterministicEmbeddingLiteral(text)
+		return deterministicEmbeddingLiterals(texts)
 	}
 
+	inputs := make([]string, 0, len(texts))
+	for _, text := range texts {
+		inputs = append(inputs, truncate(text, 6000))
+	}
 	requestBody := map[string]any{
 		"model": s.cfg.OpenAIEmbeddingModel,
-		"input": truncate(text, 6000),
+		"input": inputs,
 	}
 	raw, err := json.Marshal(requestBody)
 	if err != nil {
-		return deterministicEmbeddingLiteral(text)
+		return deterministicEmbeddingLiterals(texts)
 	}
 	headers := authHeader("OPENAI_API_KEY", "Bearer {value}")
 	headers.Set("Content-Type", "application/json")
 
 	var response embeddingResponse
 	if err := s.requestJSON(ctx, http.MethodPost, "https://api.openai.com/v1/embeddings", headers, bytes.NewReader(raw), &response); err != nil {
-		return deterministicEmbeddingLiteral(text)
+		return deterministicEmbeddingLiterals(texts)
 	}
 	if response.Error != nil && response.Error.Message != "" {
-		return deterministicEmbeddingLiteral(text)
+		return deterministicEmbeddingLiterals(texts)
 	}
-	if len(response.Data) == 0 || len(response.Data[0].Embedding) != embeddingDimensions {
-		return deterministicEmbeddingLiteral(text)
+	if len(response.Data) != len(texts) {
+		return deterministicEmbeddingLiterals(texts)
 	}
-	return vectorLiteral(response.Data[0].Embedding)
+	literals := make([]string, 0, len(response.Data))
+	for index, item := range response.Data {
+		if len(item.Embedding) != embeddingDimensions {
+			literals = append(literals, deterministicEmbeddingLiteral(texts[index]))
+			continue
+		}
+		literals = append(literals, vectorLiteral(item.Embedding))
+	}
+	return literals
+}
+
+func deterministicEmbeddingLiterals(texts []string) []string {
+	literals := make([]string, 0, len(texts))
+	for _, text := range texts {
+		literals = append(literals, deterministicEmbeddingLiteral(text))
+	}
+	return literals
 }
 
 func deterministicEmbeddingLiteral(text string) string {
