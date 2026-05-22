@@ -38,6 +38,7 @@ remote_base="/srv/second-brain"
 remote_release="$remote_base/frontend/releases/$release"
 remote_tmp="$remote_base/tmp/$release"
 
+"${SSH[@]}" "sudo mkdir -p '$remote_base' && sudo chown -R '$DEPLOY_USER:$DEPLOY_USER' '$remote_base'"
 "${SSH[@]}" "mkdir -p '$remote_release' '$remote_tmp' '$remote_base/api' '$remote_base/frontend/releases' '$remote_base/migrations'"
 
 mkdir -p "$ARTIFACT_DIR/frontend"
