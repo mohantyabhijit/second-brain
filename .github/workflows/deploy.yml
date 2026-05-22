@@ -1,0 +1,152 @@
+name: Deploy Second Brain
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: second-brain-production
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: 24
+  GO_VERSION: "1.23.x"
+  SECOND_BRAIN_BASE_PATH: /second-brain
+  SECOND_BRAIN_API_BASE_URL: /second-brain
+
+jobs:
+  build:
+    name: Build frontend and API
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache-dependency-path: backend/go.sum
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run CI checks
+        run: npm run ci
+
+      - name: Build static frontend for /second-brain
+        env:
+          NEXT_OUTPUT: export
+          NEXT_PUBLIC_BASE_PATH: ${{ env.SECOND_BRAIN_BASE_PATH }}
+          NEXT_PUBLIC_API_BASE_URL: ${{ env.SECOND_BRAIN_API_BASE_URL }}
+        run: npm --prefix frontend run build
+
+      - name: Build Linux API binaries
+        run: |
+          mkdir -p dist
+          cd backend
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o ../dist/second-brain-api ./cmd/api
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o ../dist/second-brain-migrate ./cmd/migrate
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o ../dist/second-brain-digest ./cmd/digest
+
+      - name: Package deployment artifacts
+        run: |
+          mkdir -p artifacts
+          tar -C frontend/out -czf artifacts/frontend.tgz .
+          tar -C dist -czf artifacts/api.tgz second-brain-api second-brain-migrate second-brain-digest
+          tar -C supabase -czf artifacts/migrations.tgz migrations
+
+      - name: Upload deployment artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: second-brain-deploy
+          path: artifacts
+          if-no-files-found: error
+
+  deploy:
+    name: Deploy to VPS
+    runs-on: ubuntu-latest
+    needs: build
+    environment:
+      name: production
+      url: https://abhijitmohanty.com/second-brain/
+
+    env:
+      DEPLOY_HOST: ${{ secrets.DO_HOST }}
+      DEPLOY_PORT: ${{ secrets.DO_PORT }}
+      DEPLOY_USER: ${{ secrets.DO_USER }}
+      DEPLOY_SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      ONECLI_API_KEY: ${{ secrets.ONECLI_API_KEY }}
+      SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      APP_USER_ID: ${{ secrets.APP_USER_ID }}
+      SUPABASE_STORAGE_BUCKET: ${{ secrets.SUPABASE_STORAGE_BUCKET }}
+      YOUTUBE_PLAYLIST_ID: ${{ secrets.YOUTUBE_PLAYLIST_ID }}
+      YOUTUBE_TRANSCRIPT_TEST_VIDEO_ID: ${{ secrets.YOUTUBE_TRANSCRIPT_TEST_VIDEO_ID }}
+      DIGEST_EMAIL_TO: ${{ secrets.DIGEST_EMAIL_TO }}
+      DIGEST_EMAIL_FROM: ${{ secrets.DIGEST_EMAIL_FROM }}
+      RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+      X_CLIENT_ID: ${{ secrets.X_CLIENT_ID }}
+      X_CLIENT_SECRET: ${{ secrets.X_CLIENT_SECRET }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Download deployment artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: second-brain-deploy
+          path: artifacts
+
+      - name: Create production env file
+        run: |
+          mkdir -p artifacts/runtime
+          quote() {
+            printf "'%s'" "$(printf '%s' "$2" | sed "s/'/'\\\\''/g")"
+          }
+          write_var() {
+            printf '%s=' "$1" >> artifacts/runtime/second-brain.env
+            quote "$1" "$2" >> artifacts/runtime/second-brain.env
+            printf '\n' >> artifacts/runtime/second-brain.env
+          }
+          : > artifacts/runtime/second-brain.env
+          write_var APP_ENV production
+          write_var PORT 8090
+          write_var APP_USER_ID "$APP_USER_ID"
+          write_var ALLOWED_ORIGINS "https://abhijitmohanty.com,https://www.abhijitmohanty.com"
+          write_var SUPABASE_DB_URL "$SUPABASE_DB_URL"
+          write_var SUPABASE_URL "$SUPABASE_URL"
+          write_var SUPABASE_SERVICE_ROLE_KEY "$SUPABASE_SERVICE_ROLE_KEY"
+          write_var SUPABASE_STORAGE_BUCKET "${SUPABASE_STORAGE_BUCKET:-sources}"
+          write_var ONECLI_BIN /home/deploy/.local/bin/onecli
+          write_var ONECLI_GATEWAY true
+          write_var ONECLI_PROJECT second-brain
+          write_var ONECLI_X_ACCESS_SECRET_ID c280ee57-4e2e-47dd-b768-85b2db002ee8
+          write_var ONECLI_X_REFRESH_SECRET_ID 78842398-70d0-47cc-b517-8909e26e76ff
+          write_var YOUTUBE_PLAYLIST_ID "$YOUTUBE_PLAYLIST_ID"
+          write_var YOUTUBE_TRANSCRIPT_TEST_VIDEO_ID "$YOUTUBE_TRANSCRIPT_TEST_VIDEO_ID"
+          write_var OPENAI_TRANSLATION_MODEL gpt-4o-mini
+          write_var OPENAI_SYNTHESIS_MODEL gpt-4o-mini
+          write_var OPENAI_EMBEDDING_MODEL text-embedding-3-small
+          write_var DIGEST_TIMEZONE Asia/Singapore
+          write_var DIGEST_EMAIL_TO "$DIGEST_EMAIL_TO"
+          write_var DIGEST_EMAIL_FROM "${DIGEST_EMAIL_FROM:-Second Brain <digest@second-brain.local>}"
+          write_var RESEND_API_KEY "$RESEND_API_KEY"
+          write_var X_CLIENT_ID "$X_CLIENT_ID"
+          write_var X_CLIENT_SECRET "$X_CLIENT_SECRET"
+          printf '%s' "$ONECLI_API_KEY" > artifacts/runtime/onecli-api-key
+          chmod 600 artifacts/runtime/onecli-api-key
+
+      - name: Deploy artifacts to VPS
+        run: bash scripts/deploy-vps.sh
