@@ -11,6 +11,7 @@
     "typecheck": "npm --prefix frontend run typecheck",
     "frontend:test": "npm --prefix frontend run test",
     "backend:dev": "bash scripts/run-backend-onecli.sh",
+    "digest:run": "bash scripts/run-digest-onecli.sh",
     "backend:test": "cd backend && GOCACHE=$PWD/../.cache/go-build go test ./...",
     "test": "npm run frontend:test && npm run backend:test",
     "ci": "npm run typecheck && npm run lint && npm run test && npm run build",

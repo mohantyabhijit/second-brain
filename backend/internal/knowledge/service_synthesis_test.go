@@ -24,6 +24,14 @@ func (s cacheStore) SaveRun(ctx context.Context, result Result, sources []Proces
 	return nil
 }
 
+func (s cacheStore) SaveFeedback(ctx context.Context, event FeedbackEvent) error {
+	return nil
+}
+
+func (s cacheStore) SaveDigest(ctx context.Context, digest DigestIssue) (*DigestIssue, error) {
+	return &digest, nil
+}
+
 func TestProcessSourceCandidatesUsesCachedSynthesis(t *testing.T) {
 	t.Setenv("OPENAI_API_KEY", "")
 	candidate := sourceCandidate{

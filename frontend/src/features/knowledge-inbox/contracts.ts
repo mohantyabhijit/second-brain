@@ -94,6 +94,36 @@ export type ProcessingEvent = {
   detail: string;
 };
 
+export type ThemeCluster = {
+  id: string;
+  label: string;
+  evidence: string;
+  score: number;
+  sources: string[];
+};
+
+export type SourceConnection = {
+  id: string;
+  leftSourceId: string;
+  rightSourceId: string;
+  relationship: string;
+  evidence: string;
+  confidence: "high" | "medium" | "low";
+  sharedSignals: string[];
+};
+
+export type DigestIssue = {
+  id?: string;
+  digestDate: string;
+  scheduledFor: string;
+  idempotencyKey: string;
+  subject: string;
+  bodyMarkdown: string;
+  status: "generated" | "sent" | "failed" | "blocked";
+};
+
+export type FeedbackSignal = "useful" | "obvious" | "stale" | "irrelevant" | "more_like_this" | "less_like_this" | "archive" | "expand";
+
 export type KnowledgeRunResult = {
   generatedAt: string;
   sourceStatus: {
@@ -107,6 +137,9 @@ export type KnowledgeRunResult = {
   insights: KnowledgeInsight[];
   actionItems: KnowledgeActionItem[];
   processing?: ProcessingEvent[];
+  themes?: ThemeCluster[];
+  connections?: SourceConnection[];
+  digest?: DigestIssue;
   validation: ValidationItem[];
   blockers: string[];
 };

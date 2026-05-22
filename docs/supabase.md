@@ -47,3 +47,11 @@ Use `pgvector` tables for semantic search over retrieval units. Each embedding r
 - creation timestamp and run ID.
 
 Do not mix embeddings from different models inside one index. If the model changes, create a new column/table or rebuild the index.
+
+## Digest, Feedback, and Graph Sync
+
+The current schema keeps the single-user default owner ID while making every new durable table owner-scoped. `source_connections` stores provider connection metadata and token references, not plaintext OAuth tokens.
+
+Feedback events are append-only in `feedback_events`. Daily digests are upserted into `digest_issues` by owner and idempotency key, with delivery attempts tracked separately in `digest_deliveries`.
+
+Neo4j sync starts from `graph_sync_outbox`. The graph is derived from Supabase records and source artifacts, so failed graph writes can be retried or rebuilt without losing canonical source truth.

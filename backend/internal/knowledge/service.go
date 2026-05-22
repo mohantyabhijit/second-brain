@@ -3,8 +3,10 @@ package knowledge
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"os/exec"
+	"strings"
 	"time"
 
 	"github.com/abhijitmohanty/second-brain/backend/internal/config"
@@ -14,19 +16,28 @@ type Store interface {
 	ReadLatest(ctx context.Context) (*Result, error)
 	ReadCachedSyntheses(ctx context.Context, keys []SynthesisCacheKey) (map[string]SynthesisRecord, error)
 	SaveRun(ctx context.Context, result Result, sources []ProcessedSource) error
+	SaveFeedback(ctx context.Context, event FeedbackEvent) error
+	SaveDigest(ctx context.Context, digest DigestIssue) (*DigestIssue, error)
 }
 
 type Service struct {
 	cfg    config.Config
 	store  Store
 	client *http.Client
+	logger *slog.Logger
 }
 
 func NewService(cfg config.Config, store Store, client *http.Client) *Service {
 	if client == nil {
 		client = http.DefaultClient
 	}
-	return &Service{cfg: cfg, store: store, client: client}
+	return &Service{cfg: cfg, store: store, client: client, logger: slog.Default()}
+}
+
+func (s *Service) SetLogger(logger *slog.Logger) {
+	if logger != nil {
+		s.logger = logger
+	}
 }
 
 func (s *Service) ReadLatest(ctx context.Context) (*Result, error) {
@@ -34,6 +45,7 @@ func (s *Service) ReadLatest(ctx context.Context) (*Result, error) {
 }
 
 func (s *Service) Run(ctx context.Context) (Result, error) {
+	start := time.Now()
 	blockers := []string{}
 	result := Result{
 		GeneratedAt:  time.Now().UTC(),
@@ -47,14 +59,20 @@ func (s *Service) Run(ctx context.Context) (Result, error) {
 		Validation:   []ValidationItem{},
 		Blockers:     []string{},
 	}
+	s.logger.Info("knowledge refresh started", "owner_id", s.cfg.OwnerID)
 
 	result.SourceStatus.OneCLI = s.oneCLIStatus(ctx)
 	result.SourceStatus.X = SourceNeedsSecrets
 	result.SourceStatus.YouTube = SourceNeedsSecrets
+	s.logger.Info("onecli status checked", "status", result.SourceStatus.OneCLI)
 
+	xStart := time.Now()
 	xBookmarks, err := s.fetchXBookmarks(ctx, 10)
 	if err != nil {
+		s.logger.Warn("x bookmark fetch blocked", "duration_ms", time.Since(xStart).Milliseconds(), "error", err)
 		blockers = append(blockers, err.Error())
+	} else {
+		s.logger.Info("x bookmark fetch completed", "duration_ms", time.Since(xStart).Milliseconds(), "count", len(xBookmarks))
 	}
 
 	youtubeBlocked := false
@@ -62,17 +80,33 @@ func (s *Service) Run(ctx context.Context) (Result, error) {
 	if s.cfg.YouTubePlaylistID == "" {
 		blockers = append(blockers, "YOUTUBE_PLAYLIST_ID is missing. Use a dedicated Second Brain Inbox playlist because Watch Later is blocked by the YouTube API.")
 	} else {
+		youtubeStart := time.Now()
 		youtubeItems, err = s.fetchYouTubeInboxItems(ctx, s.cfg.YouTubePlaylistID, s.cfg.YouTubeTranscriptTestVideoID)
 		if err != nil {
 			youtubeBlocked = true
+			s.logger.Warn("youtube inbox fetch blocked", "duration_ms", time.Since(youtubeStart).Milliseconds(), "error", err)
 			blockers = append(blockers, err.Error())
+		} else {
+			s.logger.Info(
+				"youtube inbox fetch completed",
+				"duration_ms", time.Since(youtubeStart).Milliseconds(),
+				"count", len(youtubeItems),
+				"transcripts_available", countAvailableTranscripts(youtubeItems),
+			)
 		}
 	}
 
 	result.XBookmarks = xBookmarks
 	result.YouTubeItems = youtubeItems
 
-	processed, synthesisBlockers := s.processSourceCandidates(ctx, append(candidatesFromBookmarks(xBookmarks), candidatesFromVideos(youtubeItems)...))
+	candidates := append(candidatesFromBookmarks(xBookmarks), candidatesFromVideos(youtubeItems)...)
+	s.logger.Info("source candidates prepared", "count", len(candidates), "x_count", len(xBookmarks), "youtube_count", len(youtubeItems))
+	processStart := time.Now()
+	processed, synthesisBlockers := s.processSourceCandidates(ctx, candidates)
+	s.logger.Info("source candidates processed", "duration_ms", time.Since(processStart).Milliseconds(), "count", len(processed), "blockers", len(synthesisBlockers))
+	enrichStart := time.Now()
+	processed = s.enrichProcessedSources(ctx, processed)
+	s.logger.Info("source enrichment completed", "duration_ms", time.Since(enrichStart).Milliseconds(), "count", len(processed))
 	blockers = append(blockers, synthesisBlockers...)
 	for _, item := range processed {
 		result.Summaries = append(result.Summaries, item.Synthesis.Summary)
@@ -99,6 +133,12 @@ func (s *Service) Run(ctx context.Context) (Result, error) {
 			Detail:        detail,
 		})
 	}
+
+	result.Themes = buildThemeClusters(processed)
+	result.Connections = buildSourceConnections(processed)
+	digest := buildDigestIssue(s.cfg.DigestTimezone, result.GeneratedAt, result.Summaries, result.Themes, result.Connections)
+	digest.OwnerID = s.cfg.OwnerID
+	result.Digest = &digest
 
 	switch {
 	case len(xBookmarks) >= 10:
@@ -132,10 +172,57 @@ func (s *Service) Run(ctx context.Context) (Result, error) {
 	}
 	result.Blockers = blockers
 
+	saveStart := time.Now()
 	if err := s.store.SaveRun(ctx, result, processed); err != nil {
+		s.logger.Error("knowledge refresh persist failed", "duration_ms", time.Since(saveStart).Milliseconds(), "error", err)
 		return result, err
 	}
+	s.logger.Info(
+		"knowledge refresh completed",
+		"duration_ms", time.Since(start).Milliseconds(),
+		"x_count", len(result.XBookmarks),
+		"youtube_count", len(result.YouTubeItems),
+		"summaries", len(result.Summaries),
+		"insights", len(result.Insights),
+		"actions", len(result.ActionItems),
+		"artifacts", len(result.Artifacts),
+		"stored_artifacts", countStoredArtifacts(result.Artifacts),
+		"themes", len(result.Themes),
+		"connections", len(result.Connections),
+		"blockers", len(result.Blockers),
+	)
 	return result, nil
+}
+
+func (s *Service) SaveFeedback(ctx context.Context, event FeedbackEvent) error {
+	event.OwnerID = s.cfg.OwnerID
+	event.Signal = strings.TrimSpace(strings.ToLower(event.Signal))
+	switch event.Signal {
+	case "useful", "obvious", "stale", "irrelevant", "more_like_this", "less_like_this", "archive", "expand":
+	default:
+		return fmt.Errorf("unsupported feedback signal %q", event.Signal)
+	}
+	if strings.TrimSpace(event.TargetType) == "" || strings.TrimSpace(event.TargetID) == "" {
+		return fmt.Errorf("targetType and targetId are required")
+	}
+	return s.store.SaveFeedback(ctx, event)
+}
+
+func (s *Service) GenerateDigest(ctx context.Context) (*DigestIssue, error) {
+	latest, err := s.ReadLatest(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if latest == nil {
+		return nil, fmt.Errorf("no knowledge run is available for digest generation")
+	}
+	digest := buildDigestIssue(s.cfg.DigestTimezone, time.Now().UTC(), latest.Summaries, latest.Themes, latest.Connections)
+	digest.OwnerID = s.cfg.OwnerID
+	digest.Deliveries = append(digest.Deliveries, s.deliverDigest(ctx, digest))
+	if len(digest.Deliveries) > 0 {
+		digest.Status = digest.Deliveries[0].Status
+	}
+	return s.store.SaveDigest(ctx, digest)
 }
 
 func (s *Service) processSourceCandidates(ctx context.Context, candidates []sourceCandidate) ([]ProcessedSource, []string) {
@@ -280,4 +367,24 @@ func anyCachedProcessing(items []ProcessingEvent) bool {
 		}
 	}
 	return false
+}
+
+func countAvailableTranscripts(items []YouTubeItem) int {
+	count := 0
+	for _, item := range items {
+		if item.TranscriptStatus == "available" {
+			count++
+		}
+	}
+	return count
+}
+
+func countStoredArtifacts(items []SourceArtifact) int {
+	count := 0
+	for _, item := range items {
+		if item.Stored {
+			count++
+		}
+	}
+	return count
 }

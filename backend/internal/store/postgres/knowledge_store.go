@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/abhijitmohanty/second-brain/backend/internal/knowledge"
@@ -117,29 +118,55 @@ func (s *Store) SaveRun(ctx context.Context, result knowledge.Result, sources []
 	}
 	defer tx.Rollback(ctx)
 
+	sourceIDs := map[string]string{}
 	for _, source := range sources {
 		sourceItemID, err := upsertSourceItem(ctx, tx, source)
 		if err != nil {
 			return err
 		}
+		sourceIDs[sourceKey(source.SourceType, source.ExternalID)] = sourceItemID
 		if source.Artifact.Path != "" {
 			if err := upsertSourceObject(ctx, tx, sourceItemID, source.Artifact); err != nil {
 				return err
 			}
+		}
+		chunkIDs, err := upsertSourceChunks(ctx, tx, sourceItemID, source)
+		if err != nil {
+			return err
+		}
+		if err := upsertEmbeddings(ctx, tx, sourceItemID, chunkIDs, source); err != nil {
+			return err
 		}
 		if !source.Cached {
 			if err := upsertSynthesis(ctx, tx, sourceItemID, source.Synthesis); err != nil {
 				return err
 			}
 		}
+		if err := enqueueGraphSync(ctx, tx, sourceItemID, source); err != nil {
+			return err
+		}
 	}
 
-	_, err = tx.Exec(ctx, `
-		insert into knowledge_runs (generated_at, payload)
-		values ($1, $2)
-	`, result.GeneratedAt, raw)
+	var runID string
+	ownerID := ownerIDFromSources(sources)
+	err = tx.QueryRow(ctx, `
+		insert into knowledge_runs (owner_id, generated_at, payload)
+		values ($1, $2, $3)
+		returning id
+	`, ownerID, result.GeneratedAt, raw).Scan(&runID)
 	if err != nil {
 		return err
+	}
+	if err := saveThemes(ctx, tx, ownerID, runID, result.Themes, sourceIDs); err != nil {
+		return err
+	}
+	if err := saveConnections(ctx, tx, ownerID, runID, result.Connections, sourceIDs); err != nil {
+		return err
+	}
+	if result.Digest != nil {
+		if _, err := saveDigestTx(ctx, tx, ownerID, runID, *result.Digest); err != nil {
+			return err
+		}
 	}
 	return tx.Commit(ctx)
 }
@@ -149,6 +176,7 @@ func upsertSourceItem(ctx context.Context, tx pgx.Tx, source knowledge.Processed
 	publishedAt := parseOptionalTime(source.PublishedAt)
 	err := tx.QueryRow(ctx, `
 		insert into source_items (
+			owner_id,
 			source_type,
 			external_id,
 			source_url,
@@ -160,8 +188,8 @@ func upsertSourceItem(ctx context.Context, tx pgx.Tx, source knowledge.Processed
 			processing_state,
 			last_seen_at
 		)
-		values ($1, $2, $3, $4, $5, $6, $7, $8, 'processed', now())
-		on conflict (source_type, external_id) do update set
+		values ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'processed', now())
+		on conflict (owner_id, source_type, external_id) do update set
 			source_url = excluded.source_url,
 			title = excluded.title,
 			author_name = excluded.author_name,
@@ -171,7 +199,7 @@ func upsertSourceItem(ctx context.Context, tx pgx.Tx, source knowledge.Processed
 			processing_state = excluded.processing_state,
 			last_seen_at = now()
 		returning id
-	`, string(source.SourceType), source.ExternalID, source.SourceURL, source.Title, source.AuthorName, source.Username, publishedAt, source.CaptureHash).Scan(&id)
+	`, source.OwnerID, string(source.SourceType), source.ExternalID, source.SourceURL, source.Title, source.AuthorName, source.Username, publishedAt, source.CaptureHash).Scan(&id)
 	return id, err
 }
 
@@ -229,6 +257,272 @@ func upsertSynthesis(ctx context.Context, tx pgx.Tx, sourceItemID string, synthe
 			generated_at = excluded.generated_at
 	`, sourceItemID, synthesis.CaptureHash, synthesis.PromptVersion, synthesis.Model, summaryRaw, insightsRaw, actionsRaw, synthesis.GeneratedAt)
 	return err
+}
+
+func upsertSourceChunks(ctx context.Context, tx pgx.Tx, sourceItemID string, source knowledge.ProcessedSource) (map[int]string, error) {
+	chunkIDs := map[int]string{}
+	for _, chunk := range source.Chunks {
+		var id string
+		err := tx.QueryRow(ctx, `
+			insert into source_chunks (
+				owner_id,
+				source_item_id,
+				chunk_index,
+				content,
+				token_estimate,
+				checksum
+			)
+			values ($1, $2, $3, $4, $5, $6)
+			on conflict (source_item_id, chunk_index, checksum) do update set
+				content = excluded.content,
+				token_estimate = excluded.token_estimate
+			returning id
+		`, source.OwnerID, sourceItemID, chunk.Index, chunk.Content, chunk.TokenEstimate, chunk.Checksum).Scan(&id)
+		if err != nil {
+			return chunkIDs, err
+		}
+		chunkIDs[chunk.Index] = id
+	}
+	return chunkIDs, nil
+}
+
+func upsertEmbeddings(ctx context.Context, tx pgx.Tx, sourceItemID string, chunkIDs map[int]string, source knowledge.ProcessedSource) error {
+	for _, embedding := range source.Embeddings {
+		var chunkID any
+		if embedding.ChunkIndex != nil {
+			if id, ok := chunkIDs[*embedding.ChunkIndex]; ok {
+				chunkID = id
+			}
+		}
+		_, err := tx.Exec(ctx, `
+			insert into source_embeddings (
+				owner_id,
+				source_item_id,
+				source_chunk_id,
+				embedding_type,
+				embedding_key,
+				label,
+				model,
+				dimensions,
+				embedding
+			)
+			values ($1, $2, $3, $4, $5, $6, $7, $8, $9::vector)
+			on conflict (owner_id, embedding_key, model) do update set
+				dimensions = excluded.dimensions,
+				embedding = excluded.embedding
+		`, source.OwnerID, sourceItemID, chunkID, embedding.Type, embeddingKey(source, embedding), embedding.Label, embedding.Model, embedding.Dimensions, embedding.Vector)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func embeddingKey(source knowledge.ProcessedSource, embedding knowledge.EmbeddingRecord) string {
+	key := string(source.SourceType) + ":" + source.ExternalID + ":" + embedding.Type + ":" + embedding.Label
+	if embedding.ChunkIndex != nil {
+		key += fmt.Sprintf(":%d", *embedding.ChunkIndex)
+	}
+	return key
+}
+
+func enqueueGraphSync(ctx context.Context, tx pgx.Tx, sourceItemID string, source knowledge.ProcessedSource) error {
+	payload := map[string]any{
+		"sourceType":    source.SourceType,
+		"externalId":    source.ExternalID,
+		"sourceUrl":     source.SourceURL,
+		"title":         source.Title,
+		"captureHash":   source.CaptureHash,
+		"summary":       source.Synthesis.Summary,
+		"insights":      source.Synthesis.Insights,
+		"actionItems":   source.Synthesis.ActionItems,
+		"entities":      source.Entities,
+		"artifact":      source.Artifact,
+		"promptVersion": source.Synthesis.PromptVersion,
+		"model":         source.Synthesis.Model,
+	}
+	raw, err := json.Marshal(payload)
+	if err != nil {
+		return err
+	}
+	_, err = tx.Exec(ctx, `
+		insert into graph_sync_outbox (
+			owner_id,
+			aggregate_type,
+			aggregate_id,
+			event_type,
+			payload
+		)
+		values ($1, 'source_item', $2, 'source_item.processed', $3)
+	`, source.OwnerID, sourceItemID, raw)
+	return err
+}
+
+func saveThemes(ctx context.Context, tx pgx.Tx, ownerID string, runID string, themes []knowledge.ThemeCluster, sourceIDs map[string]string) error {
+	for _, theme := range themes {
+		var themeID string
+		err := tx.QueryRow(ctx, `
+			insert into theme_clusters (owner_id, run_id, label, evidence, score)
+			values ($1, $2, $3, $4, $5)
+			returning id
+		`, ownerID, runID, theme.Label, theme.Evidence, theme.Score).Scan(&themeID)
+		if err != nil {
+			return err
+		}
+		for _, source := range theme.Sources {
+			sourceItemID, ok := sourceIDs[source]
+			if !ok {
+				continue
+			}
+			if _, err := tx.Exec(ctx, `
+				insert into theme_cluster_items (theme_cluster_id, source_item_id, evidence)
+				values ($1, $2, $3)
+				on conflict (theme_cluster_id, source_item_id) do update set
+					evidence = excluded.evidence
+			`, themeID, sourceItemID, theme.Evidence); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func saveConnections(ctx context.Context, tx pgx.Tx, ownerID string, runID string, connections []knowledge.SourceConnection, sourceIDs map[string]string) error {
+	for _, connection := range connections {
+		leftID, leftOK := sourceIDs[connection.LeftSourceID]
+		rightID, rightOK := sourceIDs[connection.RightSourceID]
+		if !leftOK || !rightOK {
+			continue
+		}
+		_, err := tx.Exec(ctx, `
+			insert into source_connections_evidence (
+				owner_id,
+				run_id,
+				left_source_item_id,
+				right_source_item_id,
+				relationship,
+				evidence,
+				confidence
+			)
+			values ($1, $2, $3, $4, $5, $6, $7)
+			on conflict (run_id, left_source_item_id, right_source_item_id, relationship) do update set
+				evidence = excluded.evidence,
+				confidence = excluded.confidence
+		`, ownerID, runID, leftID, rightID, connection.Relationship, connection.Evidence, connection.Confidence)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func saveDigestTx(ctx context.Context, tx pgx.Tx, ownerID string, runID string, digest knowledge.DigestIssue) (*knowledge.DigestIssue, error) {
+	var digestID string
+	err := tx.QueryRow(ctx, `
+		insert into digest_issues (
+			owner_id,
+			digest_date,
+			scheduled_for,
+			idempotency_key,
+			subject,
+			body_markdown,
+			status,
+			generated_from_run_id
+		)
+		values ($1, $2, $3, $4, $5, $6, $7, $8)
+		on conflict (owner_id, idempotency_key) do update set
+			subject = excluded.subject,
+			body_markdown = excluded.body_markdown,
+			status = excluded.status,
+			generated_from_run_id = excluded.generated_from_run_id,
+			updated_at = now()
+		returning id
+	`, ownerID, digest.DigestDate, digest.ScheduledFor, digest.IdempotencyKey, digest.Subject, digest.BodyMarkdown, digest.Status, nullableRunID(runID)).Scan(&digestID)
+	if err != nil {
+		return nil, err
+	}
+	digest.ID = digestID
+	for _, delivery := range digest.Deliveries {
+		attemptedAt := time.Now().UTC()
+		if delivery.AttemptedAt != nil {
+			attemptedAt = *delivery.AttemptedAt
+		}
+		if _, err := tx.Exec(ctx, `
+			insert into digest_deliveries (
+				owner_id,
+				digest_issue_id,
+				provider,
+				recipient,
+				status,
+				provider_message_id,
+				error,
+				attempted_at
+			)
+			values ($1, $2, $3, $4, $5, $6, $7, $8)
+		`, ownerID, digestID, delivery.Provider, delivery.Recipient, delivery.Status, delivery.ProviderMessageID, delivery.Error, attemptedAt); err != nil {
+			return nil, err
+		}
+	}
+	return &digest, nil
+}
+
+func (s *Store) SaveFeedback(ctx context.Context, event knowledge.FeedbackEvent) error {
+	ownerID := event.OwnerID
+	if ownerID == "" {
+		ownerID = "00000000-0000-0000-0000-000000000001"
+	}
+	_, err := s.pool.Exec(ctx, `
+		insert into feedback_events (
+			owner_id,
+			target_type,
+			target_id,
+			signal,
+			note,
+			source_url
+		)
+		values ($1, $2, $3, $4, $5, $6)
+	`, ownerID, event.TargetType, event.TargetID, event.Signal, event.Note, event.SourceURL)
+	return err
+}
+
+func (s *Store) SaveDigest(ctx context.Context, digest knowledge.DigestIssue) (*knowledge.DigestIssue, error) {
+	ownerID := digest.OwnerID
+	if ownerID == "" {
+		ownerID = "00000000-0000-0000-0000-000000000001"
+	}
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback(ctx)
+	saved, err := saveDigestTx(ctx, tx, ownerID, "", digest)
+	if err != nil {
+		return nil, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return nil, err
+	}
+	return saved, nil
+}
+
+func sourceKey(sourceType knowledge.SourceType, externalID string) string {
+	return string(sourceType) + ":" + externalID
+}
+
+func ownerIDFromSources(sources []knowledge.ProcessedSource) string {
+	for _, source := range sources {
+		if source.OwnerID != "" {
+			return source.OwnerID
+		}
+	}
+	return "00000000-0000-0000-0000-000000000001"
+}
+
+func nullableRunID(runID string) any {
+	if runID == "" {
+		return nil
+	}
+	return runID
 }
 
 func parseOptionalTime(value string) *time.Time {
