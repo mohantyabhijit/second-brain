@@ -1,4 +1,4 @@
-import type { KnowledgeRunResult } from "../contracts";
+import type { FeedbackSignal, KnowledgeRunResult } from "../contracts";
 
 const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8080";
 
@@ -29,6 +29,23 @@ export async function runKnowledgeInboxValidation() {
   return normalizeKnowledgeRun(payload);
 }
 
+export async function saveKnowledgeFeedback(input: {
+  targetType: string;
+  targetId: string;
+  signal: FeedbackSignal;
+  note?: string;
+  sourceUrl?: string;
+}) {
+  return request<{ status: string }>("/api/feedback", {
+    method: "POST",
+    body: JSON.stringify(input)
+  });
+}
+
+export async function generateDailyDigest() {
+  return request<NonNullable<KnowledgeRunResult["digest"]>>("/api/digests/generate", { method: "POST" });
+}
+
 function normalizeKnowledgeRun(result: KnowledgeRunResult): KnowledgeRunResult {
   return {
     ...result,
@@ -38,6 +55,8 @@ function normalizeKnowledgeRun(result: KnowledgeRunResult): KnowledgeRunResult {
     insights: result.insights ?? [],
     actionItems: result.actionItems ?? [],
     processing: result.processing ?? [],
+    themes: result.themes ?? [],
+    connections: result.connections ?? [],
     validation: result.validation ?? [],
     blockers: result.blockers ?? []
   };

@@ -120,3 +120,25 @@ func (s *Store) SaveRun(ctx context.Context, result knowledge.Result, sources []
 	}
 	return os.Rename(tempPath, s.path)
 }
+
+func (s *Store) SaveFeedback(ctx context.Context, event knowledge.FeedbackEvent) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (s *Store) SaveDigest(ctx context.Context, digest knowledge.DigestIssue) (*knowledge.DigestIssue, error) {
+	latest, err := s.ReadLatest(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if latest == nil {
+		return nil, nil
+	}
+	latest.Digest = &digest
+	if err := s.SaveRun(ctx, *latest, nil); err != nil {
+		return nil, err
+	}
+	return &digest, nil
+}

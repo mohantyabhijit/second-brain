@@ -2,10 +2,15 @@ package knowledge
 
 import (
 	"context"
+	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
+	"os/exec"
 	"strconv"
+	"strings"
+	"time"
 )
 
 type xUserResponse struct {
@@ -44,12 +49,26 @@ type xBookmarkResponse struct {
 	} `json:"includes"`
 }
 
+type xTokenResponse struct {
+	TokenType    string `json:"token_type"`
+	ExpiresIn    int    `json:"expires_in"`
+	AccessToken  string `json:"access_token"`
+	RefreshToken string `json:"refresh_token"`
+	Scope        string `json:"scope"`
+	Error        string `json:"error"`
+	ErrorDetail  string `json:"error_description"`
+}
+
 func (s *Service) fetchXBookmarks(ctx context.Context, limit int) ([]XBookmark, error) {
-	if os.Getenv("X_USER_ACCESS_TOKEN") == "" && !s.cfg.OneCLIGateway {
+	accessToken, err := s.refreshXAccessToken(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if accessToken == "" && os.Getenv("X_USER_ACCESS_TOKEN") == "" && !s.cfg.OneCLIGateway {
 		return nil, fmt.Errorf(credentialHint("X_USER_ACCESS_TOKEN"))
 	}
 
-	headers := authHeader("X_USER_ACCESS_TOKEN", "Bearer {value}")
+	headers := xAccessHeaders(accessToken)
 	var me xUserResponse
 	if err := s.requestJSON(ctx, http.MethodGet, "https://api.x.com/2/users/me?user.fields=username,name", headers, nil, &me); err != nil {
 		return nil, fmt.Errorf("X /2/users/me failed: %w", err)
@@ -139,4 +158,84 @@ func (s *Service) fetchXBookmarks(ctx context.Context, limit int) ([]XBookmark, 
 	}
 
 	return bookmarks, nil
+}
+
+func (s *Service) refreshXAccessToken(ctx context.Context) (string, error) {
+	if strings.TrimSpace(s.cfg.XClientID) == "" || strings.TrimSpace(s.cfg.XClientSecret) == "" {
+		s.logger.Warn("x token refresh skipped", "reason", "X_CLIENT_ID or X_CLIENT_SECRET missing")
+		return strings.TrimSpace(os.Getenv("X_USER_ACCESS_TOKEN")), nil
+	}
+
+	start := time.Now()
+	body := "grant_type=refresh_token"
+	if refreshToken := strings.TrimSpace(os.Getenv("X_REFRESH_TOKEN")); refreshToken != "" {
+		body += "&refresh_token=" + refreshToken
+	}
+	headers := http.Header{}
+	headers.Set("Content-Type", "application/x-www-form-urlencoded")
+	headers.Set("Authorization", "Basic "+base64.StdEncoding.EncodeToString([]byte(s.cfg.XClientID+":"+s.cfg.XClientSecret)))
+
+	var payload xTokenResponse
+	if err := s.requestJSON(ctx, http.MethodPost, "https://api.x.com/2/oauth2/token", headers, strings.NewReader(body), &payload); err != nil {
+		return "", fmt.Errorf("X token refresh failed: %w", err)
+	}
+	if payload.Error != "" {
+		return "", fmt.Errorf("X token refresh failed: %s %s", payload.Error, payload.ErrorDetail)
+	}
+	if strings.TrimSpace(payload.AccessToken) == "" {
+		return "", fmt.Errorf("X token refresh returned no access token")
+	}
+	if strings.TrimSpace(payload.RefreshToken) == "" {
+		return "", fmt.Errorf("X token refresh returned no rotated refresh token")
+	}
+	if err := s.rotateOneCLIXSecrets(ctx, payload.AccessToken, payload.RefreshToken); err != nil {
+		return "", err
+	}
+	s.logger.Info("x token refresh completed", "duration_ms", time.Since(start).Milliseconds(), "expires_in", payload.ExpiresIn, "scope", payload.Scope)
+	return payload.AccessToken, nil
+}
+
+func (s *Service) rotateOneCLIXSecrets(ctx context.Context, accessToken string, refreshToken string) error {
+	if !s.cfg.OneCLIGateway {
+		return nil
+	}
+	if s.cfg.OneCLIXAccessSecretID == "" || s.cfg.OneCLIXRefreshSecretID == "" {
+		return fmt.Errorf("OneCLI X secret IDs are not configured")
+	}
+	if err := s.updateOneCLISecret(ctx, s.cfg.OneCLIXAccessSecretID, accessToken); err != nil {
+		return fmt.Errorf("update OneCLI X access token secret: %w", err)
+	}
+	if err := s.updateOneCLISecret(ctx, s.cfg.OneCLIXRefreshSecretID, refreshToken); err != nil {
+		return fmt.Errorf("update OneCLI X refresh token secret: %w", err)
+	}
+	return nil
+}
+
+func (s *Service) updateOneCLISecret(ctx context.Context, id string, value string) error {
+	updateCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(updateCtx, s.cfg.OneCLIBin, "secrets", "update", "--id", id, "--value", value)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("%v: %s", err, strings.TrimSpace(string(output)))
+	}
+	var response struct {
+		Status string `json:"status"`
+	}
+	if err := json.Unmarshal(output, &response); err != nil && len(output) > 0 {
+		return fmt.Errorf("decode onecli response: %w", err)
+	}
+	if response.Status != "" && response.Status != "updated" {
+		return fmt.Errorf("unexpected onecli status %q", response.Status)
+	}
+	return nil
+}
+
+func xAccessHeaders(accessToken string) http.Header {
+	if accessToken != "" {
+		header := http.Header{}
+		header.Set("Authorization", "Bearer "+accessToken)
+		return header
+	}
+	return authHeader("X_USER_ACCESS_TOKEN", "Bearer {value}")
 }

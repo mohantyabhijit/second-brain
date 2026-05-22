@@ -176,6 +176,9 @@ export function toKnowledgeInboxViewModel(run: KnowledgeRunResult, isRunning: bo
       { label: "Action items", value: String(run.actionItems.length) },
       { label: "Cache hits", value: String(cachedCount) },
       { label: "Transcripts", value: String(transcriptCount) },
+      { label: "Themes", value: String(run.themes?.length ?? 0) },
+      { label: "Connections", value: String(run.connections?.length ?? 0) },
+      { label: "Digest", value: run.digest?.status ?? "not generated" },
       { label: "Open blockers", value: String(run.blockers.length) }
     ],
     intake: {

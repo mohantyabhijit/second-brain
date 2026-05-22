@@ -112,6 +112,9 @@ describe("toKnowledgeInboxViewModel", () => {
       { label: "Action items", value: "1" },
       { label: "Cache hits", value: "1" },
       { label: "Transcripts", value: "1" },
+      { label: "Themes", value: "0" },
+      { label: "Connections", value: "0" },
+      { label: "Digest", value: "not generated" },
       { label: "Open blockers", value: "1" }
     ]);
   });

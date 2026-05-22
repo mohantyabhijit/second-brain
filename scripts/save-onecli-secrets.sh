@@ -62,5 +62,6 @@ create_secret SUPADATA_API_KEY "Second Brain Supadata API key" "api.supadata.ai"
 create_secret OPENAI_API_KEY "Second Brain OpenAI synthesis key" "api.openai.com"
 create_secret SUPABASE_SERVICE_ROLE_KEY "Second Brain Supabase service role key" "*.supabase.co" "Authorization" "Bearer {value}"
 create_secret SUPABASE_SERVICE_ROLE_KEY "Second Brain Supabase service role apikey" "*.supabase.co" "apikey" "{value}"
+create_secret RESEND_API_KEY "Second Brain Resend API key" "api.resend.com"
 
 echo "Done. Run: $ONECLI secrets list --project $PROJECT"

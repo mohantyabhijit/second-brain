@@ -1,8 +1,8 @@
 "use client";
 
 import { startTransition, useCallback, useEffect, useState } from "react";
-import { readLatestKnowledgeRun, runKnowledgeInboxValidation } from "../api/knowledgeRuns";
-import type { KnowledgeRunResult } from "../contracts";
+import { generateDailyDigest, readLatestKnowledgeRun, runKnowledgeInboxValidation, saveKnowledgeFeedback } from "../api/knowledgeRuns";
+import type { FeedbackSignal, KnowledgeRunResult } from "../contracts";
 import { initialKnowledgeRun } from "./initialKnowledgeRun";
 
 export function useKnowledgeInboxController() {
@@ -38,5 +38,14 @@ export function useKnowledgeInboxController() {
     }
   }, []);
 
-  return { run, isRunning, error, runValidation };
+  const saveFeedback = useCallback(async (targetType: string, targetId: string, signal: FeedbackSignal, sourceUrl?: string) => {
+    await saveKnowledgeFeedback({ targetType, targetId, signal, sourceUrl });
+  }, []);
+
+  const generateDigest = useCallback(async () => {
+    const digest = await generateDailyDigest();
+    startTransition(() => setRun((current) => ({ ...current, digest })));
+  }, []);
+
+  return { run, isRunning, error, runValidation, saveFeedback, generateDigest };
 }

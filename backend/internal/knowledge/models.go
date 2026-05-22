@@ -131,6 +131,54 @@ type ProcessingEvent struct {
 	Detail        string `json:"detail"`
 }
 
+type ThemeCluster struct {
+	ID       string   `json:"id"`
+	Label    string   `json:"label"`
+	Evidence string   `json:"evidence"`
+	Score    float64  `json:"score"`
+	Sources  []string `json:"sources"`
+}
+
+type SourceConnection struct {
+	ID            string   `json:"id"`
+	LeftSourceID  string   `json:"leftSourceId"`
+	RightSourceID string   `json:"rightSourceId"`
+	Relationship  string   `json:"relationship"`
+	Evidence      string   `json:"evidence"`
+	Confidence    string   `json:"confidence"`
+	SharedSignals []string `json:"sharedSignals"`
+}
+
+type DigestDelivery struct {
+	Provider          string     `json:"provider"`
+	Recipient         string     `json:"recipient"`
+	Status            string     `json:"status"`
+	ProviderMessageID string     `json:"providerMessageId,omitempty"`
+	Error             string     `json:"error,omitempty"`
+	AttemptedAt       *time.Time `json:"attemptedAt,omitempty"`
+}
+
+type DigestIssue struct {
+	OwnerID        string           `json:"-"`
+	ID             string           `json:"id,omitempty"`
+	DigestDate     string           `json:"digestDate"`
+	ScheduledFor   time.Time        `json:"scheduledFor"`
+	IdempotencyKey string           `json:"idempotencyKey"`
+	Subject        string           `json:"subject"`
+	BodyMarkdown   string           `json:"bodyMarkdown"`
+	Status         string           `json:"status"`
+	Deliveries     []DigestDelivery `json:"deliveries,omitempty"`
+}
+
+type FeedbackEvent struct {
+	OwnerID    string `json:"-"`
+	TargetType string `json:"targetType"`
+	TargetID   string `json:"targetId"`
+	Signal     string `json:"signal"`
+	Note       string `json:"note,omitempty"`
+	SourceURL  string `json:"sourceUrl,omitempty"`
+}
+
 type Result struct {
 	GeneratedAt  time.Time `json:"generatedAt"`
 	SourceStatus struct {
@@ -138,15 +186,18 @@ type Result struct {
 		YouTube SourceStatus `json:"youtube"`
 		OneCLI  SourceStatus `json:"onecli"`
 	} `json:"sourceStatus"`
-	XBookmarks   []XBookmark       `json:"xBookmarks"`
-	YouTubeItems []YouTubeItem     `json:"youtubeItems"`
-	Summaries    []Summary         `json:"summaries"`
-	Insights     []Insight         `json:"insights"`
-	ActionItems  []ActionItem      `json:"actionItems"`
-	Artifacts    []SourceArtifact  `json:"artifacts,omitempty"`
-	Processing   []ProcessingEvent `json:"processing,omitempty"`
-	Validation   []ValidationItem  `json:"validation"`
-	Blockers     []string          `json:"blockers"`
+	XBookmarks   []XBookmark        `json:"xBookmarks"`
+	YouTubeItems []YouTubeItem      `json:"youtubeItems"`
+	Summaries    []Summary          `json:"summaries"`
+	Insights     []Insight          `json:"insights"`
+	ActionItems  []ActionItem       `json:"actionItems"`
+	Artifacts    []SourceArtifact   `json:"artifacts,omitempty"`
+	Processing   []ProcessingEvent  `json:"processing,omitempty"`
+	Themes       []ThemeCluster     `json:"themes,omitempty"`
+	Connections  []SourceConnection `json:"connections,omitempty"`
+	Digest       *DigestIssue       `json:"digest,omitempty"`
+	Validation   []ValidationItem   `json:"validation"`
+	Blockers     []string           `json:"blockers"`
 }
 
 type SynthesisCacheKey struct {
@@ -174,6 +225,7 @@ type SynthesisRecord struct {
 }
 
 type ProcessedSource struct {
+	OwnerID     string
 	SourceType  SourceType
 	ExternalID  string
 	SourceURL   string
@@ -184,5 +236,32 @@ type ProcessedSource struct {
 	CaptureHash string
 	Artifact    SourceArtifact
 	Synthesis   SynthesisRecord
+	Chunks      []SourceChunk
+	Embeddings  []EmbeddingRecord
+	Entities    []EntityRecord
+	Keywords    []string
 	Cached      bool
+}
+
+type SourceChunk struct {
+	Index         int
+	Content       string
+	TokenEstimate int
+	Checksum      string
+}
+
+type EmbeddingRecord struct {
+	Type       string
+	Label      string
+	Model      string
+	Dimensions int
+	Vector     string
+	ChunkIndex *int
+}
+
+type EntityRecord struct {
+	Label      string
+	Kind       string
+	Confidence string
+	Evidence   string
 }

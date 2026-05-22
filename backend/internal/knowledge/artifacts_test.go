@@ -1,0 +1,114 @@
+package knowledge
+
+import (
+	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"io"
+	"net/http"
+	"strings"
+	"testing"
+
+	"github.com/abhijitmohanty/second-brain/backend/internal/config"
+)
+
+func TestWriteEvidenceArtifactRecordsMetadataWithoutStorageCredentials(t *testing.T) {
+	candidate := sourceCandidate{
+		sourceType:   SourceTypeX,
+		externalID:   "tweet-1",
+		title:        "Source tweet",
+		body:         "source body",
+		artifactKind: "tweet",
+		contentType:  "text/plain; charset=utf-8",
+	}
+	service := NewService(config.Config{SupabaseStorageBucket: "sources"}, cacheStore{}, http.DefaultClient)
+
+	artifact := service.writeEvidenceArtifact(context.Background(), candidate, candidate.captureHash())
+
+	expectedChecksumBytes := sha256.Sum256([]byte("source body"))
+	if artifact.Source != "x" || artifact.SourceID != "tweet-1" || artifact.Kind != "tweet" {
+		t.Fatalf("unexpected artifact identity: %#v", artifact)
+	}
+	if artifact.Path != "x/tweet-1/tweet.txt" || artifact.Bucket != "sources" {
+		t.Fatalf("unexpected artifact location: %#v", artifact)
+	}
+	if artifact.ByteSize != len("source body") {
+		t.Fatalf("expected byte size %d, got %d", len("source body"), artifact.ByteSize)
+	}
+	if artifact.Checksum != hex.EncodeToString(expectedChecksumBytes[:]) {
+		t.Fatalf("unexpected checksum: %q", artifact.Checksum)
+	}
+	if artifact.Stored {
+		t.Fatal("expected artifact to remain unstored without credentials")
+	}
+	if !strings.Contains(artifact.Error, "Supabase Storage credentials missing") {
+		t.Fatalf("expected missing credentials error, got %q", artifact.Error)
+	}
+}
+
+func TestWriteEvidenceArtifactUploadsToSupabaseStorage(t *testing.T) {
+	var captured struct {
+		method        string
+		path          string
+		authorization string
+		apiKey        string
+		contentType   string
+		upsert        string
+		body          string
+	}
+	client := &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		raw, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Fatalf("read request body: %v", err)
+		}
+		captured.method = r.Method
+		captured.path = r.URL.EscapedPath()
+		captured.authorization = r.Header.Get("Authorization")
+		captured.apiKey = r.Header.Get("apikey")
+		captured.contentType = r.Header.Get("Content-Type")
+		captured.upsert = r.Header.Get("x-upsert")
+		captured.body = string(raw)
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Status:     "200 OK",
+			Header:     http.Header{},
+			Body:       io.NopCloser(strings.NewReader("{}")),
+			Request:    r,
+		}, nil
+	})}
+
+	candidate := sourceCandidate{
+		sourceType:   SourceTypeYouTube,
+		externalID:   "video id",
+		title:        "Video",
+		body:         "transcript body",
+		artifactKind: "transcript",
+		contentType:  "text/plain; charset=utf-8",
+	}
+	service := NewService(config.Config{
+		SupabaseURL:           "https://supabase.example",
+		SupabaseStorageKey:    "service-role",
+		SupabaseStorageBucket: "sources",
+	}, cacheStore{}, client)
+
+	artifact := service.writeEvidenceArtifact(context.Background(), candidate, candidate.captureHash())
+
+	if !artifact.Stored || artifact.Error != "" {
+		t.Fatalf("expected stored artifact without error, got %#v", artifact)
+	}
+	if captured.method != http.MethodPut {
+		t.Fatalf("expected PUT upload, got %s", captured.method)
+	}
+	if captured.path != "/storage/v1/object/sources/youtube/video%20id/transcript.txt" {
+		t.Fatalf("unexpected upload path: %q", captured.path)
+	}
+	if captured.authorization != "Bearer service-role" || captured.apiKey != "service-role" {
+		t.Fatalf("expected Supabase auth headers, got authorization=%q apikey=%q", captured.authorization, captured.apiKey)
+	}
+	if captured.contentType != "text/plain; charset=utf-8" || captured.upsert != "true" {
+		t.Fatalf("unexpected upload headers: contentType=%q upsert=%q", captured.contentType, captured.upsert)
+	}
+	if captured.body != "transcript body" {
+		t.Fatalf("unexpected upload body: %q", captured.body)
+	}
+}

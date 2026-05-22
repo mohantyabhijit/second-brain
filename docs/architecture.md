@@ -45,8 +45,14 @@ Core tables:
 
 - `source_items`: saved X posts, YouTube videos, documents, and external URLs keyed by source type and external ID.
 - `source_objects`: pointers to Supabase Storage objects and their checksums.
+- `source_chunks`: chunked evidence text derived from source objects and generated summaries.
+- `source_embeddings`: pgvector-backed embeddings for chunks, summaries, and extracted entity labels.
 - `knowledge_syntheses`: prompt-versioned summaries, insights, and action items keyed by source item, capture hash, prompt version, and model.
 - `knowledge_runs`: ingestion and refresh audit log for UI replay and debugging.
+- `theme_clusters` and `source_connections_evidence`: derived cross-source understanding for recurring themes and related-source explanations.
+- `feedback_events`: explicit user signals such as useful, obvious, stale, irrelevant, more like this, and less like this.
+- `digest_issues` and `digest_deliveries`: idempotent daily digest generation and email delivery status.
+- `graph_sync_outbox`: pending Neo4j sync events derived from canonical source records.
 
 The recompute rule is: if the same source item has the same capture hash, prompt version, and model, reuse the `knowledge_syntheses` row instead of running synthesis again.
 
@@ -64,7 +70,7 @@ documents/{source_item_id}/original.pdf
 exports/{run_id}/knowledge-pack.json
 ```
 
-The backend writes private objects through Supabase Storage using `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, and `SUPABASE_STORAGE_BUCKET`. Local demos can still record artifact metadata when Storage credentials are missing, but production should treat Storage writes as required.
+The backend writes private text objects through Supabase Storage using `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, and `SUPABASE_STORAGE_BUCKET`. Local demos can still record artifact metadata when Storage credentials are missing, but production should treat Storage writes as required.
 
 ## Vector Database
 

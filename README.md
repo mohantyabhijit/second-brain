@@ -32,7 +32,7 @@ scripts/    Local setup helpers
 
 ## Local Setup
 
-Apply the Supabase migrations in `supabase/migrations`, enable `pgvector`, create private Supabase Storage buckets, then set `SUPABASE_DB_URL` to the pooled Postgres connection string. Neo4j credentials are server-side settings once the graph sync is implemented.
+Apply the Supabase migrations in `supabase/migrations`, enable `pgvector`, create private Supabase Storage buckets, then set `SUPABASE_DB_URL` to the pooled Postgres connection string. The backend writes source text assets to Supabase Storage when `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` are available, and records artifact metadata either way. Neo4j credentials are server-side settings for the graph outbox worker.
 
 ```bash
 cp backend/.env.example backend/.env
@@ -60,6 +60,14 @@ Open `http://localhost:3000`. The frontend calls the Go API at `NEXT_PUBLIC_API_
 
 For local demos without Supabase configured, the Go API falls back to `data/runtime/latest-knowledge-run.json` and still serves the same knowledge-run contract to the frontend.
 
+Generate the daily digest from the latest persisted run:
+
+```bash
+npm run digest:run
+```
+
+Use an external scheduler, such as GitHub Actions, cron, or a platform scheduler, to run that command at 5pm in `DIGEST_TIMEZONE`. The command is idempotent per owner and digest date.
+
 ## Secrets
 
 Store provider secrets in OneCLI or export them only for a local validation session:
@@ -71,6 +79,8 @@ export YOUTUBE_ACCESS_TOKEN=...
 export SUPADATA_API_KEY=...
 export OPENAI_API_KEY=...
 export SUPABASE_SERVICE_ROLE_KEY=...
+export RESEND_API_KEY=...
+export DIGEST_EMAIL_TO=...
 npm run onecli:save-secrets
 ```
 

@@ -4,11 +4,14 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import type { KnowledgeInboxPage } from "../KnowledgeInboxContainer";
 import type { KnowledgeInboxViewModel, NavigationItemViewModel, SummaryCardViewModel } from "../presentation/viewModel";
+import type { FeedbackSignal } from "../contracts";
 import { Icon } from "./primitives/Icon";
 
 type SecondBrainConsoleViewProps = {
   activePage: KnowledgeInboxPage;
   model: KnowledgeInboxViewModel;
+  onDigest: () => void;
+  onFeedback: (targetType: string, targetId: string, signal: FeedbackSignal, sourceUrl?: string) => void;
   onRun: () => void;
 };
 
@@ -71,7 +74,7 @@ const pageCopy: Record<
   }
 };
 
-export function SecondBrainConsoleView({ activePage, model, onRun }: SecondBrainConsoleViewProps) {
+export function SecondBrainConsoleView({ activePage, model, onDigest, onFeedback, onRun }: SecondBrainConsoleViewProps) {
   const [visibleCount, setVisibleCount] = useState(10);
   const [expandedItems, setExpandedItems] = useState<Set<string>>(new Set());
   const [copiedItems, setCopiedItems] = useState<Set<string>>(new Set());
@@ -173,6 +176,11 @@ export function SecondBrainConsoleView({ activePage, model, onRun }: SecondBrain
             <Icon name="run" />
             {model.header.actionLabel}
           </button>
+          {activePage === "daily-newsletter" ? (
+            <button className="secondary-action" onClick={onDigest} type="button">
+              Generate Digest
+            </button>
+          ) : null}
         </header>
 
         {model.error ? <div className="error-banner">{model.error}</div> : null}
@@ -194,8 +202,15 @@ export function SecondBrainConsoleView({ activePage, model, onRun }: SecondBrain
                     saved={savedItems.has(itemKey)}
                     onCopy={() => toggleCopiedItem(itemKey, item.quote ?? item.body)}
                     onExpand={() => toggleExpandedItem(itemKey)}
-                    onReview={() => toggleReviewedItem(itemKey)}
-                    onSave={() => toggleSavedItem(itemKey)}
+                    onFeedback={(signal) => onFeedback(item.source.toLowerCase(), item.id, signal, item.sourceUrl)}
+                    onReview={() => {
+                      toggleReviewedItem(itemKey);
+                      onFeedback(item.source.toLowerCase(), item.id, "useful", item.sourceUrl);
+                    }}
+                    onSave={() => {
+                      toggleSavedItem(itemKey);
+                      onFeedback(item.source.toLowerCase(), item.id, "more_like_this", item.sourceUrl);
+                    }}
                   />
                 );
               })
@@ -364,6 +379,7 @@ function FeedCard({
   saved,
   onCopy,
   onExpand,
+  onFeedback,
   onReview,
   onSave
 }: {
@@ -376,6 +392,7 @@ function FeedCard({
   saved: boolean;
   onCopy: () => void;
   onExpand: () => void;
+  onFeedback: (signal: FeedbackSignal) => void;
   onReview: () => void;
   onSave: () => void;
 }) {
@@ -457,6 +474,24 @@ function FeedCard({
           >
             {reviewed ? "Reviewed" : "Review"}
           </button>
+          <button
+            onClick={(event) => {
+              event.stopPropagation();
+              onFeedback("stale");
+            }}
+            type="button"
+          >
+            Stale
+          </button>
+          <button
+            onClick={(event) => {
+              event.stopPropagation();
+              onFeedback("less_like_this");
+            }}
+            type="button"
+          >
+            Less Like This
+          </button>
         </div>
         {item.quote ? (
           <blockquote>
@@ -512,6 +547,9 @@ function metricDetail(label: string, value: string) {
   if (label === "Action items") return `${value} possible follow-up actions were extracted from saved material.`;
   if (label === "Cache hits") return `${value} source captures reused existing synthesis instead of recomputing.`;
   if (label === "Transcripts") return `${value} YouTube transcripts are currently usable for evidence.`;
+  if (label === "Themes") return `${value} recurring theme clusters were derived from the current run.`;
+  if (label === "Connections") return `${value} cross-source evidence connections were found in the current run.`;
+  if (label === "Digest") return `The latest daily digest status is ${value}.`;
   return `${value} blockers need attention before the inbox can be trusted end to end.`;
 }
 

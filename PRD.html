@@ -1,0 +1,1313 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Second Brain Research Agent - PRD</title>
+  <meta name="description" content="Interactive product requirements document for the Second Brain Research Agent.">
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f6f8fb;
+      --surface: #ffffff;
+      --surface-2: #edf2f7;
+      --ink: #152033;
+      --muted: #536174;
+      --subtle: #718095;
+      --line: #d8e1eb;
+      --blue: #255edb;
+      --blue-dark: #173c91;
+      --green: #0f766e;
+      --amber: #b45309;
+      --red: #b91c1c;
+      --violet: #6d28d9;
+      --shadow: 0 20px 48px rgba(21, 32, 51, 0.12);
+      --radius: 8px;
+      --max: 1220px;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html {
+      scroll-behavior: smooth;
+    }
+
+    body {
+      margin: 0;
+      color: var(--ink);
+      background:
+        linear-gradient(180deg, rgba(37, 94, 219, 0.08), rgba(246, 248, 251, 0) 440px),
+        var(--bg);
+      font: 16px/1.6 Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      letter-spacing: 0;
+    }
+
+    a {
+      color: var(--blue);
+      text-underline-offset: 3px;
+    }
+
+    button,
+    a {
+      touch-action: manipulation;
+    }
+
+    button {
+      font: inherit;
+    }
+
+    :focus-visible {
+      outline: 3px solid rgba(37, 94, 219, 0.45);
+      outline-offset: 3px;
+    }
+
+    .skip-link {
+      position: absolute;
+      left: 14px;
+      top: 14px;
+      z-index: 20;
+      transform: translateY(-140%);
+      padding: 10px 14px;
+      border-radius: var(--radius);
+      color: #ffffff;
+      background: var(--ink);
+      font-weight: 750;
+    }
+
+    .skip-link:focus {
+      transform: translateY(0);
+    }
+
+    .topbar {
+      position: sticky;
+      top: 0;
+      z-index: 12;
+      border-bottom: 1px solid rgba(216, 225, 235, 0.92);
+      background: rgba(246, 248, 251, 0.92);
+      backdrop-filter: blur(14px);
+    }
+
+    .topbar-inner {
+      max-width: var(--max);
+      margin: 0 auto;
+      padding: 12px 20px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      min-width: 230px;
+      color: var(--ink);
+      font-weight: 820;
+      text-decoration: none;
+    }
+
+    .brand-mark {
+      width: 34px;
+      height: 34px;
+      display: grid;
+      place-items: center;
+      border-radius: var(--radius);
+      color: #ffffff;
+      background: var(--ink);
+      box-shadow: 0 10px 20px rgba(21, 32, 51, 0.2);
+    }
+
+    .brand-mark svg,
+    .icon svg {
+      width: 18px;
+      height: 18px;
+      stroke: currentColor;
+      stroke-width: 2;
+      fill: none;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+
+    .nav {
+      display: flex;
+      justify-content: flex-end;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+
+    .nav a {
+      min-height: 44px;
+      display: inline-flex;
+      align-items: center;
+      padding: 8px 11px;
+      border-radius: var(--radius);
+      color: var(--muted);
+      font-size: 0.92rem;
+      font-weight: 700;
+      text-decoration: none;
+    }
+
+    .nav a:hover,
+    .nav a[aria-current="true"] {
+      color: var(--ink);
+      background: var(--surface-2);
+    }
+
+    main {
+      overflow-x: hidden;
+    }
+
+    .hero {
+      max-width: var(--max);
+      margin: 0 auto;
+      padding: 76px 20px 34px;
+      display: grid;
+      grid-template-columns: minmax(0, 1.15fr) minmax(320px, 0.85fr);
+      gap: 34px;
+      align-items: end;
+    }
+
+    .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      width: fit-content;
+      padding: 7px 10px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      color: var(--blue-dark);
+      background: rgba(255, 255, 255, 0.82);
+      font-size: 0.86rem;
+      font-weight: 800;
+    }
+
+    h1,
+    h2,
+    h3 {
+      margin: 0;
+      line-height: 1.1;
+      letter-spacing: 0;
+    }
+
+    h1 {
+      max-width: 860px;
+      margin-top: 18px;
+      font-size: clamp(2.3rem, 6vw, 5rem);
+    }
+
+    .hero-copy {
+      max-width: 770px;
+      margin: 20px 0 0;
+      color: var(--muted);
+      font-size: clamp(1.02rem, 1.7vw, 1.22rem);
+    }
+
+    .hero-actions {
+      margin-top: 26px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    .button {
+      min-height: 44px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 9px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      padding: 10px 14px;
+      color: var(--ink);
+      background: var(--surface);
+      font-weight: 800;
+      text-decoration: none;
+      cursor: pointer;
+      transition: transform 180ms ease, border-color 180ms ease, background 180ms ease, color 180ms ease;
+    }
+
+    .button:hover {
+      transform: translateY(-1px);
+      border-color: rgba(37, 94, 219, 0.35);
+      color: var(--blue-dark);
+    }
+
+    .button.primary {
+      border-color: var(--blue);
+      color: #ffffff;
+      background: var(--blue);
+    }
+
+    .button.primary:hover {
+      color: #ffffff;
+      background: var(--blue-dark);
+    }
+
+    .summary-panel {
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: rgba(255, 255, 255, 0.86);
+      box-shadow: var(--shadow);
+      overflow: hidden;
+    }
+
+    .summary-panel header {
+      padding: 18px;
+      border-bottom: 1px solid var(--line);
+      background: #fbfdff;
+    }
+
+    .summary-panel h2 {
+      font-size: 1rem;
+    }
+
+    .metric-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 1px;
+      background: var(--line);
+    }
+
+    .metric {
+      min-height: 122px;
+      padding: 18px;
+      background: var(--surface);
+    }
+
+    .metric strong {
+      display: block;
+      font-size: 1.7rem;
+      line-height: 1;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .metric span {
+      display: block;
+      margin-top: 8px;
+      color: var(--muted);
+      font-size: 0.9rem;
+    }
+
+    .section {
+      max-width: var(--max);
+      margin: 0 auto;
+      padding: 36px 20px;
+    }
+
+    .section-heading {
+      display: grid;
+      grid-template-columns: minmax(0, 0.8fr) minmax(280px, 0.42fr);
+      gap: 24px;
+      align-items: end;
+      margin-bottom: 18px;
+    }
+
+    .section h2 {
+      font-size: clamp(1.65rem, 3vw, 2.55rem);
+    }
+
+    .section-lede {
+      margin: 10px 0 0;
+      max-width: 760px;
+      color: var(--muted);
+      font-size: 1.02rem;
+    }
+
+    .panel {
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: var(--surface);
+      box-shadow: 0 12px 28px rgba(21, 32, 51, 0.07);
+    }
+
+    .panel-pad {
+      padding: 20px;
+    }
+
+    .grid-2 {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 16px;
+    }
+
+    .grid-3 {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 16px;
+    }
+
+    .rail {
+      display: grid;
+      grid-template-columns: 250px minmax(0, 1fr);
+      gap: 16px;
+      align-items: start;
+    }
+
+    .tabs {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .tab {
+      min-height: 44px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      width: 100%;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      padding: 11px 12px;
+      color: var(--muted);
+      background: var(--surface);
+      font-weight: 780;
+      text-align: left;
+      cursor: pointer;
+    }
+
+    .tab:hover,
+    .tab[aria-selected="true"] {
+      color: var(--ink);
+      border-color: rgba(37, 94, 219, 0.35);
+      background: #eef5ff;
+    }
+
+    .tab-panel {
+      display: none;
+    }
+
+    .tab-panel.active {
+      display: block;
+    }
+
+    .phase-card {
+      display: grid;
+      grid-template-columns: 130px minmax(0, 1fr);
+      gap: 18px;
+      padding: 20px;
+    }
+
+    .phase-number {
+      width: 92px;
+      height: 92px;
+      display: grid;
+      place-items: center;
+      border-radius: var(--radius);
+      color: #ffffff;
+      background: var(--ink);
+      font-size: 2.2rem;
+      font-weight: 860;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .phase-card h3 {
+      font-size: 1.4rem;
+    }
+
+    .phase-card p {
+      margin: 9px 0 0;
+      color: var(--muted);
+    }
+
+    .list {
+      display: grid;
+      gap: 10px;
+      margin: 16px 0 0;
+      padding: 0;
+      list-style: none;
+    }
+
+    .list li {
+      position: relative;
+      padding-left: 28px;
+      color: var(--muted);
+    }
+
+    .list li::before {
+      content: "";
+      position: absolute;
+      left: 0;
+      top: 0.7em;
+      width: 10px;
+      height: 10px;
+      border-radius: 3px;
+      background: var(--green);
+      transform: translateY(-50%);
+    }
+
+    .pipeline {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      gap: 10px;
+    }
+
+    .step {
+      min-height: 170px;
+      padding: 16px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: var(--surface);
+    }
+
+    .step b {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 30px;
+      height: 30px;
+      margin-bottom: 12px;
+      border-radius: 8px;
+      color: #ffffff;
+      background: var(--blue);
+      font-variant-numeric: tabular-nums;
+    }
+
+    .step h3 {
+      font-size: 1.05rem;
+    }
+
+    .step p {
+      margin: 8px 0 0;
+      color: var(--muted);
+      font-size: 0.95rem;
+    }
+
+    .module-map {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 12px;
+    }
+
+    .module {
+      padding: 16px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: var(--surface);
+    }
+
+    .module strong {
+      display: block;
+      margin-bottom: 7px;
+    }
+
+    .module span {
+      color: var(--muted);
+      font-size: 0.94rem;
+    }
+
+    .module.deep {
+      border-color: rgba(15, 118, 110, 0.45);
+      background: #f1fbf9;
+    }
+
+    .story-toolbar {
+      position: sticky;
+      top: 69px;
+      z-index: 8;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 14px;
+      padding: 12px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: rgba(255, 255, 255, 0.94);
+      backdrop-filter: blur(12px);
+    }
+
+    .segmented {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+
+    .segment {
+      min-height: 44px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      padding: 8px 12px;
+      color: var(--muted);
+      background: var(--surface);
+      font-weight: 760;
+      cursor: pointer;
+    }
+
+    .segment:hover,
+    .segment.active {
+      color: #ffffff;
+      border-color: var(--ink);
+      background: var(--ink);
+    }
+
+    .search {
+      min-height: 44px;
+      width: min(340px, 100%);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      padding: 10px 12px;
+      color: var(--ink);
+      background: var(--surface);
+      font: inherit;
+    }
+
+    .stories {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+      counter-reset: story;
+    }
+
+    .story {
+      display: grid;
+      grid-template-columns: 44px minmax(0, 1fr);
+      gap: 12px;
+      padding: 14px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: var(--surface);
+    }
+
+    .story::before {
+      counter-increment: story;
+      content: counter(story);
+      width: 36px;
+      height: 36px;
+      display: grid;
+      place-items: center;
+      border-radius: 8px;
+      color: #ffffff;
+      background: var(--blue);
+      font-weight: 840;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .story p {
+      margin: 0;
+      color: var(--muted);
+    }
+
+    .story strong {
+      color: var(--ink);
+    }
+
+    .badge-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 12px;
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      min-height: 30px;
+      padding: 4px 9px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      color: var(--muted);
+      background: #fbfdff;
+      font-size: 0.82rem;
+      font-weight: 760;
+    }
+
+    .badge.green {
+      color: #075e56;
+      border-color: rgba(15, 118, 110, 0.28);
+      background: #edfdfa;
+    }
+
+    .badge.amber {
+      color: #874200;
+      border-color: rgba(180, 83, 9, 0.28);
+      background: #fff7ed;
+    }
+
+    .badge.violet {
+      color: #4c1d95;
+      border-color: rgba(109, 40, 217, 0.25);
+      background: #f5f1ff;
+    }
+
+    .decision-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 12px;
+    }
+
+    .decision {
+      padding: 16px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: var(--surface);
+    }
+
+    .decision h3 {
+      font-size: 1.06rem;
+    }
+
+    .decision p {
+      margin: 8px 0 0;
+      color: var(--muted);
+      font-size: 0.95rem;
+    }
+
+    details {
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: var(--surface);
+    }
+
+    details + details {
+      margin-top: 10px;
+    }
+
+    summary {
+      min-height: 52px;
+      padding: 13px 16px;
+      cursor: pointer;
+      font-weight: 800;
+    }
+
+    details p,
+    details ul {
+      margin: 0;
+      padding: 0 16px 16px;
+      color: var(--muted);
+    }
+
+    details ul {
+      padding-left: 38px;
+    }
+
+    .source-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 12px;
+    }
+
+    .source {
+      padding: 16px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: var(--surface);
+    }
+
+    .source h3 {
+      font-size: 1rem;
+    }
+
+    .source p {
+      margin: 8px 0 0;
+      color: var(--muted);
+      font-size: 0.94rem;
+    }
+
+    .status-line {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 1px;
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: var(--line);
+    }
+
+    .status-line div {
+      padding: 16px;
+      background: var(--surface);
+    }
+
+    .status-line b {
+      display: block;
+      margin-bottom: 5px;
+    }
+
+    .status-line span {
+      color: var(--muted);
+      font-size: 0.92rem;
+    }
+
+    .footer {
+      max-width: var(--max);
+      margin: 0 auto;
+      padding: 30px 20px 54px;
+      color: var(--muted);
+    }
+
+    .hidden {
+      display: none !important;
+    }
+
+    @media (max-width: 980px) {
+      .hero,
+      .section-heading,
+      .rail {
+        grid-template-columns: 1fr;
+      }
+
+      .pipeline,
+      .module-map,
+      .source-grid,
+      .status-line {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .story-toolbar {
+        position: static;
+        align-items: stretch;
+        flex-direction: column;
+      }
+
+      .search {
+        width: 100%;
+      }
+    }
+
+    @media (max-width: 720px) {
+      .topbar-inner {
+        align-items: flex-start;
+        flex-direction: column;
+      }
+
+      .nav {
+        justify-content: flex-start;
+      }
+
+      .hero {
+        padding-top: 46px;
+      }
+
+      .metric-grid,
+      .grid-2,
+      .grid-3,
+      .pipeline,
+      .module-map,
+      .stories,
+      .decision-grid,
+      .source-grid,
+      .status-line {
+        grid-template-columns: 1fr;
+      }
+
+      .phase-card {
+        grid-template-columns: 1fr;
+      }
+
+      .phase-number {
+        width: 72px;
+        height: 72px;
+        font-size: 1.8rem;
+      }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      html {
+        scroll-behavior: auto;
+      }
+
+      *,
+      *::before,
+      *::after {
+        transition-duration: 0.01ms !important;
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+      }
+    }
+  </style>
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to PRD</a>
+
+  <header class="topbar">
+    <div class="topbar-inner">
+      <a class="brand" href="#main" aria-label="Second Brain PRD home">
+        <span class="brand-mark" aria-hidden="true">
+          <svg viewBox="0 0 24 24"><path d="M12 3v18"></path><path d="M5 7h7"></path><path d="M12 7h7"></path><path d="M5 12h14"></path><path d="M5 17h7"></path><path d="M12 17h7"></path></svg>
+        </span>
+        <span>Second Brain PRD</span>
+      </a>
+      <nav class="nav" aria-label="PRD sections">
+        <a href="#problem">Problem</a>
+        <a href="#phases">Phases</a>
+        <a href="#stories">Stories</a>
+        <a href="#implementation">Implementation</a>
+        <a href="#testing">Testing</a>
+        <a href="#risks">Risks</a>
+      </nav>
+    </div>
+  </header>
+
+  <main id="main">
+    <section class="hero" aria-labelledby="title">
+      <div>
+        <div class="eyebrow">
+          <span class="icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 6h16"></path><path d="M4 12h10"></path><path d="M4 18h16"></path></svg></span>
+          Product Requirements Document
+        </div>
+        <h1 id="title">Second Brain Research Agent</h1>
+        <p class="hero-copy">A source-grounded knowledge system that starts with saved X posts and YouTube videos, turns them into trustworthy summaries and timestamps, connects related ideas, and grows toward an autonomous research agent.</p>
+        <div class="hero-actions">
+          <a class="button primary" href="#phases">
+            <span class="icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M5 12h14"></path><path d="m13 6 6 6-6 6"></path></svg></span>
+            Review roadmap
+          </a>
+          <a class="button" href="#implementation">
+            <span class="icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 7h16"></path><path d="M4 12h16"></path><path d="M4 17h16"></path></svg></span>
+            Inspect modules
+          </a>
+        </div>
+      </div>
+      <aside class="summary-panel" aria-label="PRD summary">
+        <header>
+          <h2>Scope Snapshot</h2>
+          <div class="badge-row">
+            <span class="badge green">Source-grounded</span>
+            <span class="badge amber">5pm digest</span>
+            <span class="badge violet">Autonomous research</span>
+          </div>
+        </header>
+        <div class="metric-grid">
+          <div class="metric"><strong>4</strong><span>product phases from MVP to multi-user support</span></div>
+          <div class="metric"><strong>5pm</strong><span>target daily personal newsletter time</span></div>
+          <div class="metric"><strong>2</strong><span>first ingestion sources: X and YouTube</span></div>
+          <div class="metric"><strong>1</strong><span>canonical data layer: Supabase-backed source of truth</span></div>
+        </div>
+      </aside>
+    </section>
+
+    <section id="problem" class="section">
+      <div class="section-heading">
+        <div>
+          <h2>Problem Statement</h2>
+          <p class="section-lede">The user saves high-signal material faster than they can consume it. Bookmarked X posts, YouTube Watch Later videos, Apple Notes, WhatsApp notes, and scribbled ideas become a fragmented backlog instead of retained knowledge.</p>
+        </div>
+        <div class="panel panel-pad">
+          <strong>Core constraint</strong>
+          <p class="section-lede">The UI is only the presentation layer. The product value lives in ingestion, extraction, evidence preservation, synthesis, ranking, delivery, and feedback.</p>
+        </div>
+      </div>
+      <div class="grid-2">
+        <div class="panel panel-pad">
+          <h3>From the user's perspective</h3>
+          <ul class="list">
+            <li>I bookmark posts but do not return to them consistently.</li>
+            <li>I save podcasts and videos but rarely finish the backlog.</li>
+            <li>My notes are split across Apple Notes, WhatsApp, scribbles, and memory.</li>
+            <li>I want retention and insight without spending Saturday morning manually triaging everything.</li>
+          </ul>
+        </div>
+        <div class="panel panel-pad">
+          <h3>Solution</h3>
+          <ul class="list">
+            <li>Connect to X bookmarks and a YouTube inbox playlist.</li>
+            <li>Extract original text, transcripts, metadata, quotes, and timestamps.</li>
+            <li>Summarize with source references and confidence boundaries.</li>
+            <li>Connect related concepts across saved sources.</li>
+            <li>Send a useful daily personal research newsletter at 5pm.</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" aria-labelledby="pipeline-title">
+      <div class="section-heading">
+        <div>
+          <h2 id="pipeline-title">Functional Gist</h2>
+          <p class="section-lede">A stable product pipeline that can be rendered by any UI, scheduled job, email template, CLI, or future agent surface.</p>
+        </div>
+      </div>
+      <div class="pipeline">
+        <article class="step">
+          <b>1</b>
+          <h3>Input</h3>
+          <p>X bookmarks, YouTube inbox videos, and later notes, screenshots, documents, and rough thoughts.</p>
+        </article>
+        <article class="step">
+          <b>2</b>
+          <h3>Extract</h3>
+          <p>Tweet text, article bodies, author data, video metadata, transcripts, source URLs, and timestamps.</p>
+        </article>
+        <article class="step">
+          <b>3</b>
+          <h3>Understand</h3>
+          <p>Generate summaries, notable insights, best moments, action items, and confidence notes.</p>
+        </article>
+        <article class="step">
+          <b>4</b>
+          <h3>Connect</h3>
+          <p>Cluster repeated themes, link related tweets and videos, and explain why sources belong together.</p>
+        </article>
+        <article class="step">
+          <b>5</b>
+          <h3>Deliver</h3>
+          <p>Send a 5pm newsletter and use lightweight feedback to improve future selection and ranking.</p>
+        </article>
+      </div>
+    </section>
+
+    <section id="phases" class="section">
+      <div class="section-heading">
+        <div>
+          <h2>Roadmap</h2>
+          <p class="section-lede">The phases preserve the requested product sequence while making API risks and system boundaries explicit.</p>
+        </div>
+      </div>
+      <div class="rail">
+        <div class="tabs" role="tablist" aria-label="Roadmap phases">
+          <button class="tab" role="tab" aria-selected="true" aria-controls="phase-1" id="phase-tab-1" data-tab="phase-1">Phase 1 <span>MVP</span></button>
+          <button class="tab" role="tab" aria-selected="false" aria-controls="phase-2" id="phase-tab-2" data-tab="phase-2">Phase 2 <span>Understand</span></button>
+          <button class="tab" role="tab" aria-selected="false" aria-controls="phase-3" id="phase-tab-3" data-tab="phase-3">Phase 3 <span>Newsletter</span></button>
+          <button class="tab" role="tab" aria-selected="false" aria-controls="phase-4" id="phase-tab-4" data-tab="phase-4">Phase 4 <span>Multi-user</span></button>
+        </div>
+        <div class="panel">
+          <article class="tab-panel active phase-card" role="tabpanel" id="phase-1" aria-labelledby="phase-tab-1">
+            <div class="phase-number">1</div>
+            <div>
+              <h3>MVP: prove ingestion and summarization</h3>
+              <p>Connect to X developer access, verify bookmark retrieval, fetch a small real sample, connect YouTube ingestion through the viable API path, extract transcripts where available, and summarize with source references.</p>
+              <ul class="list">
+                <li>Fetch 5 authenticated X bookmarks with tweet text, author, created time, metrics, and URL.</li>
+                <li>Summarize each bookmark with source quote or direct link.</li>
+                <li>Validate YouTube Watch Later access and document the official limitation if blocked.</li>
+                <li>Use a dedicated YouTube inbox playlist when Watch Later cannot be listed.</li>
+                <li>Extract at least one transcript and record transcript status for every video.</li>
+              </ul>
+            </div>
+          </article>
+          <article class="tab-panel phase-card" role="tabpanel" id="phase-2" aria-labelledby="phase-tab-2">
+            <div class="phase-number">2</div>
+            <div>
+              <h3>Improve the core product by understanding the user</h3>
+              <p>Move from isolated item summaries to a personal knowledge layer that detects themes, connects similar ideas across sources, and learns from feedback.</p>
+              <ul class="list">
+                <li>Support more bookmarks and videos with normalized source records and synthesis cache keys.</li>
+                <li>Embed source chunks, summaries, entities, and themes for semantic retrieval.</li>
+                <li>Cluster related tweets, videos, and notes into source-grounded insight groups.</li>
+                <li>Explain why items were connected and preserve provenance for every claim.</li>
+                <li>Capture feedback such as useful, obvious, stale, irrelevant, more like this, and less like this.</li>
+              </ul>
+            </div>
+          </article>
+          <article class="tab-panel phase-card" role="tabpanel" id="phase-3" aria-labelledby="phase-tab-3">
+            <div class="phase-number">3</div>
+            <div>
+              <h3>Newsletter and self-learning loop</h3>
+              <p>Generate and send a daily 5pm personal newsletter from saved material, ranked by relevance, novelty, source quality, age, and feedback signals.</p>
+              <ul class="list">
+                <li>Schedule digest generation in the user's configured timezone.</li>
+                <li>Mix related X and YouTube items when they cover the same concept.</li>
+                <li>Include original quotes, source links, video timestamps, and follow-up reading.</li>
+                <li>Expose lightweight feedback from the email and the app.</li>
+                <li>Polish the UI where it improves trust, source review, retention, and correction.</li>
+              </ul>
+            </div>
+          </article>
+          <article class="tab-panel phase-card" role="tabpanel" id="phase-4" aria-labelledby="phase-tab-4">
+            <div class="phase-number">4</div>
+            <div>
+              <h3>Multiple users</h3>
+              <p>Add the account, permission, privacy, and operational model needed to let multiple people connect sources and receive personal research digests safely.</p>
+              <ul class="list">
+                <li>Add authentication and per-user OAuth source connections.</li>
+                <li>Encrypt and isolate tokens, source items, summaries, preferences, and digests by user.</li>
+                <li>Move ingestion and digest generation into observable background jobs.</li>
+                <li>Provide source disconnection, export, deletion, consent, and retention controls.</li>
+                <li>Ensure one user's failed source connection cannot affect another user's digest.</li>
+              </ul>
+            </div>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section id="stories" class="section">
+      <div class="section-heading">
+        <div>
+          <h2>User Stories</h2>
+          <p class="section-lede">Filter the PRD by phase or search the complete product surface. Each story keeps the UI separate from the core requirement.</p>
+        </div>
+      </div>
+      <div class="story-toolbar" aria-label="Story controls">
+        <div class="segmented" role="group" aria-label="Filter stories by phase">
+          <button class="segment active" data-filter="all">All</button>
+          <button class="segment" data-filter="1">Phase 1</button>
+          <button class="segment" data-filter="2">Phase 2</button>
+          <button class="segment" data-filter="3">Phase 3</button>
+          <button class="segment" data-filter="4">Phase 4</button>
+        </div>
+        <input id="story-search" class="search" type="search" placeholder="Search stories" aria-label="Search user stories">
+      </div>
+      <div class="stories" id="story-list">
+        <article class="story" data-phase="1"><p><strong>As the user, I want to connect my X account with bookmark read access, so that saved posts can enter my research inbox.</strong></p></article>
+        <article class="story" data-phase="1"><p><strong>As the user, I want the system to verify X OAuth scopes before ingestion, so that it fails clearly if developer access is insufficient.</strong></p></article>
+        <article class="story" data-phase="1"><p><strong>As the user, I want to fetch 5 recent X bookmarks first, so that the MVP proves the smallest valuable slice before scaling.</strong></p></article>
+        <article class="story" data-phase="1"><p><strong>As the user, I want each X bookmark to preserve author, handle, timestamp, metrics, text, URL, and expanded links, so that summaries remain traceable.</strong></p></article>
+        <article class="story" data-phase="1"><p><strong>As the user, I want each saved post summarized with the original quote or source link, so that I can trust the generated note.</strong></p></article>
+        <article class="story" data-phase="1"><p><strong>As the user, I want summaries labeled read now, later, or skip, so that I can reduce backlog guilt quickly.</strong></p></article>
+        <article class="story" data-phase="1"><p><strong>As the user, I want to connect YouTube through the API path that actually works, so that saved videos can enter the same inbox.</strong></p></article>
+        <article class="story" data-phase="1"><p><strong>As the user, I want the app to detect that Watch Later cannot be listed if the API blocks it, so that the product offers a viable inbox playlist fallback.</strong></p></article>
+        <article class="story" data-phase="1"><p><strong>As the user, I want YouTube videos to include title, channel, publish date, URL, and video ID, so that every summary maps back to the original video.</strong></p></article>
+        <article class="story" data-phase="1"><p><strong>As the user, I want transcript extraction to record available, missing, blocked, or untested status, so that I know why a video could or could not be summarized.</strong></p></article>
+        <article class="story" data-phase="1"><p><strong>As the user, I want transcript language and translation status preserved, so that multilingual videos can still produce reliable English notes.</strong></p></article>
+        <article class="story" data-phase="1"><p><strong>As the user, I want the system to avoid hallucinated claims when transcript or tweet evidence is missing, so that the inbox remains trustworthy.</strong></p></article>
+        <article class="story" data-phase="1"><p><strong>As the operator, I want ingestion blockers shown separately from content output, so that source setup issues are not confused with product quality.</strong></p></article>
+        <article class="story" data-phase="1"><p><strong>As the operator, I want a local demo fallback when Supabase is not configured, so that the frontend can still validate the knowledge-run contract.</strong></p></article>
+        <article class="story" data-phase="2"><p><strong>As the user, I want the system to ingest more than 5 bookmarks and videos, so that the product becomes useful beyond a demo sample.</strong></p></article>
+        <article class="story" data-phase="2"><p><strong>As the user, I want source items stored in a normalized record, so that repeated runs do not lose provenance or duplicate work.</strong></p></article>
+        <article class="story" data-phase="2"><p><strong>As the user, I want raw and derived source artifacts stored privately, so that original evidence remains available for later review.</strong></p></article>
+        <article class="story" data-phase="2"><p><strong>As the user, I want summaries cached by source, capture hash, prompt version, and model, so that unchanged sources are not recomputed unnecessarily.</strong></p></article>
+        <article class="story" data-phase="2"><p><strong>As the user, I want semantic retrieval over chunks and summaries, so that related ideas can be found across different source types.</strong></p></article>
+        <article class="story" data-phase="2"><p><strong>As the user, I want the system to identify recurring themes in my saved material, so that I can understand what I keep gravitating toward.</strong></p></article>
+        <article class="story" data-phase="2"><p><strong>As the user, I want a tweet and a video about the same concept linked together, so that the system creates new insight instead of isolated summaries.</strong></p></article>
+        <article class="story" data-phase="2"><p><strong>As the user, I want every cross-source connection to explain its evidence, so that I can verify why the relationship exists.</strong></p></article>
+        <article class="story" data-phase="2"><p><strong>As the user, I want notable insights to include confidence and citations, so that I know what is strong versus speculative.</strong></p></article>
+        <article class="story" data-phase="2"><p><strong>As the user, I want to mark outputs useful, obvious, stale, or irrelevant, so that future ranking learns from my taste.</strong></p></article>
+        <article class="story" data-phase="2"><p><strong>As the user, I want the system to remember topics I repeatedly save, so that it can prioritize research areas I actually care about.</strong></p></article>
+        <article class="story" data-phase="2"><p><strong>As the operator, I want graph data derived from canonical records, so that relationship indexes can be rebuilt without losing source truth.</strong></p></article>
+        <article class="story" data-phase="2"><p><strong>As the operator, I want processing events and validation items logged per run, so that failures can be diagnosed without guessing.</strong></p></article>
+        <article class="story" data-phase="3"><p><strong>As the user, I want a daily 5pm email digest, so that saved material reaches me when I am likely to read it.</strong></p></article>
+        <article class="story" data-phase="3"><p><strong>As the user, I want digest timing to respect my configured timezone, so that the 5pm habit remains predictable.</strong></p></article>
+        <article class="story" data-phase="3"><p><strong>As the user, I want the digest to mix X and YouTube when they discuss the same concept, so that it reads like research synthesis instead of a feed dump.</strong></p></article>
+        <article class="story" data-phase="3"><p><strong>As the user, I want the best parts of videos surfaced with timestamps, so that long podcasts become skimmable.</strong></p></article>
+        <article class="story" data-phase="3"><p><strong>As the user, I want original quotes and transcript evidence in the email, so that I can inspect the source without opening the app first.</strong></p></article>
+        <article class="story" data-phase="3"><p><strong>As the user, I want follow-up reading links included only when grounded in saved material, so that the digest does not drift into generic recommendations.</strong></p></article>
+        <article class="story" data-phase="3"><p><strong>As the user, I want quick feedback actions from the email, so that I can train the system without doing a separate review session.</strong></p></article>
+        <article class="story" data-phase="3"><p><strong>As the user, I want the product to learn from archived, expanded, and skipped items, so that future newsletters become sharper.</strong></p></article>
+        <article class="story" data-phase="3"><p><strong>As the user, I want the UI polished around review and trust, so that source inspection feels reliable when the newsletter raises something important.</strong></p></article>
+        <article class="story" data-phase="3"><p><strong>As the operator, I want scheduled digest generation to be idempotent, so that retries do not send duplicate newsletters.</strong></p></article>
+        <article class="story" data-phase="3"><p><strong>As the operator, I want delivery status tracked, so that email failures can be retried or surfaced clearly.</strong></p></article>
+        <article class="story" data-phase="4"><p><strong>As a new user, I want to create an account, so that my sources, summaries, preferences, and digests are isolated from others.</strong></p></article>
+        <article class="story" data-phase="4"><p><strong>As a user, I want to connect X and YouTube per account, so that source authorization is personal and revocable.</strong></p></article>
+        <article class="story" data-phase="4"><p><strong>As a user, I want source tokens encrypted and stored server-side only, so that browser clients cannot leak provider access.</strong></p></article>
+        <article class="story" data-phase="4"><p><strong>As a user, I want to configure digest timing, source preferences, and retention rules, so that the product fits my routine.</strong></p></article>
+        <article class="story" data-phase="4"><p><strong>As a user, I want to disconnect a source, so that the system stops ingesting it immediately.</strong></p></article>
+        <article class="story" data-phase="4"><p><strong>As a user, I want to export my saved data and generated notes, so that I am not locked into the product.</strong></p></article>
+        <article class="story" data-phase="4"><p><strong>As a user, I want to delete my account data, so that my saved sources and generated artifacts can be removed when requested.</strong></p></article>
+        <article class="story" data-phase="4"><p><strong>As the operator, I want row-level data isolation and server-side authorization, so that users cannot see each other's source material.</strong></p></article>
+        <article class="story" data-phase="4"><p><strong>As the operator, I want ingestion jobs scoped by user and source connection, so that one user's failure cannot affect another user.</strong></p></article>
+        <article class="story" data-phase="4"><p><strong>As the operator, I want observability for ingestion, graph sync, digest generation, and email delivery, so that multi-user operations can be monitored.</strong></p></article>
+        <article class="story" data-phase="4"><p><strong>As the product, I want each user to have a self-learning preference profile, so that recommendations do not collapse into a shared generic taste model.</strong></p></article>
+      </div>
+    </section>
+
+    <section id="implementation" class="section">
+      <div class="section-heading">
+        <div>
+          <h2>Implementation Decisions</h2>
+          <p class="section-lede">The implementation follows the current repo direction: React presentation, Go API and pipeline, Supabase canonical storage, pgvector retrieval, and Neo4j as a derived graph index.</p>
+        </div>
+      </div>
+      <div class="module-map" aria-label="Module map">
+        <article class="module deep"><strong>Source intake ledger</strong><span>Normalizes X posts, YouTube videos, external IDs, source status, capture hashes, and ingestion audit records behind a stable interface.</span></article>
+        <article class="module deep"><strong>Evidence artifact module</strong><span>Stores raw and derived objects such as article text, transcript files, snapshots, and export artifacts with checksums and provenance.</span></article>
+        <article class="module deep"><strong>Prompt synthesis module</strong><span>Produces summaries, insights, action items, quotes, timestamps, confidence, and hallucination guardrails from evidence-bearing inputs.</span></article>
+        <article class="module deep"><strong>Knowledge run read model</strong><span>Returns a UI-safe contract containing sources, summaries, insights, actions, processing events, validation, and blockers.</span></article>
+        <article class="module"><strong>X connector</strong><span>Uses authenticated user access and bookmark scopes, then preserves tweet metadata and source URLs.</span></article>
+        <article class="module"><strong>YouTube connector</strong><span>Uses a viable playlist path, handles Watch Later limitation, retrieves video metadata, and records transcript availability.</span></article>
+        <article class="module"><strong>Embedding and retrieval</strong><span>Stores chunk, summary, and entity embeddings in pgvector with model and dimensionality metadata.</span></article>
+        <article class="module"><strong>Graph sync outbox</strong><span>Derives Neo4j nodes and relationships from canonical Supabase records and can be rebuilt when needed.</span></article>
+        <article class="module"><strong>Digest generator</strong><span>Ranks sources by relevance, novelty, source quality, backlog age, and feedback before creating the 5pm newsletter.</span></article>
+        <article class="module"><strong>Feedback learner</strong><span>Captures user signals and updates ranking, clustering, and digest selection without hiding the evidence trail.</span></article>
+        <article class="module"><strong>Auth and tenant boundary</strong><span>Adds accounts, per-user tokens, permissions, export, deletion, and row-level isolation in the multi-user phase.</span></article>
+        <article class="module"><strong>Presentation layer</strong><span>Renders the Knowledge Inbox, source review, validation, and newsletter views without owning product logic.</span></article>
+      </div>
+
+      <div class="grid-2" style="margin-top:16px">
+        <div class="panel panel-pad">
+          <h3>Architecture commitments</h3>
+          <ul class="list">
+            <li>Frontend clients call the Go API for product data; they do not connect directly to canonical storage.</li>
+            <li>Supabase Postgres is the relational system of record for source items, runs, validation, synthesis cache, and metadata.</li>
+            <li>Supabase Storage stores private raw and derived source artifacts.</li>
+            <li>pgvector supports semantic retrieval filtered by user, source type, run, timestamp, and permissions.</li>
+            <li>Neo4j stores derived entities, claims, concepts, summaries, and relationships for multi-hop reasoning.</li>
+          </ul>
+        </div>
+        <div class="panel panel-pad">
+          <h3>API contract principles</h3>
+          <ul class="list">
+            <li>Every generated output includes source attribution or an explicit reason evidence is unavailable.</li>
+            <li>Every run exposes validation and blocker data separately from generated summaries.</li>
+            <li>Transcript and translation status are first-class fields, not hidden implementation details.</li>
+            <li>Synthesis reuse is keyed by source identity, capture hash, prompt version, and model.</li>
+            <li>UI components receive view models and do not import connector or persistence logic.</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <section id="testing" class="section">
+      <div class="section-heading">
+        <div>
+          <h2>Testing Decisions</h2>
+          <p class="section-lede">Tests should assert external behavior at module boundaries. They should not lock the system to private implementation details that can change as the agent matures.</p>
+        </div>
+      </div>
+      <div class="decision-grid">
+        <article class="decision">
+          <h3>Connector tests</h3>
+          <p>Use fixtures and mocked provider responses to verify X bookmark mapping, YouTube playlist limitation handling, metadata preservation, transcript status, and error surfacing.</p>
+        </article>
+        <article class="decision">
+          <h3>Synthesis tests</h3>
+          <p>Verify that summaries, insights, action items, quotes, confidence, and cache status are generated only from available evidence and reusable cache keys.</p>
+        </article>
+        <article class="decision">
+          <h3>Artifact tests</h3>
+          <p>Verify object metadata, checksums, paths, storage failure behavior, and provenance records without depending on a particular storage SDK.</p>
+        </article>
+        <article class="decision">
+          <h3>Read model tests</h3>
+          <p>Verify the Knowledge Run contract consumed by the UI, including blockers, validation, source health, summaries, insights, actions, and processing events.</p>
+        </article>
+        <article class="decision">
+          <h3>Digest tests</h3>
+          <p>Verify ranking, deduplication, idempotent scheduled generation, mixed-source sections, timestamp inclusion, source citations, and no duplicate sends on retry.</p>
+        </article>
+        <article class="decision">
+          <h3>Multi-user tests</h3>
+          <p>Verify tenant isolation, token scoping, export, deletion, disconnect behavior, background job scoping, and authorization on every user-owned read.</p>
+        </article>
+      </div>
+    </section>
+
+    <section id="risks" class="section">
+      <div class="section-heading">
+        <div>
+          <h2>Risks, Scope, and Notes</h2>
+          <p class="section-lede">Known constraints should shape the backend plan. The UI should surface state clearly but should not invent product capability.</p>
+        </div>
+      </div>
+      <div class="grid-2">
+        <div>
+          <details open>
+            <summary>X bookmark access</summary>
+            <p>X bookmark lookup requires an approved developer app and authenticated user token with bookmark read scope. Phase 1 must validate access before downstream work assumes it.</p>
+          </details>
+          <details>
+            <summary>YouTube Watch Later limitation</summary>
+            <p>The official YouTube Data API blocks Watch Later item retrieval. The product should verify this in setup and use a dedicated Second Brain Inbox playlist or manual link import as the MVP fallback.</p>
+          </details>
+          <details>
+            <summary>Transcript coverage</summary>
+            <p>Not every video has usable captions. Transcript status, source language, translation status, and extraction errors must be visible in the data model.</p>
+          </details>
+          <details>
+            <summary>Source-grounding risk</summary>
+            <p>The product must avoid becoming a generic summarizer. Every generated claim should trace to a tweet, article body, transcript passage, timestamp, or explicit confidence warning.</p>
+          </details>
+        </div>
+        <div class="panel panel-pad">
+          <h3>Out of Scope</h3>
+          <ul class="list">
+            <li>Multi-user support before the single-user ingestion and digest loop works.</li>
+            <li>Fully autonomous web discovery before saved-source understanding is reliable.</li>
+            <li>Generic recommendation feeds that are not grounded in the user's saved material.</li>
+            <li>Apple Notes, WhatsApp, screenshots, and scribbles before X and YouTube are proven.</li>
+            <li>UI polish that masks missing source access, missing transcripts, or weak evidence.</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" aria-labelledby="acceptance-title">
+      <div class="section-heading">
+        <div>
+          <h2 id="acceptance-title">Acceptance Criteria</h2>
+          <p class="section-lede">The implementation is ready to move phases only when these externally visible behaviors are true.</p>
+        </div>
+      </div>
+      <div class="status-line">
+        <div><b>Phase 1</b><span>5 X bookmarks summarized, YouTube path validated, at least one transcript tested, source links preserved.</span></div>
+        <div><b>Phase 2</b><span>Normalized storage, source-grounded synthesis cache, recurring themes, cross-source insight connections, feedback capture.</span></div>
+        <div><b>Phase 3</b><span>5pm mixed-source digest sent with quotes, timestamps, links, feedback actions, and idempotent delivery.</span></div>
+        <div><b>Phase 4</b><span>Authenticated users, isolated tokens and data, source preferences, export, deletion, job observability.</span></div>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="source-grid">
+        <article class="source">
+          <h3>Primary repo references</h3>
+          <p>README, architecture docs, source model contracts, and existing Knowledge Inbox boundaries.</p>
+        </article>
+        <article class="source">
+          <h3>X API reference</h3>
+          <p><a href="https://docs.x.com/x-api/posts/bookmarks/quickstart/bookmarks-lookup">Bookmarks lookup</a> for authenticated user bookmark retrieval.</p>
+        </article>
+        <article class="source">
+          <h3>YouTube API reference</h3>
+          <p><a href="https://developers.google.com/youtube/v3/docs/playlistItems/list">PlaylistItems list</a> documents Watch Later access limitations.</p>
+        </article>
+        <article class="source">
+          <h3>Triage label</h3>
+          <p>ready-for-agent. This PRD is structured for implementation issue creation when an issue tracker workflow is connected.</p>
+        </article>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <p>Second Brain Research Agent PRD. UI here is presentation only; implementation decisions remain tied to source ingestion, evidence artifacts, synthesis, retrieval, delivery, and feedback loops.</p>
+  </footer>
+
+  <script>
+    const tabs = Array.from(document.querySelectorAll(".tab"));
+    const panels = Array.from(document.querySelectorAll(".tab-panel"));
+
+    tabs.forEach((tab) => {
+      tab.addEventListener("click", () => {
+        const target = tab.dataset.tab;
+        tabs.forEach((item) => item.setAttribute("aria-selected", String(item === tab)));
+        panels.forEach((panel) => panel.classList.toggle("active", panel.id === target));
+      });
+    });
+
+    const filterButtons = Array.from(document.querySelectorAll("[data-filter]"));
+    const stories = Array.from(document.querySelectorAll(".story"));
+    const storySearch = document.getElementById("story-search");
+    let activeFilter = "all";
+
+    function applyStoryFilters() {
+      const query = storySearch.value.trim().toLowerCase();
+      stories.forEach((story) => {
+        const matchesPhase = activeFilter === "all" || story.dataset.phase === activeFilter;
+        const matchesQuery = !query || story.textContent.toLowerCase().includes(query);
+        story.classList.toggle("hidden", !(matchesPhase && matchesQuery));
+      });
+    }
+
+    filterButtons.forEach((button) => {
+      button.addEventListener("click", () => {
+        activeFilter = button.dataset.filter;
+        filterButtons.forEach((item) => item.classList.toggle("active", item === button));
+        applyStoryFilters();
+      });
+    });
+
+    storySearch.addEventListener("input", applyStoryFilters);
+
+    const navLinks = Array.from(document.querySelectorAll(".nav a"));
+    const sections = navLinks
+      .map((link) => document.querySelector(link.getAttribute("href")))
+      .filter(Boolean);
+
+    const observer = new IntersectionObserver((entries) => {
+      entries.forEach((entry) => {
+        if (!entry.isIntersecting) return;
+        navLinks.forEach((link) => {
+          link.setAttribute("aria-current", String(link.getAttribute("href") === "#" + entry.target.id));
+        });
+      });
+    }, { rootMargin: "-40% 0px -55% 0px", threshold: 0.01 });
+
+    sections.forEach((section) => observer.observe(section));
+  </script>
+</body>
+</html>
