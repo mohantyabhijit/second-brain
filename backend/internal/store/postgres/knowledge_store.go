@@ -153,7 +153,7 @@ func (s *Store) SaveRun(ctx context.Context, result knowledge.Result, sources []
 		insert into knowledge_runs (owner_id, generated_at, payload)
 		values ($1, $2, $3)
 		returning id
-	`, ownerID, result.GeneratedAt, raw).Scan(&runID)
+	`, ownerID, result.GeneratedAt, string(raw)).Scan(&runID)
 	if err != nil {
 		return err
 	}
@@ -255,7 +255,7 @@ func upsertSynthesis(ctx context.Context, tx pgx.Tx, sourceItemID string, synthe
 			insights = excluded.insights,
 			action_items = excluded.action_items,
 			generated_at = excluded.generated_at
-	`, sourceItemID, synthesis.CaptureHash, synthesis.PromptVersion, synthesis.Model, summaryRaw, insightsRaw, actionsRaw, synthesis.GeneratedAt)
+	`, sourceItemID, synthesis.CaptureHash, synthesis.PromptVersion, synthesis.Model, string(summaryRaw), string(insightsRaw), string(actionsRaw), synthesis.GeneratedAt)
 	return err
 }
 
@@ -354,7 +354,7 @@ func enqueueGraphSync(ctx context.Context, tx pgx.Tx, sourceItemID string, sourc
 			payload
 		)
 		values ($1, 'source_item', $2, 'source_item.processed', $3)
-	`, source.OwnerID, sourceItemID, raw)
+	`, source.OwnerID, sourceItemID, string(raw))
 	return err
 }
 
