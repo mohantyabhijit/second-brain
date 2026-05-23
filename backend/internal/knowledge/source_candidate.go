@@ -54,10 +54,14 @@ func candidatesFromBookmarks(bookmarks []XBookmark) []sourceCandidate {
 func candidatesFromVideos(items []YouTubeItem) []sourceCandidate {
 	candidates := []sourceCandidate{}
 	for _, item := range items {
-		if item.TranscriptStatus != "available" {
-			continue
-		}
 		body := fallback(item.TranscriptPreview, item.TranscriptOriginalPreview)
+		artifactKind := "transcript"
+		contentType := "text/plain; charset=utf-8"
+		if body == "" {
+			body = youtubeMetadataBody(item)
+			artifactKind = "metadata"
+			contentType = "text/markdown; charset=utf-8"
+		}
 		if body == "" {
 			continue
 		}
@@ -69,12 +73,29 @@ func candidatesFromVideos(items []YouTubeItem) []sourceCandidate {
 			authorName:   item.ChannelTitle,
 			publishedAt:  item.PublishedAt,
 			body:         body,
-			artifactKind: "transcript",
-			contentType:  "text/plain; charset=utf-8",
+			artifactKind: artifactKind,
+			contentType:  contentType,
 			cachedHash:   item.CachedCaptureHash,
 		})
 	}
 	return candidates
+}
+
+func youtubeMetadataBody(item YouTubeItem) string {
+	parts := []string{
+		"Title: " + strings.TrimSpace(item.Title),
+		"Channel: " + strings.TrimSpace(item.ChannelTitle),
+		"Published: " + strings.TrimSpace(item.PublishedAt),
+		"Source: " + strings.TrimSpace(item.SourceURL),
+		"Transcript status: " + strings.TrimSpace(item.TranscriptStatus),
+	}
+	if strings.TrimSpace(item.Description) != "" {
+		parts = append(parts, "Description: "+strings.TrimSpace(item.Description))
+	}
+	if strings.TrimSpace(item.TranscriptError) != "" {
+		parts = append(parts, "Transcript note: "+strings.TrimSpace(item.TranscriptError))
+	}
+	return strings.Join(compact(parts), "\n")
 }
 
 func (candidate sourceCandidate) captureHash() string {

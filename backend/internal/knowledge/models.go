@@ -51,6 +51,7 @@ type XBookmark struct {
 type YouTubeItem struct {
 	VideoID                     string   `json:"videoId"`
 	Title                       string   `json:"title"`
+	Description                 string   `json:"description,omitempty"`
 	ChannelTitle                string   `json:"channelTitle,omitempty"`
 	PublishedAt                 string   `json:"publishedAt,omitempty"`
 	SourceURL                   string   `json:"sourceUrl"`

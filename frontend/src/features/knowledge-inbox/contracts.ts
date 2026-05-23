@@ -27,6 +27,7 @@ export type SavedXItem = {
 export type SavedYouTubeItem = {
   videoId: string;
   title: string;
+  description?: string;
   channelTitle?: string;
   publishedAt?: string;
   sourceUrl: string;

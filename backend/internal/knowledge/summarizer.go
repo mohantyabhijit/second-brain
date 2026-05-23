@@ -36,20 +36,24 @@ func summarizeBookmarks(bookmarks []XBookmark) []Summary {
 func summarizeVideos(items []YouTubeItem) []Summary {
 	summaries := []Summary{}
 	for _, item := range items {
-		if item.TranscriptStatus != "available" {
-			continue
-		}
 		notes := []string{}
 		if item.TranscriptTranslationStatus == "translated" && item.TranscriptSourceLang != "" {
 			notes = append(notes, "Transcript preview translated from "+item.TranscriptSourceLang+" to English before summarization.")
+		}
+		body := fallback(fallback(item.TranscriptPreview, item.TranscriptOriginalPreview), youtubeMetadataBody(item))
+		if body == "" {
+			continue
+		}
+		if item.TranscriptStatus != "available" {
+			notes = append(notes, "Transcript unavailable; summary is grounded only in YouTube playlist metadata.")
 		}
 		summaries = append(summaries, extractiveSummary(rawSummaryInput{
 			ID:        item.VideoID,
 			Source:    "youtube",
 			Title:     item.Title,
 			SourceURL: item.SourceURL,
-			Body:      fallback(item.TranscriptPreview, item.Title),
-			Quote:     item.TranscriptPreview,
+			Body:      body,
+			Quote:     body,
 			Notes:     notes,
 		}))
 	}

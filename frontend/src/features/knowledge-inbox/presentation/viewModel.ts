@@ -202,7 +202,7 @@ export function toKnowledgeInboxViewModel(run: KnowledgeRunResult, isRunning: bo
           id: `youtube-${item.videoId}`,
           source: "YouTube",
           item: item.title,
-          body: item.transcriptPreview ?? item.transcriptOriginalPreview ?? item.transcriptError ?? "Transcript not available in this run.",
+          body: item.transcriptPreview ?? item.transcriptOriginalPreview ?? item.description ?? item.transcriptError ?? "Transcript not available in this run.",
           author: item.channelTitle ?? "Unknown",
           status: transcriptLabel(item),
           timestamp: formatSourceDate(item.publishedAt),

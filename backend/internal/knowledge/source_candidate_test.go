@@ -1,6 +1,9 @@
 package knowledge
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestCandidatesFromBookmarksNormalizeSourceMetadata(t *testing.T) {
 	bookmarks := []XBookmark{
@@ -65,7 +68,7 @@ func TestCandidatesFromBookmarksNormalizeSourceMetadata(t *testing.T) {
 	}
 }
 
-func TestCandidatesFromVideosRequiresAvailableTranscriptText(t *testing.T) {
+func TestCandidatesFromVideosUseTranscriptOrMetadata(t *testing.T) {
 	items := []YouTubeItem{
 		{
 			VideoID:           "video-1",
@@ -84,11 +87,12 @@ func TestCandidatesFromVideosRequiresAvailableTranscriptText(t *testing.T) {
 			TranscriptOriginalPreview: "original transcript text",
 		},
 		{
-			VideoID:           "video-3",
-			Title:             "Missing transcript",
-			SourceURL:         "https://www.youtube.com/watch?v=video-3",
-			TranscriptStatus:  "missing",
-			TranscriptPreview: "ignored text",
+			VideoID:          "video-3",
+			Title:            "Missing transcript",
+			Description:      "A source-grounded description from the playlist.",
+			ChannelTitle:     "Metadata Channel",
+			SourceURL:        "https://www.youtube.com/watch?v=video-3",
+			TranscriptStatus: "missing",
 		},
 		{
 			VideoID:          "video-4",
@@ -100,8 +104,8 @@ func TestCandidatesFromVideosRequiresAvailableTranscriptText(t *testing.T) {
 
 	candidates := candidatesFromVideos(items)
 
-	if len(candidates) != 2 {
-		t.Fatalf("expected 2 transcript candidates, got %d", len(candidates))
+	if len(candidates) != 4 {
+		t.Fatalf("expected 4 video candidates, got %d", len(candidates))
 	}
 	if candidates[0].title != "Untitled YouTube video" || candidates[0].body != "translated transcript text" {
 		t.Fatalf("unexpected first video candidate: %#v", candidates[0])
@@ -114,5 +118,11 @@ func TestCandidatesFromVideosRequiresAvailableTranscriptText(t *testing.T) {
 	}
 	if candidates[1].title != "Original only" || candidates[1].body != "original transcript text" {
 		t.Fatalf("unexpected second video candidate: %#v", candidates[1])
+	}
+	if candidates[2].artifactKind != "metadata" || !strings.Contains(candidates[2].body, "A source-grounded description") {
+		t.Fatalf("expected metadata fallback candidate, got %#v", candidates[2])
+	}
+	if candidates[3].artifactKind != "metadata" || !strings.Contains(candidates[3].body, "Title: No text") {
+		t.Fatalf("expected title metadata fallback candidate, got %#v", candidates[3])
 	}
 }

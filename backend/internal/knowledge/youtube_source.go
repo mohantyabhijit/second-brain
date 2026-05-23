@@ -14,6 +14,7 @@ type playlistResponse struct {
 	Items []struct {
 		Snippet *struct {
 			Title        string `json:"title"`
+			Description  string `json:"description"`
 			ChannelTitle string `json:"channelTitle"`
 			PublishedAt  string `json:"publishedAt"`
 			ResourceID   *struct {
@@ -129,6 +130,7 @@ func (s *Service) fetchPlaylistItems(ctx context.Context, playlistID string, lim
 		items = append(items, YouTubeItem{
 			VideoID:          item.Snippet.ResourceID.VideoID,
 			Title:            fallback(item.Snippet.Title, "Untitled YouTube video"),
+			Description:      strings.TrimSpace(item.Snippet.Description),
 			ChannelTitle:     item.Snippet.ChannelTitle,
 			PublishedAt:      item.Snippet.PublishedAt,
 			SourceURL:        "https://www.youtube.com/watch?v=" + item.Snippet.ResourceID.VideoID,
