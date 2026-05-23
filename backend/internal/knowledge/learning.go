@@ -724,13 +724,42 @@ func selectDigestInsights(generatedAt time.Time, insights []Insight, limit int) 
 	sort.SliceStable(selected, func(i int, j int) bool {
 		return digestInsightPickScore(seed, selected[i]) < digestInsightPickScore(seed, selected[j])
 	})
-	return selected[:limit]
+	picked := make([]Insight, 0, limit)
+	used := map[string]bool{}
+	for _, source := range []string{"youtube", "x"} {
+		if len(picked) >= limit {
+			break
+		}
+		for _, insight := range selected {
+			if insight.Source == source && !used[insightDigestIdentity(insight)] {
+				picked = append(picked, insight)
+				used[insightDigestIdentity(insight)] = true
+				break
+			}
+		}
+	}
+	for _, insight := range selected {
+		if len(picked) >= limit {
+			break
+		}
+		identity := insightDigestIdentity(insight)
+		if used[identity] {
+			continue
+		}
+		picked = append(picked, insight)
+		used[identity] = true
+	}
+	return picked
 }
 
 func digestInsightPickScore(seed string, insight Insight) uint64 {
-	identity := strings.Join([]string{insight.ID, insight.Title, insight.SourceURL, insight.Insight}, "|")
+	identity := insightDigestIdentity(insight)
 	sum := sha256.Sum256([]byte(seed + ":" + identity))
 	return binary.BigEndian.Uint64(sum[:8])
+}
+
+func insightDigestIdentity(insight Insight) string {
+	return strings.Join([]string{insight.ID, insight.Source, insight.Title, insight.SourceURL, insight.Insight}, "|")
 }
 
 func parseDigestClock(value string) (int, int) {

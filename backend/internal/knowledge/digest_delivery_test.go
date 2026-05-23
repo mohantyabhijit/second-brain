@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -104,6 +105,7 @@ func TestBuildDigestIssueUsesFiveInsights(t *testing.T) {
 	for index := 0; index < 8; index++ {
 		insights = append(insights, Insight{
 			ID:        string(rune('a' + index)),
+			Source:    "x",
 			Title:     "Insight title",
 			Insight:   "A useful pattern worth keeping short.",
 			Evidence:  "Saved source evidence.",
@@ -127,5 +129,28 @@ func TestBuildDigestIssueUsesFiveInsights(t *testing.T) {
 	}
 	if strings.Contains(digest.BodyMarkdown, "What To Read") {
 		t.Fatalf("expected insight-only digest when insights exist, got %s", digest.BodyMarkdown)
+	}
+}
+
+func TestDigestInsightSelectionIncludesYouTubeWhenAvailable(t *testing.T) {
+	insights := []Insight{
+		{ID: "x-1", Source: "x", Title: "X 1", Insight: "X insight", SourceURL: "https://x.com/1"},
+		{ID: "x-2", Source: "x", Title: "X 2", Insight: "X insight", SourceURL: "https://x.com/2"},
+		{ID: "x-3", Source: "x", Title: "X 3", Insight: "X insight", SourceURL: "https://x.com/3"},
+		{ID: "x-4", Source: "x", Title: "X 4", Insight: "X insight", SourceURL: "https://x.com/4"},
+		{ID: "x-5", Source: "x", Title: "X 5", Insight: "X insight", SourceURL: "https://x.com/5"},
+		{ID: "youtube-1", Source: "youtube", Title: "YouTube", Insight: "YouTube insight", SourceURL: "https://youtube.com/watch?v=1"},
+	}
+
+	selected := selectDigestInsights(time.Date(2026, 5, 23, 9, 0, 0, 0, time.UTC), insights, 5)
+
+	if len(selected) != 5 {
+		t.Fatalf("expected five selected insights, got %d", len(selected))
+	}
+	if !slices.ContainsFunc(selected, func(insight Insight) bool { return insight.Source == "youtube" }) {
+		t.Fatalf("expected selected insights to include YouTube when available: %#v", selected)
+	}
+	if !slices.ContainsFunc(selected, func(insight Insight) bool { return insight.Source == "x" }) {
+		t.Fatalf("expected selected insights to include X when available: %#v", selected)
 	}
 }
