@@ -163,11 +163,7 @@ func (s *Service) ImportXRefreshToken(ctx context.Context, refreshToken string) 
 	if err != nil {
 		return nil, err
 	}
-	profile, err := s.fetchXAuthenticatedProfileDirect(ctx, tokenSet.AccessToken)
-	if err != nil {
-		return nil, err
-	}
-	if err := s.saveXTokenSet(ctx, tokenSet, profile); err != nil {
+	if err := s.saveXTokenSet(ctx, tokenSet, nil); err != nil {
 		return nil, err
 	}
 	if err := persistXTokensToKeychain(ctx, s.cfg.XKeychainTokenSuffix, tokenSet.AccessToken, tokenSet.RefreshToken); err != nil {
@@ -175,6 +171,13 @@ func (s *Service) ImportXRefreshToken(ctx context.Context, refreshToken string) 
 	}
 	if err := s.rotateOneCLIXSecrets(ctx, tokenSet.AccessToken, tokenSet.RefreshToken); err != nil {
 		s.logger.Warn("persist imported X token refresh to OneCLI failed", "error", err)
+	}
+	profile, err := s.fetchXAuthenticatedProfileDirect(ctx, tokenSet.AccessToken)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.saveXTokenSet(ctx, tokenSet, profile); err != nil {
+		return nil, err
 	}
 	return &XOAuthResult{Profile: *profile, AccessExpiresAt: tokenSet.AccessExpiresAt}, nil
 }
