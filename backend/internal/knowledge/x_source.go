@@ -262,6 +262,9 @@ func (s *Service) refreshXAccessToken(ctx context.Context) (string, error) {
 	if accessToken, ok, err := s.getValidXAccessToken(ctx); ok || err != nil {
 		return accessToken, err
 	}
+	if s.cfg.XRequireStoredOAuth {
+		return "", s.xReauthorizationError()
+	}
 
 	clientID := strings.TrimSpace(s.cfg.XClientID)
 	refreshToken := strings.TrimSpace(os.Getenv("X_REFRESH_TOKEN"))

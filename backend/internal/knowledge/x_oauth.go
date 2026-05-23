@@ -151,6 +151,34 @@ func (s *Service) CompleteXOAuth(ctx context.Context, state string, code string)
 	return &XOAuthResult{Profile: *profile, AccessExpiresAt: tokenSet.AccessExpiresAt}, nil
 }
 
+func (s *Service) ImportXRefreshToken(ctx context.Context, refreshToken string) (*XOAuthResult, error) {
+	if err := s.validateXOAuthConfig(); err != nil {
+		return nil, err
+	}
+	refreshToken = strings.TrimSpace(refreshToken)
+	if refreshToken == "" {
+		return nil, fmt.Errorf("X refresh token is required")
+	}
+	tokenSet, err := s.refreshXTokenSet(ctx, refreshToken)
+	if err != nil {
+		return nil, err
+	}
+	profile, err := s.fetchXAuthenticatedProfile(ctx, tokenSet.AccessToken)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.saveXTokenSet(ctx, tokenSet, profile); err != nil {
+		return nil, err
+	}
+	if err := persistXTokensToKeychain(ctx, s.cfg.XKeychainTokenSuffix, tokenSet.AccessToken, tokenSet.RefreshToken); err != nil {
+		s.logger.Warn("persist imported X token refresh to Keychain failed", "error", err)
+	}
+	if err := s.rotateOneCLIXSecrets(ctx, tokenSet.AccessToken, tokenSet.RefreshToken); err != nil {
+		s.logger.Warn("persist imported X token refresh to OneCLI failed", "error", err)
+	}
+	return &XOAuthResult{Profile: *profile, AccessExpiresAt: tokenSet.AccessExpiresAt}, nil
+}
+
 func (s *Service) XAuthStatus(ctx context.Context) XAuthStatus {
 	status := XAuthStatus{
 		Configured: strings.TrimSpace(s.cfg.XClientID) != "" &&

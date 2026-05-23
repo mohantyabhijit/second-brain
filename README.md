@@ -112,6 +112,8 @@ npm run x:oauth
 
 The backend uses OAuth 2.0 Authorization Code with PKCE with read-only bookmark ingestion scopes by default: `tweet.read users.read bookmark.read offline.access`. It validates the authenticated profile against `X_EXPECTED_USERNAME` (default `mohantyabhijit`), encrypts the access and refresh tokens with `X_TOKEN_ENCRYPTION_KEY`, stores them in Supabase Postgres, and issues only a short-lived HTTP-only `second_brain_session` cookie to the browser. The frontend never receives X tokens. Add `tweet.write` only for a separate write-enabled flow.
 
+Production should require this stored OAuth row with `X_REQUIRE_STORED_OAUTH=true`. That keeps one token source: the encrypted Supabase `x_oauth_tokens` record. Keychain and OneCLI token values are migration or repair inputs, not the normal production auth path.
+
 Use the production X app credentials by default. Local scripts first look for Keychain services `second-brain/X_CLIENT_ID_PROD` and `second-brain/X_CLIENT_SECRET_PROD`, then fall back to the non-prod names. `npm run x:prod:save-client` copies those production Keychain values into OneCLI so token endpoint calls can receive `client_id` and `Authorization: Basic ...` through OneCLI injection when the backend is running under `onecli run`.
 
 Use the same `SUPABASE_DB_URL` and the same `X_TOKEN_ENCRYPTION_KEY` in local dev and production. That makes the single encrypted `x_oauth_tokens` row the token source for both environments; refresh rotation writes the new refresh token back to the same row before the next run uses it. `X_USER_ACCESS_TOKEN` and `X_REFRESH_TOKEN` are now legacy migration fallbacks only.
@@ -132,6 +134,12 @@ For a deployed backend, set `X_REDIRECT_URI` to the deployed `/api/auth/x/callba
 
 ```bash
 SECOND_BRAIN_API_BASE_URL=https://your-backend.example.com npm run x:oauth:prod
+```
+
+If you have already completed the local production OAuth helper and need to seed the backend-owned store without another browser authorization, import and rotate the Keychain refresh token into Supabase:
+
+```bash
+npm run x:prod:import-token-store
 ```
 
 Each successful X token refresh writes non-secret rotation metadata to `X_TOKEN_ROTATION_PATH` (default `../data/runtime/x-token-rotation.json` from the backend working directory), including `rotatedAt`, `accessTokenExpiresAt`, `expiresInSeconds`, scope, and the reauthorization command. X access tokens are short lived; `offline.access` gives the app a refresh token so the worker can refresh without browser interaction.

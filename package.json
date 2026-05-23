@@ -25,6 +25,7 @@
     "x:check:prod": "bash scripts/check-x-oauth-setup.sh --prod",
     "x:check:local": "bash scripts/check-x-oauth-setup.sh --local",
     "x:prod:save-client": "bash scripts/save-x-prod-client-secrets.sh",
+    "x:prod:import-token-store": "bash scripts/import-x-prod-token-store.sh",
     "x:prod:check": "bash scripts/run-x-auth-check-prod.sh",
     "x:token:status": "bash scripts/show-x-token-status.sh",
     "email:save-secrets": "bash scripts/save-digest-email-secrets.sh",

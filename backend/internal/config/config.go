@@ -31,6 +31,7 @@ type Config struct {
 	XSessionCookieName           string
 	XTokenEncryptionKey          string
 	XTokenRefreshDirect          bool
+	XRequireStoredOAuth          bool
 	XExpectedUsername            string
 	XReauthorizeCommand          string
 	XKeychainTokenSuffix         string
@@ -82,6 +83,7 @@ func Load() Config {
 		XSessionCookieName:           value("X_SESSION_COOKIE_NAME", "second_brain_session"),
 		XTokenEncryptionKey:          os.Getenv("X_TOKEN_ENCRYPTION_KEY"),
 		XTokenRefreshDirect:          os.Getenv("X_TOKEN_REFRESH_DIRECT") == "true",
+		XRequireStoredOAuth:          os.Getenv("X_REQUIRE_STORED_OAUTH") == "true",
 		XExpectedUsername:            value("X_EXPECTED_USERNAME", "mohantyabhijit"),
 		XReauthorizeCommand:          value("X_REAUTHORIZE_COMMAND", "npm run x:oauth"),
 		XKeychainTokenSuffix:         os.Getenv("X_KEYCHAIN_TOKEN_SUFFIX"),
