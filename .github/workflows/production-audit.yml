@@ -39,7 +39,7 @@ jobs:
             | {
                 generatedAt: $latest.generatedAt,
                 xBookmarks: ($latest.xBookmarks | length),
-                youtube: ($latest.youtube | length),
+                youtube: (($latest.youtubeItems // $latest.youtube // []) | length),
                 summaries: ($latest.summaries | length),
                 insights: ($latest.insights | length),
                 digestStatus: $latest.digest.status,
@@ -50,7 +50,7 @@ jobs:
           jq -e '
             .latest
             | (.xBookmarks | length) > 0
-            and (.youtube | length) > 0
+            and ((.youtubeItems // .youtube // []) | length) > 0
             and (.summaries | length) > 0
             and (.insights | length) > 0
             and (.digest.status == "sent")
