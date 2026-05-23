@@ -163,7 +163,7 @@ func (s *Service) ImportXRefreshToken(ctx context.Context, refreshToken string) 
 	if err != nil {
 		return nil, err
 	}
-	profile, err := s.fetchXAuthenticatedProfile(ctx, tokenSet.AccessToken)
+	profile, err := s.fetchXAuthenticatedProfileDirect(ctx, tokenSet.AccessToken)
 	if err != nil {
 		return nil, err
 	}

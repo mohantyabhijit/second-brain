@@ -152,9 +152,17 @@ func (s *Service) CheckXAuth(ctx context.Context) (*XAuthenticatedProfile, error
 }
 
 func (s *Service) fetchXAuthenticatedProfile(ctx context.Context, accessToken string) (*XAuthenticatedProfile, error) {
+	return s.fetchXAuthenticatedProfileWithClient(ctx, s.client, accessToken)
+}
+
+func (s *Service) fetchXAuthenticatedProfileDirect(ctx context.Context, accessToken string) (*XAuthenticatedProfile, error) {
+	return s.fetchXAuthenticatedProfileWithClient(ctx, directHTTPClient(30*time.Second), accessToken)
+}
+
+func (s *Service) fetchXAuthenticatedProfileWithClient(ctx context.Context, client *http.Client, accessToken string) (*XAuthenticatedProfile, error) {
 	headers := xAccessHeaders(accessToken)
 	var me xUserResponse
-	if err := s.requestJSON(ctx, http.MethodGet, "https://api.x.com/2/users/me?user.fields=username,name", headers, nil, &me); err != nil {
+	if err := requestJSONWithClient(ctx, client, http.MethodGet, "https://api.x.com/2/users/me?user.fields=username,name", headers, nil, &me); err != nil {
 		return nil, fmt.Errorf("X /2/users/me failed: %w", err)
 	}
 	if me.Data == nil || me.Data.ID == "" {
