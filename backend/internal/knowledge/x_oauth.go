@@ -156,7 +156,7 @@ func (s *Service) ImportXRefreshToken(ctx context.Context, refreshToken string) 
 		return nil, err
 	}
 	refreshToken = strings.TrimSpace(refreshToken)
-	if refreshToken == "" {
+	if refreshToken == "" && !s.cfg.OneCLIGateway {
 		return nil, fmt.Errorf("X refresh token is required")
 	}
 	tokenSet, err := s.refreshXTokenSet(ctx, refreshToken)
