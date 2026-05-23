@@ -200,7 +200,7 @@ jobs:
 
     env:
       ONECLI_API_KEY: ${{ secrets.ONECLI_API_KEY }}
-      ONECLI_BIN: /home/runner/.local/bin/onecli
+      ONECLI_BIN: /usr/local/bin/onecli
       ONECLI_GATEWAY: "true"
       ONECLI_PROJECT: second-brain
       ONECLI_X_ACCESS_SECRET_ID: c280ee57-4e2e-47dd-b768-85b2db002ee8
