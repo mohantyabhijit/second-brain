@@ -196,35 +196,43 @@ jobs:
     name: Import X OAuth Token Store
     runs-on: ubuntu-latest
     if: ${{ github.event_name == 'workflow_dispatch' && inputs.import_x_token_store }}
-    needs: deploy
+    needs: build
 
     env:
-      DEPLOY_HOST: ${{ secrets.DO_HOST }}
-      DEPLOY_PORT: ${{ secrets.DO_PORT }}
-      DEPLOY_USER: ${{ secrets.DO_USER }}
-      DEPLOY_SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      ONECLI_API_KEY: ${{ secrets.ONECLI_API_KEY }}
+      ONECLI_BIN: /home/runner/.local/bin/onecli
+      ONECLI_GATEWAY: "true"
+      ONECLI_PROJECT: second-brain
+      ONECLI_X_ACCESS_SECRET_ID: c280ee57-4e2e-47dd-b768-85b2db002ee8
+      ONECLI_X_REFRESH_SECRET_ID: 78842398-70d0-47cc-b517-8909e26e76ff
+      APP_ENV: production
+      SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+      X_CLIENT_ID: ${{ secrets.X_CLIENT_ID_PROD || secrets.X_CLIENT_ID }}
+      X_CLIENT_SECRET: ${{ secrets.X_CLIENT_SECRET_PROD || secrets.X_CLIENT_SECRET }}
+      X_TOKEN_ENCRYPTION_KEY: ${{ secrets.X_TOKEN_ENCRYPTION_KEY }}
+      X_TOKEN_REFRESH_DIRECT: "false"
+      X_REQUIRE_STORED_OAUTH: "true"
+      X_EXPECTED_USERNAME: mohantyabhijit
+      X_OAUTH_SCOPES: tweet.read users.read bookmark.read offline.access
+      X_REAUTHORIZE_COMMAND: npm run x:oauth:prod
+      SECOND_BRAIN_SKIP_KEYCHAIN: "true"
 
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
 
-      - name: Import encrypted X token store on VPS
+      - name: Download deployment artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: second-brain-deploy
+          path: artifacts
+
+      - name: Import encrypted X token store
         run: |
           set -euo pipefail
-          SSH_DIR="$HOME/.ssh"
-          KEY_PATH="$SSH_DIR/second-brain-deploy"
-          mkdir -p "$SSH_DIR"
-          printf '%s\n' "$DEPLOY_SSH_KEY" > "$KEY_PATH"
-          chmod 600 "$KEY_PATH"
-          ssh-keyscan -p "$DEPLOY_PORT" "$DEPLOY_HOST" >> "$SSH_DIR/known_hosts"
-          ssh -i "$KEY_PATH" -p "$DEPLOY_PORT" "$DEPLOY_USER@$DEPLOY_HOST" 'bash -s' <<'REMOTE'
-          set -euo pipefail
-          api_dir="/srv/second-brain/api"
-          set -a
-          # shellcheck disable=SC1091
-          . "$api_dir/second-brain.env"
-          set +a
-          export X_TOKEN_REFRESH_DIRECT=false
-          export SECOND_BRAIN_SKIP_KEYCHAIN=true
-          "$ONECLI_BIN" run --project "$ONECLI_PROJECT" -- "$api_dir/second-brain-x-token-import"
-          REMOTE
+          curl -fsSL https://onecli.sh/cli/install | sh
+          "$ONECLI_BIN" auth login --api-key "$ONECLI_API_KEY" >/dev/null
+          mkdir -p artifacts/api
+          tar -xzf artifacts/api.tgz -C artifacts/api second-brain-x-token-import
+          chmod +x artifacts/api/second-brain-x-token-import
+          "$ONECLI_BIN" run --project "$ONECLI_PROJECT" -- artifacts/api/second-brain-x-token-import
