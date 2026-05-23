@@ -161,10 +161,10 @@ jobs:
           write_var X_CLIENT_ID "${X_CLIENT_ID_PROD:-$X_CLIENT_ID}"
           write_var X_CLIENT_SECRET "${X_CLIENT_SECRET_PROD:-$X_CLIENT_SECRET}"
           write_var X_REDIRECT_URI "https://abhijitmohanty.com/second-brain/api/auth/x/callback"
-          write_var X_OAUTH_SCOPES "tweet.read tweet.write users.read bookmark.read offline.access"
+          write_var X_OAUTH_SCOPES "tweet.read users.read bookmark.read offline.access"
           write_var X_SESSION_SECRET "$X_SESSION_SECRET"
           write_var X_TOKEN_ENCRYPTION_KEY "$X_TOKEN_ENCRYPTION_KEY"
-          write_var X_TOKEN_REFRESH_DIRECT true
+          write_var X_TOKEN_REFRESH_DIRECT false
           write_var X_REAUTHORIZE_COMMAND "npm run x:oauth:prod"
           write_var X_KEYCHAIN_TOKEN_SUFFIX "_PROD"
           write_var X_TOKEN_ROTATION_PATH "/srv/second-brain/data/runtime/x-token-rotation.json"

@@ -395,7 +395,7 @@ func (s *Service) xReauthorizationError() error {
 	if command == "" {
 		command = "npm run x:oauth"
 	}
-	return fmt.Errorf("X refresh token is invalid or expired. Run %s to reauthorize X bookmarks and tweet access", command)
+	return fmt.Errorf("X refresh token is invalid or expired. Run %s to reauthorize X bookmarks", command)
 }
 
 func xTokenRefreshNeedsReauthorization(err error) bool {

@@ -77,7 +77,7 @@ func Load() Config {
 		XClientID:                    firstEnv("X_CLIENT_ID", "X_CLIENT_ID_PROD"),
 		XClientSecret:                firstEnv("X_CLIENT_SECRET", "X_CLIENT_SECRET_PROD"),
 		XRedirectURI:                 value("X_REDIRECT_URI", "http://localhost:8080/api/auth/x/callback"),
-		XOAuthScopes:                 fields(value("X_OAUTH_SCOPES", "tweet.read tweet.write users.read bookmark.read offline.access")),
+		XOAuthScopes:                 fields(value("X_OAUTH_SCOPES", "tweet.read users.read bookmark.read offline.access")),
 		XSessionSecret:               os.Getenv("X_SESSION_SECRET"),
 		XSessionCookieName:           value("X_SESSION_COOKIE_NAME", "second_brain_session"),
 		XTokenEncryptionKey:          os.Getenv("X_TOKEN_ENCRYPTION_KEY"),

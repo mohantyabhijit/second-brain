@@ -110,7 +110,7 @@ If X returns `401 Unauthorized` or an invalid refresh token error, re-authorize 
 npm run x:oauth
 ```
 
-The backend uses OAuth 2.0 Authorization Code with PKCE with `tweet.read tweet.write users.read bookmark.read offline.access`, validates the authenticated profile against `X_EXPECTED_USERNAME` (default `mohantyabhijit`), encrypts the access and refresh tokens with `X_TOKEN_ENCRYPTION_KEY`, stores them in Supabase Postgres, and issues only a short-lived HTTP-only `second_brain_session` cookie to the browser. The frontend never receives X tokens.
+The backend uses OAuth 2.0 Authorization Code with PKCE with read-only bookmark ingestion scopes by default: `tweet.read users.read bookmark.read offline.access`. It validates the authenticated profile against `X_EXPECTED_USERNAME` (default `mohantyabhijit`), encrypts the access and refresh tokens with `X_TOKEN_ENCRYPTION_KEY`, stores them in Supabase Postgres, and issues only a short-lived HTTP-only `second_brain_session` cookie to the browser. The frontend never receives X tokens. Add `tweet.write` only for a separate write-enabled flow.
 
 Use the production X app credentials by default. Local scripts first look for Keychain services `second-brain/X_CLIENT_ID_PROD` and `second-brain/X_CLIENT_SECRET_PROD`, then fall back to the non-prod names. `npm run x:prod:save-client` copies those production Keychain values into OneCLI so token endpoint calls can receive `client_id` and `Authorization: Basic ...` through OneCLI injection when the backend is running under `onecli run`.
 

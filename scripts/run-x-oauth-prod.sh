@@ -20,7 +20,7 @@ else
 fi
 
 export X_EXPECTED_USERNAME="${X_EXPECTED_USERNAME:-mohantyabhijit}"
-export X_OAUTH_SCOPES="${X_OAUTH_SCOPES:-tweet.read tweet.write users.read bookmark.read offline.access}"
+export X_OAUTH_SCOPES="${X_OAUTH_SCOPES:-tweet.read users.read bookmark.read offline.access}"
 export X_REAUTHORIZE_COMMAND="${X_REAUTHORIZE_COMMAND:-npm run x:oauth:prod}"
 export X_KEYCHAIN_TOKEN_SUFFIX="${X_KEYCHAIN_TOKEN_SUFFIX:-_PROD}"
 export X_OAUTH_TOKEN_SUFFIX="${X_OAUTH_TOKEN_SUFFIX:-_PROD}"

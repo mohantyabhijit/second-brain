@@ -9,7 +9,7 @@ import path from "node:path";
 const clientId = requiredEnv("X_CLIENT_ID");
 const clientSecret = process.env.X_CLIENT_SECRET?.trim() || "";
 const redirectUri = process.env.X_REDIRECT_URI || "http://127.0.0.1:8765/callback";
-const scopes = (process.env.X_OAUTH_SCOPES || "tweet.read tweet.write users.read bookmark.read offline.access").trim();
+const scopes = (process.env.X_OAUTH_SCOPES || "tweet.read users.read bookmark.read offline.access").trim();
 const oneCLI = process.env.ONECLI || "/Users/abhijitmohanty/.local/bin/onecli";
 const oneCLIProject = process.env.ONECLI_PROJECT || "second-brain";
 const user = process.env.USER || "abhijitmohanty";

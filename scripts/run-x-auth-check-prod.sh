@@ -35,7 +35,7 @@ else
 fi
 
 export ONECLI_GATEWAY=true
-export X_TOKEN_REFRESH_DIRECT=true
+export X_TOKEN_REFRESH_DIRECT="${X_TOKEN_REFRESH_DIRECT:-true}"
 export X_REAUTHORIZE_COMMAND="npm run x:oauth:prod"
 export X_KEYCHAIN_TOKEN_SUFFIX="_PROD"
 export X_TOKEN_ROTATION_PATH="${X_TOKEN_ROTATION_PATH:-$ROOT_DIR/data/runtime/x-token-rotation.json}"
