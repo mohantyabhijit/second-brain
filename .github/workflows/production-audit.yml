@@ -1,0 +1,90 @@
+name: Production Audit
+
+on:
+  workflow_dispatch:
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  audit:
+    name: Verify production runtime
+    runs-on: ubuntu-latest
+
+    env:
+      DEPLOY_HOST: ${{ secrets.DO_HOST }}
+      DEPLOY_PORT: ${{ secrets.DO_PORT }}
+      DEPLOY_USER: ${{ secrets.DO_USER }}
+      DEPLOY_SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+
+    steps:
+      - name: Prepare SSH
+        run: |
+          set -euo pipefail
+          test -n "$DEPLOY_HOST"
+          test -n "$DEPLOY_PORT"
+          test -n "$DEPLOY_USER"
+          test -n "$DEPLOY_SSH_KEY"
+          mkdir -p "$HOME/.ssh"
+          printf '%s\n' "$DEPLOY_SSH_KEY" > "$HOME/.ssh/second-brain-audit"
+          chmod 600 "$HOME/.ssh/second-brain-audit"
+          ssh-keyscan -p "$DEPLOY_PORT" "$DEPLOY_HOST" >> "$HOME/.ssh/known_hosts"
+
+      - name: Check public API snapshot
+        run: |
+          set -euo pipefail
+          curl -fsS https://abhijitmohanty.com/second-brain/api/knowledge-runs/latest > latest.json
+          jq -r '
+            .latest as $latest
+            | {
+                generatedAt: $latest.generatedAt,
+                xBookmarks: ($latest.xBookmarks | length),
+                youtube: ($latest.youtube | length),
+                summaries: ($latest.summaries | length),
+                insights: ($latest.insights | length),
+                digestStatus: $latest.digest.status,
+                digestScheduledFor: $latest.digest.scheduledFor,
+                blockers: ($latest.blockers | length)
+              }
+          ' latest.json
+          jq -e '
+            .latest
+            | (.xBookmarks | length) > 0
+            and (.youtube | length) > 0
+            and (.summaries | length) > 0
+            and (.insights | length) > 0
+            and (.digest.status == "sent")
+            and ((.blockers | length) == 0)
+          ' latest.json >/dev/null
+
+      - name: Check systemd timer and recent cycle logs
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/second-brain-audit" -p "$DEPLOY_PORT" "$DEPLOY_USER@$DEPLOY_HOST" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          echo "== unit activity =="
+          systemctl is-active second-brain-api.service
+          systemctl is-active second-brain-cycle.timer
+          echo
+          echo "== timer =="
+          systemctl list-timers --all second-brain-cycle.timer --no-pager
+          echo
+          echo "== timer properties =="
+          systemctl show second-brain-cycle.timer \
+            -p ActiveState \
+            -p SubState \
+            -p LastTriggerUSecRealtime \
+            -p NextElapseUSecRealtime \
+            -p Unit
+          echo
+          echo "== service properties =="
+          systemctl show second-brain-cycle.service \
+            -p ActiveState \
+            -p Result \
+            -p ExecMainStatus \
+            -p ExecMainStartTimestamp \
+            -p ExecMainExitTimestamp
+          echo
+          echo "== recent cycle logs =="
+          journalctl -u second-brain-cycle.service -n 180 --no-pager
+          REMOTE
