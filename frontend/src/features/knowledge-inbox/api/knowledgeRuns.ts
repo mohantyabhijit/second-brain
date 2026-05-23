@@ -1,4 +1,4 @@
-import type { FeedbackSignal, KnowledgeRunResult, RefreshStatus } from "../contracts";
+import type { AskSecondBrainResponse, FeedbackSignal, KnowledgeRunResult, RefreshStatus } from "../contracts";
 
 const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8080";
 
@@ -47,6 +47,25 @@ export async function saveKnowledgeFeedback(input: {
 
 export async function generateDailyDigest() {
   return request<NonNullable<KnowledgeRunResult["digest"]>>("/api/digests/generate", { method: "POST" });
+}
+
+export async function shareInsightToX(input: {
+  targetType: string;
+  targetId: string;
+  text: string;
+  sourceUrl?: string;
+}) {
+  return request<{ id: string; text: string }>("/api/share/tweet", {
+    method: "POST",
+    body: JSON.stringify(input)
+  });
+}
+
+export async function askSecondBrain(input: { question: string; useLatest?: boolean }) {
+  return request<AskSecondBrainResponse>("/api/ask", {
+    method: "POST",
+    body: JSON.stringify(input)
+  });
 }
 
 function normalizeKnowledgeRun(result: KnowledgeRunResult): KnowledgeRunResult {

@@ -8,6 +8,7 @@ const nextConfig: NextConfig = {
   turbopack: {
     root: path.join(__dirname, "..")
   },
+  allowedDevOrigins: ["127.0.0.1"],
   ...(basePath ? { basePath, assetPrefix: basePath } : {}),
   ...(staticExport
     ? {

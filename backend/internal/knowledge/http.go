@@ -9,9 +9,14 @@ import (
 	"net/url"
 	"os"
 	"strings"
+	"time"
 )
 
 func (s *Service) requestJSON(ctx context.Context, method string, url string, headers http.Header, body io.Reader, target any) error {
+	return requestJSONWithClient(ctx, s.client, method, url, headers, body, target)
+}
+
+func requestJSONWithClient(ctx context.Context, client *http.Client, method string, url string, headers http.Header, body io.Reader, target any) error {
 	req, err := http.NewRequestWithContext(ctx, method, url, body)
 	if err != nil {
 		return err
@@ -22,7 +27,7 @@ func (s *Service) requestJSON(ctx context.Context, method string, url string, he
 		}
 	}
 
-	response, err := s.client.Do(req)
+	response, err := client.Do(req)
 	if err != nil {
 		return err
 	}
@@ -39,6 +44,12 @@ func (s *Service) requestJSON(ctx context.Context, method string, url string, he
 		return nil
 	}
 	return json.Unmarshal(raw, target)
+}
+
+func directHTTPClient(timeout time.Duration) *http.Client {
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.Proxy = nil
+	return &http.Client{Transport: transport, Timeout: timeout}
 }
 
 func authHeader(name string, valueFormat string) http.Header {

@@ -2,14 +2,18 @@ package httpapi
 
 import (
 	"encoding/json"
+	"fmt"
+	"html"
 	"log/slog"
 	"net/http"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/abhijitmohanty/second-brain/backend/internal/config"
 	"github.com/abhijitmohanty/second-brain/backend/internal/knowledge"
 	"github.com/abhijitmohanty/second-brain/backend/internal/platform/httputil"
+	"github.com/golang-jwt/jwt/v5"
 )
 
 func NewRouter(cfg config.Config, service *knowledge.Service, logger *slog.Logger) http.Handler {
@@ -62,13 +66,115 @@ func NewRouter(cfg config.Config, service *knowledge.Service, logger *slog.Logge
 		httputil.JSON(w, http.StatusOK, digest)
 	}
 
+	shareTweet := func(w http.ResponseWriter, r *http.Request) {
+		var input knowledge.TweetShareRequest
+		if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+			httputil.Error(w, http.StatusBadRequest, "invalid tweet payload")
+			return
+		}
+		result, err := service.ShareTweet(r.Context(), input)
+		if err != nil {
+			logger.Error("share tweet", "error", err)
+			httputil.Error(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		httputil.JSON(w, http.StatusCreated, result)
+	}
+
+	askSecondBrain := func(w http.ResponseWriter, r *http.Request) {
+		var input knowledge.AskSecondBrainRequest
+		if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+			httputil.Error(w, http.StatusBadRequest, "invalid ask payload")
+			return
+		}
+		result, err := service.AskSecondBrain(r.Context(), input)
+		if err != nil {
+			logger.Error("ask second brain", "error", err)
+			httputil.Error(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		httputil.JSON(w, http.StatusOK, result)
+	}
+
+	startXAuth := func(w http.ResponseWriter, r *http.Request) {
+		url, err := service.BeginXOAuth(r.Context())
+		if err != nil {
+			httputil.Error(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		http.Redirect(w, r, url, http.StatusFound)
+	}
+
+	completeXAuth := func(w http.ResponseWriter, r *http.Request) {
+		if oauthErr := strings.TrimSpace(r.URL.Query().Get("error")); oauthErr != "" {
+			detail := strings.TrimSpace(r.URL.Query().Get("error_description"))
+			httputil.Error(w, http.StatusBadRequest, strings.TrimSpace(oauthErr+" "+detail))
+			return
+		}
+		result, err := service.CompleteXOAuth(r.Context(), r.URL.Query().Get("state"), r.URL.Query().Get("code"))
+		if err != nil {
+			logger.Error("complete X OAuth", "error", err)
+			httputil.Error(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		if err := setSessionCookie(w, cfg, result.Profile.ID); err != nil {
+			httputil.Error(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.WriteHeader(http.StatusOK)
+		_, _ = fmt.Fprintf(w, "<h1>X authorization saved</h1><p>Authorized @%s. You can close this tab.</p>", html.EscapeString(result.Profile.Username))
+	}
+
+	readXAuthStatus := func(w http.ResponseWriter, r *http.Request) {
+		httputil.JSON(w, http.StatusOK, service.XAuthStatus(r.Context()))
+	}
+
+	mux.HandleFunc("GET /api/auth/x", startXAuth)
+	mux.HandleFunc("GET /api/auth/x/callback", completeXAuth)
+	mux.HandleFunc("GET /api/auth/x/status", readXAuthStatus)
 	mux.HandleFunc("GET /api/knowledge-runs/latest", readLatest)
 	mux.HandleFunc("GET /api/knowledge-runs/refresh", readRefreshStatus)
 	mux.HandleFunc("POST /api/knowledge-runs/refresh", runInbox)
 	mux.HandleFunc("POST /api/feedback", saveFeedback)
 	mux.HandleFunc("POST /api/digests/generate", generateDigest)
+	mux.HandleFunc("POST /api/share/tweet", shareTweet)
+	mux.HandleFunc("POST /api/ask", askSecondBrain)
 
 	return requestLogger(logger, cors(cfg.AllowedOrigins, mux))
+}
+
+func setSessionCookie(w http.ResponseWriter, cfg config.Config, xUserID string) error {
+	secret := strings.TrimSpace(cfg.XSessionSecret)
+	if secret == "" {
+		return fmt.Errorf("X_SESSION_SECRET is required to issue the backend session cookie")
+	}
+	now := time.Now().UTC()
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
+		"iss":       "second-brain",
+		"sub":       cfg.OwnerID,
+		"x_user_id": xUserID,
+		"iat":       now.Unix(),
+		"exp":       now.Add(time.Hour).Unix(),
+	})
+	signed, err := token.SignedString([]byte(secret))
+	if err != nil {
+		return err
+	}
+	name := strings.TrimSpace(cfg.XSessionCookieName)
+	if name == "" {
+		name = "second_brain_session"
+	}
+	http.SetCookie(w, &http.Cookie{
+		Name:     name,
+		Value:    signed,
+		Path:     "/",
+		MaxAge:   int(time.Hour.Seconds()),
+		HttpOnly: true,
+		Secure:   cfg.Env == "production",
+		SameSite: http.SameSiteLaxMode,
+	})
+	return nil
 }
 
 type statusRecorder struct {

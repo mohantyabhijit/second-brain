@@ -77,6 +77,25 @@ npm run digest:run
 
 The digest sender uses Resend. Store `RESEND_API_KEY` in OneCLI for `api.resend.com`; configure `DIGEST_EMAIL_TO` and a verified-domain `DIGEST_EMAIL_FROM` through `backend/.env`, process env, or matching Keychain services.
 
+Run the self-organizing worker locally or on the VPS:
+
+```bash
+npm run self:organize
+npm run worker:run
+```
+
+`self:organize` runs one full cycle: refresh, optional graph sync, then digest delivery. By default the long-running worker refreshes every `2h`, generates and sends the newsletter every `2h`, and schedules the digest issue for `18:00` in `DIGEST_TIMEZONE`. Override with `WORKER_REFRESH_INTERVAL`, `WORKER_DIGEST_INTERVAL`, `REFRESH_TIMEOUT`, `DIGEST_TIME`, and `DIGEST_TIMEZONE`.
+
+Production deploys install a `second-brain-cycle.timer` systemd timer on the VPS. The timer starts shortly after deploy and then every 2 hours, running refresh, graph sync when `NEO4J_*` is configured, and digest delivery under OneCLI secret injection.
+
+Sync pending graph events into Neo4j:
+
+```bash
+npm run graph:sync
+```
+
+The graph sync reads `graph_sync_outbox` from Supabase and upserts `Source`, `Capture`, `Insight`, and `ActionItem` nodes plus their relationships into Neo4j. Configure `NEO4J_URI`, `NEO4J_USERNAME`, `NEO4J_PASSWORD`, and optionally `NEO4J_DATABASE`.
+
 Run a headless full knowledge refresh, including all available X bookmark pages by default:
 
 ```bash
@@ -85,22 +104,58 @@ npm run refresh:run
 
 Set `X_BOOKMARK_LIMIT` to a positive number for capped validation runs. Leave it unset or set it to `0` to fetch every page returned by the X bookmarks API.
 
-If X returns `401 Unauthorized` or an invalid refresh token error, re-authorize the local app:
+If X returns `401 Unauthorized` or an invalid refresh token error, re-authorize through the Go backend:
 
 ```bash
 npm run x:oauth
 ```
 
-The helper uses OAuth 2.0 Authorization Code with PKCE with `tweet.read users.read bookmark.read offline.access`, saves fresh `X_USER_ACCESS_TOKEN` and `X_REFRESH_TOKEN` values to Keychain, and updates matching OneCLI token secrets when they exist. The default callback is `http://127.0.0.1:8765/callback`; it must exactly match a callback URL configured on the X app. Override it with `X_REDIRECT_URI` if the app uses a different local callback.
+The backend uses OAuth 2.0 Authorization Code with PKCE with `tweet.read tweet.write users.read bookmark.read offline.access`, validates the authenticated profile against `X_EXPECTED_USERNAME` (default `mohantyabhijit`), encrypts the access and refresh tokens with `X_TOKEN_ENCRYPTION_KEY`, stores them in Supabase Postgres, and issues only a short-lived HTTP-only `second_brain_session` cookie to the browser. The frontend never receives X tokens.
 
-Use an external scheduler, such as GitHub Actions, cron, or a platform scheduler, to run that command at 5pm in `DIGEST_TIMEZONE`. The command is idempotent per owner and digest date.
+Use the production X app credentials by default. Local scripts first look for Keychain services `second-brain/X_CLIENT_ID_PROD` and `second-brain/X_CLIENT_SECRET_PROD`, then fall back to the non-prod names. `npm run x:prod:save-client` copies those production Keychain values into OneCLI so token endpoint calls can receive `client_id` and `Authorization: Basic ...` through OneCLI injection when the backend is running under `onecli run`.
+
+Use the same `SUPABASE_DB_URL` and the same `X_TOKEN_ENCRYPTION_KEY` in local dev and production. That makes the single encrypted `x_oauth_tokens` row the token source for both environments; refresh rotation writes the new refresh token back to the same row before the next run uses it. `X_USER_ACCESS_TOKEN` and `X_REFRESH_TOKEN` are now legacy migration fallbacks only.
+
+Generate the encryption key once, then save that exact value in local Keychain and production secrets:
+
+```bash
+openssl rand -base64 32
+```
+
+Configure the X Developer Console callback URL to match the backend callback, for example:
+
+```bash
+http://localhost:8080/api/auth/x/callback
+```
+
+For a deployed backend, set `X_REDIRECT_URI` to the deployed `/api/auth/x/callback` URL and run:
+
+```bash
+SECOND_BRAIN_API_BASE_URL=https://your-backend.example.com npm run x:oauth:prod
+```
+
+Each successful X token refresh writes non-secret rotation metadata to `X_TOKEN_ROTATION_PATH` (default `../data/runtime/x-token-rotation.json` from the backend working directory), including `rotatedAt`, `accessTokenExpiresAt`, `expiresInSeconds`, scope, and the reauthorization command. X access tokens are short lived; `offline.access` gives the app a refresh token so the worker can refresh without browser interaction.
+
+To verify the one-time setup without printing secrets:
+
+```bash
+npm run x:check
+npm run x:check:prod
+npm run x:prod:check
+npm run x:token:status
+```
+
+The digest command remains idempotent per owner and digest content fingerprint.
 
 ## Secrets
 
-Store provider secrets in OneCLI or export them only for a local validation session:
+Store provider secrets in OneCLI, Keychain, GitHub Actions, or export them only for a local validation session. X user tokens should come from backend OAuth and the shared Postgres token row; do not keep fresh X user tokens in the frontend or checked-in env files.
 
 ```bash
-export X_USER_ACCESS_TOKEN=...
+export X_CLIENT_ID=...
+export X_CLIENT_SECRET=...
+export X_SESSION_SECRET=...
+export X_TOKEN_ENCRYPTION_KEY=...
 export YOUTUBE_API_KEY=...
 export YOUTUBE_ACCESS_TOKEN=...
 export SUPADATA_API_KEY=...

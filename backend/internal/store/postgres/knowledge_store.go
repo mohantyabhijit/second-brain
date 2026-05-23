@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
+	"sync"
 	"time"
 
 	"github.com/abhijitmohanty/second-brain/backend/internal/knowledge"
@@ -13,11 +15,20 @@ import (
 )
 
 type Store struct {
-	pool *pgxpool.Pool
+	pool       *pgxpool.Pool
+	progressMu sync.RWMutex
+	progress   func(done int, total int)
 }
 
 func New(ctx context.Context, databaseURL string) (*Store, error) {
-	pool, err := pgxpool.New(ctx, databaseURL)
+	config, err := pgxpool.ParseConfig(databaseURL)
+	if err != nil {
+		return nil, err
+	}
+	// Supabase pooler deployments are safer with simple query mode because prepared
+	// statement caches can interact badly with pooled backend connections.
+	config.ConnConfig.DefaultQueryExecMode = pgx.QueryExecModeSimpleProtocol
+	pool, err := pgxpool.NewWithConfig(ctx, config)
 	if err != nil {
 		return nil, err
 	}
@@ -30,6 +41,21 @@ func New(ctx context.Context, databaseURL string) (*Store, error) {
 
 func (s *Store) Close() {
 	s.pool.Close()
+}
+
+func (s *Store) SetRefreshProgressReporter(progress func(done int, total int)) {
+	s.progressMu.Lock()
+	defer s.progressMu.Unlock()
+	s.progress = progress
+}
+
+func (s *Store) reportRefreshProgress(done int, total int) {
+	s.progressMu.RLock()
+	progress := s.progress
+	s.progressMu.RUnlock()
+	if progress != nil {
+		progress(done, total)
+	}
 }
 
 func (s *Store) ReadLatest(ctx context.Context) (*knowledge.Result, error) {
@@ -51,7 +77,35 @@ func (s *Store) ReadLatest(ctx context.Context) (*knowledge.Result, error) {
 	if err := json.Unmarshal(raw, &result); err != nil {
 		return nil, err
 	}
+	if digest, err := s.readLatestDigest(ctx); err == nil && digest != nil {
+		result.Digest = digest
+	}
 	return &result, nil
+}
+
+func (s *Store) readLatestDigest(ctx context.Context) (*knowledge.DigestIssue, error) {
+	var digest knowledge.DigestIssue
+	err := s.pool.QueryRow(ctx, `
+		select
+			id::text,
+			owner_id::text,
+			digest_date,
+			scheduled_for,
+			idempotency_key,
+			subject,
+			body_markdown,
+			status
+		from digest_issues
+		order by updated_at desc, created_at desc
+		limit 1
+	`).Scan(&digest.ID, &digest.OwnerID, &digest.DigestDate, &digest.ScheduledFor, &digest.IdempotencyKey, &digest.Subject, &digest.BodyMarkdown, &digest.Status)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &digest, nil
 }
 
 func (s *Store) SaveLatest(ctx context.Context, result knowledge.Result) error {
@@ -114,73 +168,27 @@ func (s *Store) SaveRun(ctx context.Context, result knowledge.Result, sources []
 	if err != nil {
 		return err
 	}
-	tx, err := s.pool.Begin(ctx)
+
+	sourceIDs := map[string]string{}
+	allInsightIDs := map[string]string{}
+	totalSources := len(sources)
+	for index, source := range sources {
+		sourceItemID, insightIDs, err := s.saveSourceCore(ctx, source)
+		if err != nil {
+			return err
+		}
+		sourceIDs[sourceKey(source.SourceType, source.ExternalID)] = sourceItemID
+		for externalID, insightID := range insightIDs {
+			allInsightIDs[externalID] = insightID
+		}
+		s.reportRefreshProgress(index+1, totalSources)
+	}
+
+	tx, err := s.beginWriteTx(ctx)
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback(ctx)
-
-	sourceIDs := map[string]string{}
-	allInsightIDs := map[string]string{}
-	for _, source := range sources {
-		sourceItemID, err := upsertSourceItem(ctx, tx, source)
-		if err != nil {
-			return fmt.Errorf("upsert source item %s:%s: %w", source.SourceType, source.ExternalID, err)
-		}
-		sourceCaptureID, err := upsertSourceCapture(ctx, tx, sourceItemID, source)
-		if err != nil {
-			return fmt.Errorf("upsert source capture %s:%s: %w", source.SourceType, source.ExternalID, err)
-		}
-		sourceIDs[sourceKey(source.SourceType, source.ExternalID)] = sourceItemID
-		if source.Cached {
-			continue
-		}
-		var summaryObjectID string
-		if source.Artifact.Path != "" {
-			if _, err := upsertSourceObject(ctx, tx, sourceItemID, sourceCaptureID, source, source.Artifact); err != nil {
-				return fmt.Errorf("upsert source object %s:%s:%s: %w", source.SourceType, source.ExternalID, source.Artifact.Kind, err)
-			}
-		}
-		if source.SummaryArtifact.Path != "" {
-			var err error
-			summaryObjectID, err = upsertSourceObject(ctx, tx, sourceItemID, sourceCaptureID, source, source.SummaryArtifact)
-			if err != nil {
-				return fmt.Errorf("upsert summary object %s:%s: %w", source.SourceType, source.ExternalID, err)
-			}
-		}
-		chunkIDs, err := upsertSourceChunks(ctx, tx, sourceItemID, sourceCaptureID, source)
-		if err != nil {
-			return fmt.Errorf("upsert source chunks %s:%s: %w", source.SourceType, source.ExternalID, err)
-		}
-		if err := upsertEmbeddings(ctx, tx, sourceItemID, sourceCaptureID, chunkIDs, source); err != nil {
-			return fmt.Errorf("upsert embeddings %s:%s: %w", source.SourceType, source.ExternalID, err)
-		}
-		if !source.Cached {
-			synthesisID, err := upsertSynthesis(ctx, tx, sourceItemID, sourceCaptureID, source, summaryObjectID)
-			if err != nil {
-				return fmt.Errorf("upsert synthesis %s:%s: %w", source.SourceType, source.ExternalID, err)
-			}
-			insightIDs, err := upsertInsights(ctx, tx, sourceItemID, sourceCaptureID, synthesisID, chunkIDs, source)
-			if err != nil {
-				return fmt.Errorf("upsert insights %s:%s: %w", source.SourceType, source.ExternalID, err)
-			}
-			for externalID, insightID := range insightIDs {
-				allInsightIDs[externalID] = insightID
-			}
-			if err := upsertInsightEmbeddings(ctx, tx, insightIDs, source); err != nil {
-				return fmt.Errorf("upsert insight embeddings %s:%s: %w", source.SourceType, source.ExternalID, err)
-			}
-		}
-		if source.Cached && summaryObjectID != "" {
-			if err := updateSynthesisSummaryObject(ctx, tx, sourceCaptureID, source.Synthesis, summaryObjectID); err != nil {
-				return fmt.Errorf("update synthesis summary object %s:%s: %w", source.SourceType, source.ExternalID, err)
-			}
-		}
-		if err := enqueueGraphSync(ctx, tx, sourceItemID, sourceCaptureID, source); err != nil {
-			return fmt.Errorf("enqueue graph sync %s:%s: %w", source.SourceType, source.ExternalID, err)
-		}
-	}
-
 	var runID string
 	ownerID := ownerIDFromSources(sources)
 	err = tx.QueryRow(ctx, `
@@ -206,6 +214,99 @@ func (s *Store) SaveRun(ctx context.Context, result knowledge.Result, sources []
 		}
 	}
 	return tx.Commit(ctx)
+}
+
+func (s *Store) beginWriteTx(ctx context.Context) (pgx.Tx, error) {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := tx.Exec(ctx, `
+		set local lock_timeout = '10s';
+		set local statement_timeout = '45s';
+		set local idle_in_transaction_session_timeout = '60s'
+	`); err != nil {
+		tx.Rollback(ctx)
+		return nil, err
+	}
+	return tx, nil
+}
+
+func (s *Store) saveSourceCore(ctx context.Context, source knowledge.ProcessedSource) (string, map[string]string, error) {
+	tx, err := s.beginWriteTx(ctx)
+	if err != nil {
+		return "", nil, err
+	}
+	defer tx.Rollback(ctx)
+
+	sourceItemID, err := upsertSourceItem(ctx, tx, source)
+	if err != nil {
+		return "", nil, fmt.Errorf("upsert source item %s:%s: %w", source.SourceType, source.ExternalID, err)
+	}
+	sourceCaptureID, err := upsertSourceCapture(ctx, tx, sourceItemID, source)
+	if err != nil {
+		return "", nil, fmt.Errorf("upsert source capture %s:%s: %w", source.SourceType, source.ExternalID, err)
+	}
+	if source.Cached {
+		if err := tx.Commit(ctx); err != nil {
+			return "", nil, err
+		}
+		return sourceItemID, nil, nil
+	}
+
+	var summaryObjectID string
+	if source.Artifact.Path != "" {
+		if _, err := upsertSourceObject(ctx, tx, sourceItemID, sourceCaptureID, source, source.Artifact); err != nil {
+			return "", nil, fmt.Errorf("upsert source object %s:%s:%s: %w", source.SourceType, source.ExternalID, source.Artifact.Kind, err)
+		}
+	}
+	if source.SummaryArtifact.Path != "" {
+		summaryObjectID, err = upsertSourceObject(ctx, tx, sourceItemID, sourceCaptureID, source, source.SummaryArtifact)
+		if err != nil {
+			return "", nil, fmt.Errorf("upsert summary object %s:%s: %w", source.SourceType, source.ExternalID, err)
+		}
+	}
+	chunkIDs, err := upsertSourceChunks(ctx, tx, sourceItemID, sourceCaptureID, source)
+	if err != nil {
+		return "", nil, fmt.Errorf("upsert source chunks %s:%s: %w", source.SourceType, source.ExternalID, err)
+	}
+	synthesisID, err := upsertSynthesis(ctx, tx, sourceItemID, sourceCaptureID, source, summaryObjectID)
+	if err != nil {
+		return "", nil, fmt.Errorf("upsert synthesis %s:%s: %w", source.SourceType, source.ExternalID, err)
+	}
+	insightIDs, err := upsertInsights(ctx, tx, sourceItemID, sourceCaptureID, synthesisID, chunkIDs, source)
+	if err != nil {
+		return "", nil, fmt.Errorf("upsert insights %s:%s: %w", source.SourceType, source.ExternalID, err)
+	}
+	if err := enqueueGraphSync(ctx, tx, sourceItemID, sourceCaptureID, source); err != nil {
+		return "", nil, fmt.Errorf("enqueue graph sync %s:%s: %w", source.SourceType, source.ExternalID, err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return "", nil, err
+	}
+
+	s.saveSourceEmbeddingsBestEffort(ctx, sourceItemID, sourceCaptureID, chunkIDs, insightIDs, source)
+	return sourceItemID, insightIDs, nil
+}
+
+func (s *Store) saveSourceEmbeddingsBestEffort(ctx context.Context, sourceItemID string, sourceCaptureID string, chunkIDs map[int]string, insightIDs map[string]string, source knowledge.ProcessedSource) {
+	if len(source.Embeddings) == 0 {
+		return
+	}
+	embeddingCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	tx, err := s.beginWriteTx(embeddingCtx)
+	if err != nil {
+		return
+	}
+	defer tx.Rollback(embeddingCtx)
+	if err := upsertEmbeddings(embeddingCtx, tx, sourceItemID, sourceCaptureID, chunkIDs, source); err != nil {
+		return
+	}
+	if err := upsertInsightEmbeddings(embeddingCtx, tx, insightIDs, source); err != nil {
+		return
+	}
+	_ = tx.Commit(embeddingCtx)
 }
 
 func upsertSourceItem(ctx context.Context, tx pgx.Tx, source knowledge.ProcessedSource) (string, error) {
@@ -241,7 +342,7 @@ func upsertSourceItem(ctx context.Context, tx pgx.Tx, source knowledge.Processed
 			processing_state = excluded.processing_state,
 			last_seen_at = now()
 		returning id
-	`, ownerID, string(source.SourceType), contentTypeForSource(source), source.ExternalID, source.SourceURL, source.Title, source.AuthorName, source.Username, publishedAt, source.CaptureHash, source.CaptureHash).Scan(&id)
+	`, ownerID, string(source.SourceType), contentTypeForSource(source), source.ExternalID, safeUTF8(source.SourceURL), safeUTF8(source.Title), safeUTF8(source.AuthorName), safeUTF8(source.Username), publishedAt, source.CaptureHash, source.CaptureHash).Scan(&id)
 	return id, err
 }
 
@@ -251,10 +352,10 @@ func upsertSourceCapture(ctx context.Context, tx pgx.Tx, sourceItemID string, so
 		"sourceType":  source.SourceType,
 		"contentType": contentTypeForSource(source),
 		"externalId":  source.ExternalID,
-		"sourceUrl":   source.SourceURL,
-		"title":       source.Title,
-		"authorName":  source.AuthorName,
-		"username":    source.Username,
+		"sourceUrl":   safeUTF8(source.SourceURL),
+		"title":       safeUTF8(source.Title),
+		"authorName":  safeUTF8(source.AuthorName),
+		"username":    safeUTF8(source.Username),
 	})
 	if err != nil {
 		return "", err
@@ -345,7 +446,7 @@ func upsertSynthesis(ctx context.Context, tx pgx.Tx, sourceItemID string, source
 			summary_object_id = excluded.summary_object_id,
 			generated_at = excluded.generated_at
 		returning id
-	`, ownerID, sourceItemID, sourceCaptureID, synthesis.CaptureHash, synthesis.PromptVersion, synthesis.Model, string(summaryRaw), string(insightsRaw), string(actionsRaw), nullableUUID(summaryObjectID), synthesis.GeneratedAt).Scan(&id)
+	`, ownerID, sourceItemID, sourceCaptureID, synthesis.CaptureHash, synthesis.PromptVersion, synthesis.Model, safeUTF8(string(summaryRaw)), safeUTF8(string(insightsRaw)), safeUTF8(string(actionsRaw)), nullableUUID(summaryObjectID), synthesis.GeneratedAt).Scan(&id)
 	return id, err
 }
 
@@ -403,7 +504,7 @@ func upsertInsights(ctx context.Context, tx pgx.Tx, sourceItemID string, sourceC
 				generated_at = excluded.generated_at,
 				updated_at = now()
 			returning id
-		`, ownerID, sourceItemID, sourceCaptureID, synthesisID, insight.ID, insight.Title, fallbackText(insight.RawInsight, insight.Insight), fallbackText(insight.CanonicalInsight, insight.Insight), insight.AbstractInsight, insight.PracticalText, insight.Mechanism, insight.InsightType, insight.Domain, insight.Topics, insight.Entities, insight.Confidence, insight.ExplicitOrInferred, insight.ImportanceScore, insight.NoveltyScore, insight.ActionabilityScore, insight.EmbeddingText, insight.GeneratedAt).Scan(&id)
+		`, ownerID, sourceItemID, sourceCaptureID, synthesisID, insight.ID, safeUTF8(insight.Title), safeUTF8(fallbackText(insight.RawInsight, insight.Insight)), safeUTF8(fallbackText(insight.CanonicalInsight, insight.Insight)), safeUTF8(insight.AbstractInsight), safeUTF8(insight.PracticalText), safeUTF8(insight.Mechanism), safeUTF8(insight.InsightType), safeUTF8(insight.Domain), insight.Topics, insight.Entities, insight.Confidence, insight.ExplicitOrInferred, insight.ImportanceScore, insight.NoveltyScore, insight.ActionabilityScore, safeUTF8(insight.EmbeddingText), insight.GeneratedAt).Scan(&id)
 		if err != nil {
 			return insightIDs, err
 		}
@@ -434,7 +535,7 @@ func upsertInsights(ctx context.Context, tx pgx.Tx, sourceItemID string, sourceC
 					source_capture_id = excluded.source_capture_id,
 					source_chunk_id = excluded.source_chunk_id,
 					evidence_text = excluded.evidence_text
-			`, id, sourceItemID, sourceCaptureID, chunkID, index, ref.Quote); err != nil {
+			`, id, sourceItemID, sourceCaptureID, chunkID, index, safeUTF8(ref.Quote)); err != nil {
 				return insightIDs, err
 			}
 		}
@@ -475,7 +576,7 @@ func upsertSourceChunks(ctx context.Context, tx pgx.Tx, sourceItemID string, sou
 				content = excluded.content,
 				token_estimate = excluded.token_estimate
 			returning id
-		`, ownerID, sourceItemID, sourceCaptureID, chunk.Index, chunk.Content, chunk.TokenEstimate, chunk.Checksum).Scan(&id)
+		`, ownerID, sourceItemID, sourceCaptureID, chunk.Index, safeUTF8(chunk.Content), chunk.TokenEstimate, chunk.Checksum).Scan(&id)
 		if err != nil {
 			return chunkIDs, err
 		}
@@ -487,6 +588,9 @@ func upsertSourceChunks(ctx context.Context, tx pgx.Tx, sourceItemID string, sou
 func upsertEmbeddings(ctx context.Context, tx pgx.Tx, sourceItemID string, sourceCaptureID string, chunkIDs map[int]string, source knowledge.ProcessedSource) error {
 	ownerID := ownerIDForSource(source)
 	for _, embedding := range source.Embeddings {
+		if embedding.Type == "insight" || embedding.Type == "entity" {
+			continue
+		}
 		var chunkID any
 		if embedding.ChunkIndex != nil {
 			if id, ok := chunkIDs[*embedding.ChunkIndex]; ok {
@@ -789,6 +893,83 @@ func (s *Store) SaveDigest(ctx context.Context, digest knowledge.DigestIssue) (*
 	return saved, nil
 }
 
+func (s *Store) ReadXTokens(ctx context.Context, ownerID string) (*knowledge.EncryptedXTokens, error) {
+	if ownerID == "" {
+		ownerID = "00000000-0000-0000-0000-000000000001"
+	}
+	var tokens knowledge.EncryptedXTokens
+	err := s.pool.QueryRow(ctx, `
+		select
+			owner_id::text,
+			access_token_ciphertext,
+			refresh_token_ciphertext,
+			access_expires_at,
+			scope,
+			token_type,
+			authenticated_x_user_id,
+			authenticated_x_username,
+			authenticated_x_name,
+			updated_at
+		from x_oauth_tokens
+		where owner_id = $1
+	`, ownerID).Scan(
+		&tokens.OwnerID,
+		&tokens.AccessTokenCiphertext,
+		&tokens.RefreshTokenCiphertext,
+		&tokens.AccessExpiresAt,
+		&tokens.Scope,
+		&tokens.TokenType,
+		&tokens.AuthenticatedXUserID,
+		&tokens.AuthenticatedXUsername,
+		&tokens.AuthenticatedXName,
+		&tokens.UpdatedAt,
+	)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &tokens, nil
+}
+
+func (s *Store) SaveXTokens(ctx context.Context, tokens knowledge.EncryptedXTokens) error {
+	ownerID := tokens.OwnerID
+	if ownerID == "" {
+		ownerID = "00000000-0000-0000-0000-000000000001"
+	}
+	updatedAt := tokens.UpdatedAt
+	if updatedAt.IsZero() {
+		updatedAt = time.Now().UTC()
+	}
+	_, err := s.pool.Exec(ctx, `
+		insert into x_oauth_tokens (
+			owner_id,
+			access_token_ciphertext,
+			refresh_token_ciphertext,
+			access_expires_at,
+			scope,
+			token_type,
+			authenticated_x_user_id,
+			authenticated_x_username,
+			authenticated_x_name,
+			updated_at
+		)
+		values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+		on conflict (owner_id) do update set
+			access_token_ciphertext = excluded.access_token_ciphertext,
+			refresh_token_ciphertext = excluded.refresh_token_ciphertext,
+			access_expires_at = excluded.access_expires_at,
+			scope = excluded.scope,
+			token_type = excluded.token_type,
+			authenticated_x_user_id = coalesce(nullif(excluded.authenticated_x_user_id, ''), x_oauth_tokens.authenticated_x_user_id),
+			authenticated_x_username = coalesce(nullif(excluded.authenticated_x_username, ''), x_oauth_tokens.authenticated_x_username),
+			authenticated_x_name = coalesce(nullif(excluded.authenticated_x_name, ''), x_oauth_tokens.authenticated_x_name),
+			updated_at = excluded.updated_at
+	`, ownerID, tokens.AccessTokenCiphertext, tokens.RefreshTokenCiphertext, tokens.AccessExpiresAt, tokens.Scope, tokens.TokenType, tokens.AuthenticatedXUserID, tokens.AuthenticatedXUsername, tokens.AuthenticatedXName, updatedAt)
+	return err
+}
+
 func sourceKey(sourceType knowledge.SourceType, externalID string) string {
 	return string(sourceType) + ":" + externalID
 }
@@ -845,6 +1026,10 @@ func fallbackText(value string, fallbackValue string) string {
 		return value
 	}
 	return fallbackValue
+}
+
+func safeUTF8(value string) string {
+	return strings.ToValidUTF8(value, "")
 }
 
 func parseOptionalTime(value string) *time.Time {

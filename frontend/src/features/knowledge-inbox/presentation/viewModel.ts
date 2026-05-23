@@ -1,4 +1,4 @@
-import type { Decision, KnowledgeRunResult, SavedYouTubeItem, SourceStatus, ValidationItem } from "../contracts";
+import type { Decision, DigestIssue, KnowledgeRunResult, SavedYouTubeItem, SourceStatus, ValidationItem } from "../contracts";
 
 export type IconName = "key" | "x" | "youtube" | "check" | "run" | "link" | "alert" | "spark";
 
@@ -104,6 +104,7 @@ export type KnowledgeInboxViewModel = {
   intake: PanelViewModel<IntakeRowViewModel>;
   validation: PanelViewModel<ValidationItemViewModel>;
   summaries: PanelViewModel<SummaryCardViewModel>;
+  digest?: DigestIssue;
   transcripts: PanelViewModel<TranscriptItemViewModel>;
   blockers: {
     eyebrow: string;
@@ -129,8 +130,8 @@ const decisionLabels: Record<Decision, string> = {
 const navItems: NavigationItemViewModel[] = [
   { label: "Insights", href: "/" },
   { label: "Daily Newsletter", href: "/daily-newsletter" },
-  { label: "Original X Posts", href: "/original-x-posts" },
-  { label: "Original YouTube Posts", href: "/original-youtube-posts" }
+  { label: "Original X Bookmarks", href: "/original-x-bookmarks" },
+  { label: "Original YouTube Videos", href: "/original-youtube-videos" }
 ];
 
 export function toKnowledgeInboxViewModel(run: KnowledgeRunResult, isRunning: boolean, error: string | null): KnowledgeInboxViewModel {
@@ -160,7 +161,7 @@ export function toKnowledgeInboxViewModel(run: KnowledgeRunResult, isRunning: bo
     },
     sources: [
       sourceCard("OneCLI Secrets", "Credential vault", run.sourceStatus.onecli, "key"),
-      sourceCard("X Bookmarks", "Recent saved posts", run.sourceStatus.x, "x"),
+      sourceCard("X Bookmarks", "Recent saved bookmarks", run.sourceStatus.x, "x"),
       sourceCard("YouTube Inbox", "Playlist and captions", run.sourceStatus.youtube, "youtube")
     ],
     readiness: {
@@ -190,7 +191,7 @@ export function toKnowledgeInboxViewModel(run: KnowledgeRunResult, isRunning: bo
           id: `x-${bookmark.id}`,
           source: "X",
           item: bookmark.title ?? bookmark.text,
-          body: bookmark.previewText ?? bookmark.body ?? bookmark.text,
+          body: bookmark.body ?? bookmark.text ?? bookmark.previewText ?? "",
           author: bookmark.username ? `@${bookmark.username}` : bookmark.authorName ?? bookmark.authorId ?? "Unknown",
           status: bookmark.contentType === "article" ? "Article captured" : "Post captured",
           timestamp: formatSourceDate(bookmark.createdAt),
@@ -230,7 +231,7 @@ export function toKnowledgeInboxViewModel(run: KnowledgeRunResult, isRunning: bo
       }
     },
     summaries: {
-      title: "Review Queue",
+      title: "Insight Queue",
       description: "Reading decisions, insights, action items, and cache-aware synthesis with attribution preserved.",
       icon: "link",
       items: [
@@ -277,6 +278,7 @@ export function toKnowledgeInboxViewModel(run: KnowledgeRunResult, isRunning: bo
         body: "Source-grounded summaries will appear once usable content is available."
       }
     },
+    digest: run.digest,
     transcripts: {
       title: "Transcript Evidence",
       description: "Caption status for videos entering the research memory.",

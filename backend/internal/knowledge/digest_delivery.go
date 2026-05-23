@@ -77,20 +77,23 @@ func resendAuthHeader(apiKey string) http.Header {
 
 func digestHTML(digest DigestIssue) string {
 	var builder strings.Builder
-	builder.WriteString(`<!doctype html><html><body style="margin:0;background:#f6f5f1;color:#1f2933;font-family:Arial,Helvetica,sans-serif;">`)
-	builder.WriteString(`<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#f6f5f1;padding:28px 12px;"><tr><td align="center">`)
-	builder.WriteString(`<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:720px;background:#ffffff;border:1px solid #dedbd2;border-radius:8px;overflow:hidden;">`)
-	builder.WriteString(`<tr><td style="padding:28px 32px 18px 32px;border-bottom:1px solid #e8e5dc;">`)
+	builder.WriteString(`<!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1"></head><body style="margin:0;background:#f4f6f8;color:#1f2933;font-family:Arial,Helvetica,sans-serif;-webkit-text-size-adjust:100%;">`)
+	builder.WriteString(`<div style="display:none;max-height:0;overflow:hidden;color:transparent;opacity:0;">`)
+	builder.WriteString(html.EscapeString(digestPreviewText(digest)))
+	builder.WriteString(`</div>`)
+	builder.WriteString(`<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#f4f6f8;padding:18px 10px;"><tr><td align="center">`)
+	builder.WriteString(`<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:600px;background:#ffffff;border:1px solid #d9e0dc;border-radius:8px;overflow:hidden;">`)
+	builder.WriteString(`<tr><td style="padding:22px 20px 16px 20px;border-bottom:1px solid #e8ece8;background:#fbfcfb;">`)
 	builder.WriteString(`<div style="font-size:12px;line-height:16px;letter-spacing:0.08em;text-transform:uppercase;color:#667085;font-weight:700;">Second Brain</div>`)
-	builder.WriteString(`<h1 style="margin:8px 0 0 0;font-size:28px;line-height:34px;color:#111827;font-weight:700;">`)
+	builder.WriteString(`<h1 style="margin:8px 0 0 0;font-size:24px;line-height:30px;color:#111827;font-weight:800;">`)
 	builder.WriteString(html.EscapeString(digest.Subject))
 	builder.WriteString(`</h1>`)
 	if digest.DigestDate != "" {
-		builder.WriteString(`<div style="margin-top:8px;font-size:14px;line-height:20px;color:#667085;">Digest for `)
+		builder.WriteString(`<div style="margin-top:10px;display:inline-block;border:1px solid #d9e0dc;border-radius:999px;padding:5px 10px;font-size:13px;line-height:18px;color:#475467;background:#ffffff;">Digest for `)
 		builder.WriteString(html.EscapeString(digest.DigestDate))
 		builder.WriteString(`</div>`)
 	}
-	builder.WriteString(`</td></tr><tr><td style="padding:8px 32px 30px 32px;">`)
+	builder.WriteString(`</td></tr><tr><td style="padding:10px 20px 24px 20px;">`)
 
 	lines := strings.Split(digest.BodyMarkdown, "\n")
 	for _, line := range lines {
@@ -100,26 +103,42 @@ func digestHTML(digest DigestIssue) string {
 		}
 		switch {
 		case strings.HasPrefix(trimmed, "## "):
-			builder.WriteString(`<h2 style="margin:24px 0 12px 0;font-size:18px;line-height:24px;color:#111827;font-weight:700;">`)
+			builder.WriteString(`<h2 style="margin:22px 0 10px 0;font-size:19px;line-height:25px;color:#111827;font-weight:800;">`)
 			builder.WriteString(renderInlineMarkdown(strings.TrimPrefix(trimmed, "## ")))
 			builder.WriteString(`</h2>`)
 		case strings.HasPrefix(trimmed, "- "):
-			builder.WriteString(`<div style="margin:10px 0;padding:12px 14px;border-left:3px solid #3b82f6;background:#f8fafc;border-radius:6px;font-size:15px;line-height:22px;color:#344054;">`)
+			builder.WriteString(`<div style="margin:10px 0;padding:13px 14px;border-left:4px solid #285c8f;background:#f8fafc;border-radius:8px;font-size:16px;line-height:24px;color:#344054;">`)
 			builder.WriteString(renderInlineMarkdown(strings.TrimPrefix(trimmed, "- ")))
 			builder.WriteString(`</div>`)
 		case strings.HasPrefix(trimmed, "Evidence:"):
-			builder.WriteString(`<div style="margin:-4px 0 12px 17px;font-size:13px;line-height:19px;color:#667085;">`)
+			builder.WriteString(`<div style="margin:-2px 0 14px 16px;font-size:14px;line-height:20px;color:#667085;">`)
 			builder.WriteString(renderInlineMarkdown(trimmed))
 			builder.WriteString(`</div>`)
 		default:
-			builder.WriteString(`<p style="margin:10px 0;font-size:15px;line-height:22px;color:#344054;">`)
+			builder.WriteString(`<p style="margin:12px 0;font-size:16px;line-height:24px;color:#344054;">`)
 			builder.WriteString(renderInlineMarkdown(trimmed))
 			builder.WriteString(`</p>`)
 		}
 	}
+	builder.WriteString(`<div style="margin-top:20px;border-top:1px solid #e8ece8;padding-top:14px;font-size:13px;line-height:19px;color:#667085;">Source-linked and generated from your saved knowledge base.</div>`)
 	builder.WriteString(`</td></tr></table>`)
 	builder.WriteString(`</td></tr></table></body></html>`)
 	return builder.String()
+}
+
+func digestPreviewText(digest DigestIssue) string {
+	for _, line := range strings.Split(digest.BodyMarkdown, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") || strings.HasPrefix(trimmed, "- ") {
+			continue
+		}
+		plain := renderPlainMarkdownLinks(strings.ReplaceAll(trimmed, "**", ""))
+		if len(plain) > 150 {
+			return plain[:147] + "..."
+		}
+		return plain
+	}
+	return "A quick, source-linked brief from your saved X bookmarks and YouTube videos."
 }
 
 func digestText(digest DigestIssue) string {
@@ -146,22 +165,22 @@ func renderInlineMarkdown(value string) string {
 	for {
 		start := strings.Index(remaining, "[")
 		if start < 0 {
-			builder.WriteString(html.EscapeString(remaining))
+			builder.WriteString(renderInlineText(remaining))
 			return builder.String()
 		}
 		middle := strings.Index(remaining[start:], "](")
 		if middle < 0 {
-			builder.WriteString(html.EscapeString(remaining))
+			builder.WriteString(renderInlineText(remaining))
 			return builder.String()
 		}
 		middle += start
 		end := strings.Index(remaining[middle+2:], ")")
 		if end < 0 {
-			builder.WriteString(html.EscapeString(remaining))
+			builder.WriteString(renderInlineText(remaining))
 			return builder.String()
 		}
 		end += middle + 2
-		builder.WriteString(html.EscapeString(remaining[:start]))
+		builder.WriteString(renderInlineText(remaining[:start]))
 		label := remaining[start+1 : middle]
 		href := remaining[middle+2 : end]
 		builder.WriteString(`<a href="`)
@@ -171,6 +190,31 @@ func renderInlineMarkdown(value string) string {
 		builder.WriteString(`</a>`)
 		remaining = remaining[end+1:]
 	}
+}
+
+func renderInlineText(value string) string {
+	var builder strings.Builder
+	remaining := value
+	open := false
+	for {
+		index := strings.Index(remaining, "**")
+		if index < 0 {
+			builder.WriteString(html.EscapeString(remaining))
+			break
+		}
+		builder.WriteString(html.EscapeString(remaining[:index]))
+		if open {
+			builder.WriteString("</strong>")
+		} else {
+			builder.WriteString("<strong>")
+		}
+		open = !open
+		remaining = remaining[index+2:]
+	}
+	if open {
+		builder.WriteString("</strong>")
+	}
+	return builder.String()
 }
 
 func renderPlainMarkdownLinks(value string) string {

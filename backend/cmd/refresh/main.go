@@ -16,7 +16,7 @@ import (
 func main() {
 	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
 	cfg := config.Load()
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
+	ctx, cancel := context.WithTimeout(context.Background(), parseDuration(cfg.RefreshTimeout, 90*time.Minute))
 	defer cancel()
 
 	var store knowledge.Store
@@ -51,4 +51,12 @@ func main() {
 		"insights", len(result.Insights),
 		"actions", len(result.ActionItems),
 	)
+}
+
+func parseDuration(value string, fallbackValue time.Duration) time.Duration {
+	parsed, err := time.ParseDuration(value)
+	if err != nil || parsed <= 0 {
+		return fallbackValue
+	}
+	return parsed
 }

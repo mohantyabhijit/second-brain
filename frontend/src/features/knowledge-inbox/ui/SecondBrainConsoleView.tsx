@@ -1,18 +1,26 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { type FormEvent, type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import type { KnowledgeInboxPage } from "../KnowledgeInboxContainer";
+import type { ChatMessage } from "../model/useKnowledgeInboxController";
 import type { KnowledgeInboxViewModel, NavigationItemViewModel, SummaryCardViewModel } from "../presentation/viewModel";
-import type { FeedbackSignal } from "../contracts";
+import type { FeedbackSignal, RefreshStatus } from "../contracts";
 import { Icon } from "./primitives/Icon";
 
 type SecondBrainConsoleViewProps = {
   activePage: KnowledgeInboxPage;
+  chatMessages: ChatMessage[];
+  isAsking: boolean;
+  isDigesting: boolean;
+  isLoading: boolean;
   model: KnowledgeInboxViewModel;
+  refreshStatus: RefreshStatus | null;
+  onAsk: (question: string, useLatest?: boolean) => Promise<void>;
   onDigest: () => void;
   onFeedback: (targetType: string, targetId: string, signal: FeedbackSignal, sourceUrl?: string) => void;
   onRun: () => void;
+  onTweet: (targetType: string, targetId: string, text: string, sourceUrl?: string) => Promise<void>;
 };
 
 type FeedSource = "Summary" | "Quote" | "Insight" | "Action" | "X" | "YouTube" | "Newsletter";
@@ -23,6 +31,7 @@ type FeedItem = {
   eyebrow: string;
   title: string;
   body: string;
+  newsletterLines?: string[];
   quote?: string;
   author: string;
   timestamp: string;
@@ -61,25 +70,25 @@ const pageCopy: Record<
     emptyTitle: "No newsletter issues yet"
   },
   "original-x-posts": {
-    title: "Original X Posts",
-    description: "The raw X posts behind the summaries, kept intact for attribution and rereading.",
+    title: "Original X Bookmarks",
+    description: "The raw X bookmarks behind the summaries, kept intact for attribution and rereading.",
     kicker: "X",
-    emptyTitle: "No X posts yet"
+    emptyTitle: "No X bookmarks yet"
   },
   "original-youtube-posts": {
-    title: "Original YouTube Posts",
+    title: "Original YouTube Videos",
     description: "The source videos and transcript evidence behind the reading queue.",
     kicker: "YouTube",
-    emptyTitle: "No YouTube posts yet"
+    emptyTitle: "No YouTube videos yet"
   }
 };
 
-export function SecondBrainConsoleView({ activePage, model, onDigest, onFeedback, onRun }: SecondBrainConsoleViewProps) {
+export function SecondBrainConsoleView({ activePage, chatMessages, isAsking, isDigesting, isLoading, model, refreshStatus, onAsk, onDigest, onFeedback, onRun, onTweet }: SecondBrainConsoleViewProps) {
   const [visibleCount, setVisibleCount] = useState(10);
   const [expandedItems, setExpandedItems] = useState<Set<string>>(new Set());
   const [copiedItems, setCopiedItems] = useState<Set<string>>(new Set());
-  const [reviewedItems, setReviewedItems] = useState<Set<string>>(new Set());
   const [savedItems, setSavedItems] = useState<Set<string>>(new Set());
+  const [tweetedItems, setTweetedItems] = useState<Set<string>>(new Set());
   const [expandedPanels, setExpandedPanels] = useState<Set<ExpandablePanelKey>>(new Set(["digest", "topics", "sources"]));
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
   const sentinelRef = useRef<HTMLDivElement | null>(null);
@@ -109,17 +118,14 @@ export function SecondBrainConsoleView({ activePage, model, onDigest, onFeedback
     setExpandedItems((items) => toggleSetItem(items, key));
   }
 
-  function toggleCopiedItem(key: string, quote: string) {
+  function toggleCopiedItem(key: string, quote: string, item: FeedItem) {
     setCopiedItems((items) => toggleSetItem(items, key));
     if (navigator.clipboard) {
       void navigator.clipboard.writeText(quote).catch(() => {
         setCopiedItems((items) => toggleSetItem(items, key));
       });
     }
-  }
-
-  function toggleReviewedItem(key: string) {
-    setReviewedItems((items) => toggleSetItem(items, key));
+    onFeedback(item.source.toLowerCase(), item.id, "copied", item.sourceUrl);
   }
 
   function toggleSavedItem(key: string) {
@@ -172,18 +178,28 @@ export function SecondBrainConsoleView({ activePage, model, onDigest, onFeedback
             <h1>{page.title}</h1>
             <p>{page.description}</p>
           </div>
-          <button className="primary-action" disabled={model.header.isRunning} onClick={onRun} type="button">
+          <button className="primary-action" aria-busy={model.header.isRunning} onClick={onRun} type="button">
             <Icon name="run" />
             {model.header.actionLabel}
           </button>
           {activePage === "daily-newsletter" ? (
-            <button className="secondary-action" onClick={onDigest} type="button">
+            <button className="secondary-action" disabled={isDigesting} onClick={onDigest} type="button">
+              {isDigesting ? <span className="button-spinner" aria-hidden="true" /> : null}
               Generate Digest
             </button>
           ) : null}
         </header>
 
         {model.error ? <div className="error-banner">{model.error}</div> : null}
+        {model.header.isRunning || refreshStatus?.status === "running" ? (
+          <RefreshProgress status={refreshStatus} />
+        ) : null}
+        {isLoading ? (
+          <div className="loading-strip" role="status">
+            <span className="loading-spinner" aria-hidden="true" />
+            Loading latest knowledge run
+          </div>
+        ) : null}
 
         <div className="wall-layout">
           <section className="feed-column" aria-label={`${page.title} feed`}>
@@ -198,18 +214,21 @@ export function SecondBrainConsoleView({ activePage, model, onDigest, onFeedback
                     index={index}
                     item={item}
                     itemKey={itemKey}
-                    reviewed={reviewedItems.has(itemKey)}
                     saved={savedItems.has(itemKey)}
-                    onCopy={() => toggleCopiedItem(itemKey, item.quote ?? item.body)}
+                    tweeted={tweetedItems.has(itemKey)}
+                    onCopy={() => toggleCopiedItem(itemKey, item.quote ?? item.body, item)}
                     onExpand={() => toggleExpandedItem(itemKey)}
                     onFeedback={(signal) => onFeedback(item.source.toLowerCase(), item.id, signal, item.sourceUrl)}
-                    onReview={() => {
-                      toggleReviewedItem(itemKey);
-                      onFeedback(item.source.toLowerCase(), item.id, "useful", item.sourceUrl);
-                    }}
                     onSave={() => {
                       toggleSavedItem(itemKey);
-                      onFeedback(item.source.toLowerCase(), item.id, "more_like_this", item.sourceUrl);
+                    }}
+                    onTweet={() => {
+                      const text = tweetTextForItem(item);
+                      void onTweet(item.source.toLowerCase(), item.id, text, item.sourceUrl)
+                        .then(() => {
+                          setTweetedItems((items) => toggleSetItem(items, itemKey));
+                        })
+                        .catch(() => undefined);
                     }}
                   />
                 );
@@ -267,9 +286,9 @@ export function SecondBrainConsoleView({ activePage, model, onDigest, onFeedback
                 onClick={() => togglePanel("topics")}
                 type="button"
               >
-                <span>
-                  <span className="section-label">Top topics</span>
-                  <strong>Review lanes</strong>
+                  <span>
+                    <span className="section-label">Top topics</span>
+                  <strong>Topic lanes</strong>
                 </span>
                 <span className="expand-glyph">{expandedPanels.has("topics") ? "Hide" : "Show"}</span>
               </button>
@@ -357,7 +376,21 @@ export function SecondBrainConsoleView({ activePage, model, onDigest, onFeedback
           </aside>
         </div>
       </section>
+      <AskSecondBrainWidget isAsking={isAsking} messages={chatMessages} onAsk={onAsk} />
     </main>
+  );
+}
+
+function RefreshProgress({ status }: { status: RefreshStatus | null }) {
+  const elapsed = formatElapsed(status?.elapsedSeconds ?? 0);
+  return (
+    <div className="refresh-progress" role="status">
+      <span className="loading-spinner" aria-hidden="true" />
+      <span>
+        <strong>{status?.message ?? "Refreshing the inbox."}</strong>
+        <small>{elapsed} elapsed{status?.phase ? ` - ${status.phase.replace(/_/g, " ")}` : ""}</small>
+      </span>
+    </div>
   );
 }
 
@@ -375,31 +408,31 @@ function FeedCard({
   index,
   item,
   itemKey,
-  reviewed,
   saved,
+  tweeted,
   onCopy,
   onExpand,
   onFeedback,
-  onReview,
-  onSave
+  onSave,
+  onTweet
 }: {
   copied: boolean;
   expanded: boolean;
   index: number;
   item: FeedItem;
   itemKey: string;
-  reviewed: boolean;
   saved: boolean;
+  tweeted: boolean;
   onCopy: () => void;
   onExpand: () => void;
   onFeedback: (signal: FeedbackSignal) => void;
-  onReview: () => void;
   onSave: () => void;
+  onTweet: () => void;
 }) {
   return (
     <article
       aria-labelledby={`${itemKey}-title`}
-      className={`feed-card ${expanded ? "expanded" : ""} ${reviewed ? "reviewed" : ""}`}
+      className={`feed-card ${item.source.toLowerCase()} ${expanded ? "expanded" : ""}`}
       onClick={onExpand}
     >
       <button
@@ -414,6 +447,7 @@ function FeedCard({
       >
         <span className={`feed-avatar ${item.source.toLowerCase()}`}>{sourceMark(item.source)}</span>
         <span>{item.timestamp}</span>
+        {item.source === "Newsletter" ? <span className="newsletter-chip">{item.eyebrow}</span> : null}
       </button>
 
       <div className="feed-main">
@@ -428,7 +462,11 @@ function FeedCard({
 
         <div className="summary-column">
           <span className={`feed-source ${item.source.toLowerCase()}`}>{item.source === "Newsletter" ? "Summary" : item.source}</span>
-          <p>{item.body}</p>
+          {item.source === "Newsletter" && item.newsletterLines?.length ? (
+            <NewsletterBody lines={item.newsletterLines} />
+          ) : (
+            <p>{item.body}</p>
+          )}
         </div>
       </div>
 
@@ -444,17 +482,35 @@ function FeedCard({
               Open Source
             </a>
           ) : null}
+          <span className="vote-actions" aria-label="Insight feedback">
+            <button
+              aria-label="Upvote insight"
+              className={saved ? "active icon-action" : "icon-action"}
+              onClick={(event) => {
+                event.stopPropagation();
+                onSave();
+                onFeedback("upvote");
+              }}
+              title="Upvote"
+              type="button"
+            >
+              <ThumbUpIcon />
+            </button>
+            <button
+              aria-label="Downvote insight"
+              className="icon-action"
+              onClick={(event) => {
+                event.stopPropagation();
+                onFeedback("downvote");
+              }}
+              title="Downvote"
+              type="button"
+            >
+              <ThumbDownIcon />
+            </button>
+          </span>
           <button
-            className={saved ? "active" : undefined}
-            onClick={(event) => {
-              event.stopPropagation();
-              onSave();
-            }}
-            type="button"
-          >
-            {saved ? "Saved" : "Save"}
-          </button>
-          <button
+            aria-label="Copy insight"
             className={copied ? "active" : undefined}
             onClick={(event) => {
               event.stopPropagation();
@@ -462,35 +518,18 @@ function FeedCard({
             }}
             type="button"
           >
-            {copied ? "Copied" : "Copy Quote"}
+            {copied ? "Copied" : "Copy Insight"}
           </button>
           <button
-            className={reviewed ? "active" : undefined}
+            aria-label="Tweet insight"
+            className={tweeted ? "active" : undefined}
             onClick={(event) => {
               event.stopPropagation();
-              onReview();
+              onTweet();
             }}
             type="button"
           >
-            {reviewed ? "Reviewed" : "Review"}
-          </button>
-          <button
-            onClick={(event) => {
-              event.stopPropagation();
-              onFeedback("stale");
-            }}
-            type="button"
-          >
-            Stale
-          </button>
-          <button
-            onClick={(event) => {
-              event.stopPropagation();
-              onFeedback("less_like_this");
-            }}
-            type="button"
-          >
-            Less Like This
+            {tweeted ? "Tweeted" : "Tweet"}
           </button>
         </div>
         {item.quote ? (
@@ -511,6 +550,180 @@ function FeedCard({
   );
 }
 
+function NewsletterBody({ lines }: { lines: string[] }) {
+  return (
+    <div className="newsletter-body">
+      {lines
+        .map((line) => line.trim())
+        .filter(Boolean)
+        .filter((line) => !line.startsWith("# "))
+        .map((line, index) => {
+          if (line.startsWith("## ")) {
+            return <h3 key={`${line}-${index}`}>{renderInlineMarkdownParts(line.slice(3))}</h3>;
+          }
+          if (line.startsWith("- ")) {
+            return (
+              <div className="newsletter-bullet" key={`${line}-${index}`}>
+                {renderInlineMarkdownParts(line.slice(2))}
+              </div>
+            );
+          }
+          return <p key={`${line}-${index}`}>{renderInlineMarkdownParts(line)}</p>;
+        })}
+    </div>
+  );
+}
+
+function ThumbUpIcon() {
+  return (
+    <svg aria-hidden="true" className="vote-icon" viewBox="0 0 24 24">
+      <path d="M7 10v10" />
+      <path d="M7 11 11.5 4c.6-.9 2-.5 2 .6v4.1h5c1.3 0 2.2 1.2 1.9 2.4l-1.4 6.3A3.2 3.2 0 0 1 15.8 20H7" />
+      <path d="M3 10h4v10H3z" />
+    </svg>
+  );
+}
+
+function ThumbDownIcon() {
+  return (
+    <svg aria-hidden="true" className="vote-icon" viewBox="0 0 24 24">
+      <path d="M7 14V4" />
+      <path d="M7 13 11.5 20c.6.9 2 .5 2-.6v-4.1h5c1.3 0 2.2-1.2 1.9-2.4L19 6.6A3.2 3.2 0 0 0 15.8 4H7" />
+      <path d="M3 4h4v10H3z" />
+    </svg>
+  );
+}
+
+function renderInlineMarkdownParts(value: string): ReactNode[] {
+  const parts: ReactNode[] = [];
+  const linkPattern = /\[([^\]]+)\]\(([^)]+)\)/g;
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+  while ((match = linkPattern.exec(value)) !== null) {
+    if (match.index > lastIndex) {
+      parts.push(renderBoldText(value.slice(lastIndex, match.index), `text-${lastIndex}`));
+    }
+    parts.push(
+      <a href={match[2]} key={`link-${match.index}`} onClick={(event) => event.stopPropagation()} rel="noreferrer" target="_blank">
+        {match[1]}
+      </a>
+    );
+    lastIndex = match.index + match[0].length;
+  }
+  if (lastIndex < value.length) {
+    parts.push(renderBoldText(value.slice(lastIndex), `text-${lastIndex}`));
+  }
+  return parts.flat();
+}
+
+function renderBoldText(value: string, keyPrefix: string): ReactNode[] {
+  return value.split(/(\*\*[^*]+\*\*)/g).filter(Boolean).map((part, index) => {
+    if (part.startsWith("**") && part.endsWith("**")) {
+      return <strong key={`${keyPrefix}-bold-${index}`}>{part.slice(2, -2)}</strong>;
+    }
+    return <span key={`${keyPrefix}-${index}`}>{part}</span>;
+  });
+}
+
+function AskSecondBrainWidget({
+  isAsking,
+  messages,
+  onAsk
+}: {
+  isAsking: boolean;
+  messages: ChatMessage[];
+  onAsk: (question: string, useLatest?: boolean) => Promise<void>;
+}) {
+  const [open, setOpen] = useState(false);
+  const [question, setQuestion] = useState("");
+  const [useLatest, setUseLatest] = useState(false);
+
+  function submitQuestion(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const trimmed = question.trim();
+    if (!trimmed || isAsking) return;
+    setQuestion("");
+    void onAsk(trimmed, useLatest);
+  }
+
+  return (
+    <section className={`ask-brain ${open ? "open" : ""}`} aria-label="Ask Your Second Brain">
+      {open ? (
+        <div className="ask-panel">
+          <header>
+            <span>
+              <strong>Ask Your Second Brain</strong>
+              <small>Answers cite saved X bookmarks, YouTube videos, and knowledge graph signals.</small>
+            </span>
+            <button aria-label="Close Ask Your Second Brain" onClick={() => setOpen(false)} type="button">
+              ×
+            </button>
+          </header>
+          <div className="ask-messages">
+            {messages.length ? (
+              messages.map((message) => (
+                <div key={message.id} className={`ask-message ${message.role}`}>
+                  <p>{formatChatContent(message.content)}</p>
+                  {message.sources?.length ? (
+                    <ul>
+                      {message.sources.map((source) => (
+                        <li key={`${message.id}-${source.id}`}>
+                          {source.sourceUrl ? (
+                            <a href={source.sourceUrl} rel="noreferrer" target="_blank">
+                              {source.id}: {source.title}
+                            </a>
+                          ) : (
+                            <span>
+                              {source.id}: {source.title}
+                            </span>
+                          )}
+                        </li>
+                      ))}
+                    </ul>
+                  ) : null}
+                </div>
+              ))
+            ) : (
+              <div className="ask-empty">
+                Ask about a saved source, a repeated idea, or what your bookmarks suggest you should do next.
+              </div>
+            )}
+            {isAsking ? (
+              <div className="ask-message assistant pending">
+                <span className="loading-spinner" aria-hidden="true" />
+                Thinking with your knowledge base
+              </div>
+            ) : null}
+          </div>
+          <form onSubmit={submitQuestion}>
+            <label className="latest-toggle">
+              <input checked={useLatest} onChange={(event) => setUseLatest(event.target.checked)} type="checkbox" />
+              Use latest web context
+            </label>
+            <div className="ask-input-row">
+              <input
+                aria-label="Question for Ask Your Second Brain"
+                maxLength={1200}
+                onChange={(event) => setQuestion(event.target.value)}
+                placeholder="Ask about your insights..."
+                value={question}
+              />
+              <button disabled={isAsking || !question.trim()} type="submit">
+                Ask
+              </button>
+            </div>
+          </form>
+        </div>
+      ) : null}
+      {open ? null : (
+        <button className="ask-launcher" onClick={() => setOpen(true)} type="button">
+          Ask Your Second Brain
+        </button>
+      )}
+    </section>
+  );
+}
+
 function toggleSetItem<T>(items: Set<T>, item: T) {
   const next = new Set(items);
   if (next.has(item)) {
@@ -519,6 +732,21 @@ function toggleSetItem<T>(items: Set<T>, item: T) {
     next.add(item);
   }
   return next;
+}
+
+function formatElapsed(seconds: number) {
+  const safeSeconds = Math.max(0, Math.floor(seconds));
+  const minutes = Math.floor(safeSeconds / 60);
+  const rest = safeSeconds % 60;
+  if (minutes === 0) return `${rest}s`;
+  return `${minutes}m ${String(rest).padStart(2, "0")}s`;
+}
+
+function formatChatContent(value: string) {
+  return value
+    .replace(/\*\*/g, "")
+    .replace(/^#{1,4}\s+/gm, "")
+    .replace(/^\s*-\s+/gm, "• ");
 }
 
 function sourceMark(source: FeedSource) {
@@ -532,12 +760,17 @@ function sourceMark(source: FeedSource) {
 }
 
 function expandedDetail(item: FeedItem) {
-  if (item.source === "X") return "Original post view preserves author, source text, quote, and engagement context for attribution.";
+  if (item.source === "X") return "Original bookmark view preserves author, source text, quote, and engagement context for attribution.";
   if (item.source === "YouTube") return "Video view preserves transcript status, channel context, and the quote that supports the summary.";
   if (item.source === "Newsletter") return "Newsletter view groups related summary and quote material into a digest-ready issue.";
   if (item.source === "Insight") return "Insight view keeps the synthesized claim attached to the source evidence that supports it.";
   if (item.source === "Action") return "Action view keeps the recommended next step attached to the source rationale.";
-  return "Expanded view keeps the short summary, quote, source context, and review decision together.";
+  return "Expanded view keeps the short summary, quote, source context, and source decision together.";
+}
+
+function tweetTextForItem(item: FeedItem) {
+  const source = item.sourceUrl ? `\n\nSource: ${item.sourceUrl}` : "";
+  return `${item.title}\n\n${item.body}${source}`;
 }
 
 function metricDetail(label: string, value: string) {
@@ -589,7 +822,7 @@ function getFeedItems(model: KnowledgeInboxViewModel, activePage: KnowledgeInbox
   if (activePage === "original-x-posts") return xPosts;
   if (activePage === "original-youtube-posts") return youtubePosts;
 
-  return buildNewsletterItems(summaries);
+  return buildNewsletterItems(model.digest, summaries);
 }
 
 function summaryToFeedItem(summary: SummaryCardViewModel): FeedItem {
@@ -610,16 +843,46 @@ function summaryToFeedItem(summary: SummaryCardViewModel): FeedItem {
   };
 }
 
-function buildNewsletterItems(items: FeedItem[]): FeedItem[] {
-  return items.map((item, index) => ({
+function buildNewsletterItems(digest: KnowledgeInboxViewModel["digest"], items: FeedItem[]): FeedItem[] {
+  const supportingItems = items.slice(0, 8).map((item, index) => ({
     ...item,
     id: `newsletter-${item.id}`,
-    source: "Newsletter",
-    eyebrow: `Issue ${index + 1}`,
+    source: "Newsletter" as const,
+    eyebrow: `Source ${index + 1}`,
     title: item.title,
     body: item.body,
-    stats: "newsletter candidate"
+    stats: "linked source note"
   }));
+  if (!digest) return supportingItems;
+  const lines = digest.bodyMarkdown.split("\n");
+  return [
+    {
+      id: `digest-${digest.digestDate}`,
+      source: "Newsletter" as const,
+      eyebrow: digest.status,
+      title: digest.subject,
+      body: firstNewsletterParagraph(lines),
+      newsletterLines: lines,
+      author: "Second Brain",
+      timestamp: digest.digestDate,
+      stats: `${digest.status} - ${digest.scheduledFor}`
+    },
+    ...supportingItems
+  ];
+}
+
+function firstNewsletterParagraph(lines: string[]) {
+  const paragraph = lines
+    .map((line) => line.trim())
+    .find((line) => line && !line.startsWith("#") && !line.startsWith("- "));
+  return paragraph ? markdownToPlain(paragraph) : "A mobile-first, source-linked digest from the latest knowledge run.";
+}
+
+function markdownToPlain(value: string) {
+  return value
+    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, "$1")
+    .replace(/\*\*/g, "")
+    .trim();
 }
 
 function sliceItems(items: FeedItem[], visibleCount: number) {
@@ -654,7 +917,7 @@ function isActiveNav(item: NavigationItemViewModel, activePage: KnowledgeInboxPa
   return (
     (activePage === "insights" && (item.href === "/" || item.href === "/insights")) ||
     (activePage === "daily-newsletter" && item.href === "/daily-newsletter") ||
-    (activePage === "original-x-posts" && item.href === "/original-x-posts") ||
-    (activePage === "original-youtube-posts" && item.href === "/original-youtube-posts")
+    (activePage === "original-x-posts" && (item.href === "/original-x-posts" || item.href === "/original-x-bookmarks")) ||
+    (activePage === "original-youtube-posts" && (item.href === "/original-youtube-posts" || item.href === "/original-youtube-videos"))
   );
 }

@@ -69,6 +69,7 @@ func TestBuildDigestIssueKeepsEmailReadable(t *testing.T) {
 	longEvidence := strings.Repeat("very long transcript evidence ", 40)
 	digest := buildDigestIssue(
 		"Asia/Singapore",
+		"18:00",
 		time.Date(2026, 5, 23, 9, 0, 0, 0, time.UTC),
 		[]Summary{{
 			Title:     "Long source",
@@ -76,11 +77,13 @@ func TestBuildDigestIssueKeepsEmailReadable(t *testing.T) {
 			Summary:   strings.Repeat("summary sentence ", 40),
 			Quote:     longEvidence,
 		}},
+		nil,
 		[]ThemeCluster{{
 			Label:    "Money",
 			Score:    2,
 			Evidence: longEvidence,
 		}},
+		nil,
 		nil,
 	)
 

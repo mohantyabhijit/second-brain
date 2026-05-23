@@ -130,6 +130,22 @@ func (s *Store) SaveFeedback(ctx context.Context, event knowledge.FeedbackEvent)
 	if err := ctx.Err(); err != nil {
 		return err
 	}
+	raw, err := json.Marshal(event)
+	if err != nil {
+		return err
+	}
+	feedbackPath := s.path + ".feedback.jsonl"
+	if err := os.MkdirAll(filepath.Dir(feedbackPath), 0o755); err != nil {
+		return err
+	}
+	file, err := os.OpenFile(feedbackPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+	if _, err := file.Write(append(raw, '\n')); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -146,4 +162,18 @@ func (s *Store) SaveDigest(ctx context.Context, digest knowledge.DigestIssue) (*
 		return nil, err
 	}
 	return &digest, nil
+}
+
+func (s *Store) ReadXTokens(ctx context.Context, ownerID string) (*knowledge.EncryptedXTokens, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	return nil, nil
+}
+
+func (s *Store) SaveXTokens(ctx context.Context, tokens knowledge.EncryptedXTokens) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	return errors.New("shared X OAuth tokens require SUPABASE_DB_URL/Postgres store")
 }

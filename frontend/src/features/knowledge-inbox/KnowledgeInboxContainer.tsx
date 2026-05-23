@@ -12,8 +12,37 @@ type KnowledgeInboxContainerProps = {
 };
 
 export default function KnowledgeInboxContainer({ initialPage = "insights" }: KnowledgeInboxContainerProps) {
-  const { run, isRunning, error, runValidation, saveFeedback, generateDigest } = useKnowledgeInboxController();
+  const {
+    run,
+    isLoading,
+    isRunning,
+    isDigesting,
+    isAsking,
+    refreshStatus,
+    chatMessages,
+    error,
+    runValidation,
+    saveFeedback,
+    generateDigest,
+    shareTweet,
+    askBrain
+  } = useKnowledgeInboxController();
   const model = useMemo(() => toKnowledgeInboxViewModel(run, isRunning, error), [run, isRunning, error]);
 
-  return <SecondBrainConsoleView activePage={initialPage} model={model} onDigest={generateDigest} onFeedback={saveFeedback} onRun={runValidation} />;
+  return (
+    <SecondBrainConsoleView
+      activePage={initialPage}
+      isDigesting={isDigesting}
+      isAsking={isAsking}
+      isLoading={isLoading}
+      refreshStatus={refreshStatus}
+      model={model}
+      chatMessages={chatMessages}
+      onAsk={askBrain}
+      onDigest={generateDigest}
+      onFeedback={saveFeedback}
+      onRun={runValidation}
+      onTweet={shareTweet}
+    />
+  );
 }

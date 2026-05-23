@@ -16,6 +16,8 @@ func TestLoadAppliesDefaultsAndParsesCSV(t *testing.T) {
 	t.Setenv("ONECLI_BIN", "/tmp/onecli")
 	t.Setenv("ONECLI_GATEWAY", "true")
 	t.Setenv("X_BOOKMARK_LIMIT", "250")
+	t.Setenv("X_CLIENT_ID_PROD", "prod-client-id")
+	t.Setenv("X_CLIENT_SECRET_PROD", "prod-client-secret")
 	t.Setenv("KNOWLEDGE_RUN_PATH", "/tmp/latest.json")
 	t.Setenv("YOUTUBE_PLAYLIST_ID", "playlist-1")
 	t.Setenv("YOUTUBE_TRANSCRIPT_TEST_VIDEO_ID", "video-1")
@@ -35,6 +37,9 @@ func TestLoadAppliesDefaultsAndParsesCSV(t *testing.T) {
 	}
 	if cfg.XBookmarkLimit != 250 {
 		t.Fatalf("unexpected X bookmark limit: %d", cfg.XBookmarkLimit)
+	}
+	if cfg.XClientID != "prod-client-id" || cfg.XClientSecret != "prod-client-secret" {
+		t.Fatalf("expected production X client fallback, got %#v", cfg)
 	}
 	if cfg.YouTubePlaylistID != "playlist-1" || cfg.YouTubeTranscriptTestVideoID != "video-1" {
 		t.Fatalf("unexpected YouTube config: %#v", cfg)

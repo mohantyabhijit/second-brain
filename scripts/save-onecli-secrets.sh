@@ -17,6 +17,7 @@ create_secret() {
   local host_pattern="$3"
   local header_name="${4:-Authorization}"
   local value_format="${5:-Bearer {value}}"
+  local path_pattern="${6:-}"
   local value="${!env_name:-}"
 
   if ! should_create_secret "$env_name"; then
@@ -28,14 +29,21 @@ create_secret() {
     return 0
   fi
 
-  "$ONECLI" secrets create \
-    --project "$PROJECT" \
-    --name "$display_name" \
-    --type generic \
-    --value "$value" \
-    --host-pattern "$host_pattern" \
-    --header-name "$header_name" \
+  local args=(
+    secrets create
+    --project "$PROJECT"
+    --name "$display_name"
+    --type generic
+    --value "$value"
+    --host-pattern "$host_pattern"
+    --header-name "$header_name"
     --value-format "$value_format"
+  )
+  if [[ -n "$path_pattern" ]]; then
+    args+=(--path-pattern "$path_pattern")
+  fi
+
+  "$ONECLI" "${args[@]}"
 }
 
 create_param_secret() {
@@ -43,6 +51,7 @@ create_param_secret() {
   local display_name="$2"
   local host_pattern="$3"
   local param_name="$4"
+  local path_pattern="${5:-}"
   local value="${!env_name:-}"
 
   if ! should_create_secret "$env_name"; then
@@ -54,14 +63,21 @@ create_param_secret() {
     return 0
   fi
 
-  "$ONECLI" secrets create \
-    --project "$PROJECT" \
-    --name "$display_name" \
-    --type generic \
-    --value "$value" \
-    --host-pattern "$host_pattern" \
-    --param-name "$param_name" \
+  local args=(
+    secrets create
+    --project "$PROJECT"
+    --name "$display_name"
+    --type generic
+    --value "$value"
+    --host-pattern "$host_pattern"
+    --param-name "$param_name"
     --param-format "{value}"
+  )
+  if [[ -n "$path_pattern" ]]; then
+    args+=(--path-pattern "$path_pattern")
+  fi
+
+  "$ONECLI" "${args[@]}"
 }
 
 should_create_secret() {
@@ -72,11 +88,13 @@ should_create_secret() {
   [[ ",$ONLY_SECRETS," == *",$env_name,"* ]]
 }
 
-create_secret X_USER_ACCESS_TOKEN "Second Brain X user access token" "api.x.com"
+create_secret X_USER_ACCESS_TOKEN "Second Brain X user access token" "api.x.com" "Authorization" "Bearer {value}" "/2/users/*"
+create_param_secret X_REFRESH_TOKEN "Second Brain X refresh token" "api.x.com" "refresh_token" "/2/oauth2/token"
 create_secret YOUTUBE_ACCESS_TOKEN "Second Brain YouTube OAuth access token" "www.googleapis.com"
 create_param_secret YOUTUBE_API_KEY "Second Brain YouTube API key" "www.googleapis.com" "key"
 create_secret SUPADATA_API_KEY "Second Brain Supadata API key" "api.supadata.ai" "x-api-key" "{value}"
 create_secret OPENAI_API_KEY "Second Brain OpenAI synthesis key" "api.openai.com"
+create_secret EXA_API_KEY "Second Brain Exa search key" "api.exa.ai" "x-api-key" "{value}"
 create_secret SUPABASE_SERVICE_ROLE_KEY "Second Brain Supabase service role key" "*.supabase.co" "Authorization" "Bearer {value}"
 create_secret SUPABASE_SERVICE_ROLE_KEY "Second Brain Supabase service role apikey" "*.supabase.co" "apikey" "{value}"
 create_secret RESEND_API_KEY "Second Brain Resend API key" "api.resend.com"

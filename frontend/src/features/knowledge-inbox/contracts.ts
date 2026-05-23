@@ -152,7 +152,19 @@ export type DigestIssue = {
   status: "generated" | "sent" | "failed" | "blocked";
 };
 
-export type FeedbackSignal = "useful" | "obvious" | "stale" | "irrelevant" | "more_like_this" | "less_like_this" | "archive" | "expand";
+export type FeedbackSignal =
+  | "useful"
+  | "obvious"
+  | "stale"
+  | "irrelevant"
+  | "more_like_this"
+  | "less_like_this"
+  | "archive"
+  | "expand"
+  | "copied"
+  | "tweeted"
+  | "upvote"
+  | "downvote";
 
 export type RefreshStatus = {
   id: string;
@@ -160,6 +172,28 @@ export type RefreshStatus = {
   startedAt: string;
   finishedAt?: string;
   error?: string;
+  phase?: string;
+  message?: string;
+  elapsedSeconds?: number;
+};
+
+export type AskSecondBrainSource = {
+  id: string;
+  title: string;
+  source: string;
+  sourceUrl?: string;
+  excerpt: string;
+  score?: number;
+};
+
+export type AskSecondBrainResponse = {
+  answer: string;
+  sources: AskSecondBrainSource[];
+  usedLatest: boolean;
+  guardrail?: string;
+  model?: string;
+  generatedAt: string;
+  searchStatus?: string;
 };
 
 export type KnowledgeRunResult = {

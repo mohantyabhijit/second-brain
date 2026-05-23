@@ -23,12 +23,15 @@ const embeddingDimensions = 1536
 var keywordPattern = regexp.MustCompile(`[a-zA-Z][a-zA-Z0-9-]{2,}`)
 
 const (
-	digestThemeEvidenceLimit  = 180
-	digestSummaryLimit        = 260
-	digestSourceEvidenceLimit = 200
-	digestConnectionLimit     = 220
-	digestMaxSourceNoteCount  = 8
-	digestMaxConnectionCount  = 5
+	digestThemeEvidenceLimit     = 180
+	digestSummaryLimit           = 260
+	digestSourceEvidenceLimit    = 200
+	digestConnectionLimit        = 220
+	digestMaxSourceNoteCount     = 8
+	digestMaxInsightCount        = 10
+	digestMaxInsightClusterCount = 6
+	digestMaxConnectionCount     = 5
+	insightClusterThreshold      = 0.25
 )
 
 var stopwords = map[string]bool{
@@ -46,6 +49,19 @@ type embeddingResponse struct {
 	Error *struct {
 		Message string `json:"message"`
 	} `json:"error"`
+}
+
+type clusteredInsight struct {
+	insight  Insight
+	sourceID string
+}
+
+type insightClusterAccumulator struct {
+	key       string
+	label     string
+	signature []string
+	insights  []clusteredInsight
+	sourceIDs map[string]bool
 }
 
 func (s *Service) enrichProcessedSources(ctx context.Context, sources []ProcessedSource) []ProcessedSource {
@@ -341,27 +357,32 @@ func buildThemeClusters(sources []ProcessedSource) []ThemeCluster {
 }
 
 func buildInsightClusters(sources []ProcessedSource) []InsightCluster {
-	type clusterAccumulator struct {
-		key      string
-		label    string
-		insights []Insight
-	}
-	accumulators := map[string]*clusterAccumulator{}
+	accumulators := []*insightClusterAccumulator{}
+	byExactKey := map[string]*insightClusterAccumulator{}
 	for _, source := range sources {
+		sourceID := string(source.SourceType) + ":" + source.ExternalID
 		for _, insight := range source.Synthesis.Insights {
 			key := insightClusterKey(insight)
 			if key == "" {
 				continue
 			}
-			accumulator, ok := accumulators[key]
-			if !ok {
-				accumulator = &clusterAccumulator{
-					key:   key,
-					label: insightClusterLabel(insight, key),
-				}
-				accumulators[key] = accumulator
+			signature := insightSignature(insight)
+			accumulator := byExactKey[key]
+			if accumulator == nil {
+				accumulator = bestInsightCluster(accumulators, signature)
 			}
-			accumulator.insights = append(accumulator.insights, insight)
+			if accumulator == nil {
+				accumulator = &insightClusterAccumulator{
+					key:       key,
+					label:     insightClusterLabel(insight, key),
+					signature: signature,
+					sourceIDs: map[string]bool{},
+				}
+				accumulators = append(accumulators, accumulator)
+				byExactKey[key] = accumulator
+			}
+			accumulator.insights = append(accumulator.insights, clusteredInsight{insight: insight, sourceID: sourceID})
+			accumulator.sourceIDs[sourceID] = true
 		}
 	}
 	clusters := []InsightCluster{}
@@ -371,19 +392,27 @@ func buildInsightClusters(sources []ProcessedSource) []InsightCluster {
 		}
 		insightIDs := make([]string, 0, len(accumulator.insights))
 		examples := make([]string, 0, min(3, len(accumulator.insights)))
-		for _, insight := range accumulator.insights {
+		for _, item := range accumulator.insights {
+			insight := item.insight
+			if insight.ID == "" {
+				continue
+			}
 			insightIDs = append(insightIDs, insight.ID)
 			if len(examples) < 3 {
 				examples = append(examples, fallback(insight.CanonicalInsight, insight.Insight))
 			}
 		}
+		if len(insightIDs) < 2 || len(examples) == 0 {
+			continue
+		}
+		sourceDiversityBonus := 0.5 * float64(len(accumulator.sourceIDs)-1)
 		clusters = append(clusters, InsightCluster{
 			ID:                       "insight-cluster-" + storagePathSegment(accumulator.key),
 			Label:                    accumulator.label,
 			CanonicalInsight:         examples[0],
 			Summary:                  "Recurring mechanism across insights: " + strings.Join(examples, " / "),
 			Layer:                    "similar_insight",
-			Score:                    float64(len(insightIDs)),
+			Score:                    float64(len(insightIDs)) + sourceDiversityBonus,
 			RepresentativeInsightIDs: insightIDs[:min(3, len(insightIDs))],
 			InsightIDs:               insightIDs,
 		})
@@ -398,6 +427,147 @@ func buildInsightClusters(sources []ProcessedSource) []InsightCluster {
 		return clusters[:8]
 	}
 	return clusters
+}
+
+func normalizeResultInsightEngine(result *Result) {
+	if result == nil {
+		return
+	}
+	if len(result.InsightClusters) == 0 && len(result.Insights) > 0 {
+		result.InsightClusters = buildInsightClustersFromInsights(result.Insights)
+	}
+	result.Insights = rankInsights(result.Insights, result.InsightClusters)
+}
+
+func buildInsightClustersFromInsights(insights []Insight) []InsightCluster {
+	if len(insights) == 0 {
+		return nil
+	}
+	sourcesByID := map[string]*ProcessedSource{}
+	order := []string{}
+	for _, insight := range insights {
+		sourceType := SourceType(strings.TrimSpace(insight.Source))
+		if sourceType == "" {
+			sourceType = SourceType("unknown")
+		}
+		sourceID := strings.TrimSpace(insight.SourceID)
+		if sourceID == "" {
+			sourceID = "unknown"
+		}
+		key := string(sourceType) + ":" + sourceID
+		source := sourcesByID[key]
+		if source == nil {
+			source = &ProcessedSource{
+				SourceType: sourceType,
+				ExternalID: sourceID,
+				SourceURL:  insight.SourceURL,
+				Title:      insight.Title,
+				Synthesis: SynthesisRecord{
+					Insights: []Insight{},
+				},
+			}
+			sourcesByID[key] = source
+			order = append(order, key)
+		}
+		source.Synthesis.Insights = append(source.Synthesis.Insights, insight)
+	}
+	sources := make([]ProcessedSource, 0, len(order))
+	for _, key := range order {
+		sources = append(sources, *sourcesByID[key])
+	}
+	return buildInsightClusters(sources)
+}
+
+func rankInsights(insights []Insight, clusters []InsightCluster) []Insight {
+	if len(insights) < 2 {
+		return insights
+	}
+	clusterScores := map[string]float64{}
+	for _, cluster := range clusters {
+		for _, insightID := range cluster.InsightIDs {
+			if cluster.Score > clusterScores[insightID] {
+				clusterScores[insightID] = cluster.Score
+			}
+		}
+	}
+	ranked := slices.Clone(insights)
+	sort.SliceStable(ranked, func(i, j int) bool {
+		left := insightRankScore(ranked[i], clusterScores[ranked[i].ID])
+		right := insightRankScore(ranked[j], clusterScores[ranked[j].ID])
+		if left == right {
+			return ranked[i].ID < ranked[j].ID
+		}
+		return left > right
+	})
+	return ranked
+}
+
+func insightRankScore(insight Insight, clusterScore float64) float64 {
+	confidenceBonus := 0.0
+	switch normalizedConfidence(insight.Confidence) {
+	case "high":
+		confidenceBonus = 0.15
+	case "medium":
+		confidenceBonus = 0.08
+	}
+	sourceDiversityBonus := math.Min(clusterScore, 5) * 0.08
+	return insight.ImportanceScore*0.4 + insight.ActionabilityScore*0.25 + insight.NoveltyScore*0.2 + confidenceBonus + sourceDiversityBonus
+}
+
+func bestInsightCluster(accumulators []*insightClusterAccumulator, signature []string) *insightClusterAccumulator {
+	if len(signature) == 0 {
+		return nil
+	}
+	var best *insightClusterAccumulator
+	bestScore := 0.0
+	for _, accumulator := range accumulators {
+		score := tokenJaccard(signature, accumulator.signature)
+		if score > bestScore {
+			bestScore = score
+			best = accumulator
+		}
+	}
+	if bestScore < insightClusterThreshold {
+		return nil
+	}
+	return best
+}
+
+func insightSignature(insight Insight) []string {
+	text := strings.Join([]string{
+		insight.Mechanism,
+		insight.CanonicalInsight,
+		insight.AbstractInsight,
+		insight.PracticalText,
+		strings.Join(insight.Topics, " "),
+		strings.Join(insight.Entities, " "),
+	}, " ")
+	return topKeywords(canonicalInsightText(text), 24)
+}
+
+func tokenJaccard(left []string, right []string) float64 {
+	if len(left) == 0 || len(right) == 0 {
+		return 0
+	}
+	leftSet := map[string]bool{}
+	for _, value := range left {
+		leftSet[value] = true
+	}
+	rightSet := map[string]bool{}
+	for _, value := range right {
+		rightSet[value] = true
+	}
+	intersection := 0
+	for value := range leftSet {
+		if rightSet[value] {
+			intersection++
+		}
+	}
+	union := len(leftSet) + len(rightSet) - intersection
+	if union == 0 {
+		return 0
+	}
+	return float64(intersection) / float64(union)
 }
 
 func insightClusterKey(insight Insight) string {
@@ -479,31 +649,64 @@ func nonEmpty(values []string) []string {
 	return filtered
 }
 
-func buildDigestIssue(cfgDigestTimezone string, generatedAt time.Time, summaries []Summary, themes []ThemeCluster, connections []SourceConnection) DigestIssue {
+func buildDigestIssue(cfgDigestTimezone string, cfgDigestTime string, generatedAt time.Time, summaries []Summary, insights []Insight, themes []ThemeCluster, insightClusters []InsightCluster, connections []SourceConnection) DigestIssue {
 	location, err := time.LoadLocation(cfgDigestTimezone)
 	if err != nil {
 		location = time.FixedZone("Asia/Singapore", 8*60*60)
 	}
 	localDate := generatedAt.In(location)
-	scheduledFor := time.Date(localDate.Year(), localDate.Month(), localDate.Day(), 17, 0, 0, 0, location)
+	hour, minute := parseDigestClock(cfgDigestTime)
+	scheduledFor := time.Date(localDate.Year(), localDate.Month(), localDate.Day(), hour, minute, 0, 0, location)
 	digestDate := scheduledFor.Format("2006-01-02")
-	subject := "Second Brain digest for " + digestDate
+	subject := "Your Second Brain briefing for " + digestDate
 	lines := []string{"# " + subject, ""}
+	lines = append(lines, "A quick read on what your saved sources are circling around, what is worth acting on, and what can wait.", "")
 	if len(themes) > 0 {
-		lines = append(lines, "## Themes")
+		lines = append(lines, "## The Lead")
 		for _, theme := range themes {
-			lines = append(lines, fmt.Sprintf("- %s: %.0f related source(s). %s", theme.Label, theme.Score, truncateDigestText(theme.Evidence, digestThemeEvidenceLimit)))
+			lines = append(lines, fmt.Sprintf("- **%s** showed up across %.0f source(s). %s", theme.Label, theme.Score, truncateDigestText(theme.Evidence, digestThemeEvidenceLimit)))
+		}
+		lines = append(lines, "")
+	}
+	if len(insightClusters) > 0 {
+		lines = append(lines, "## Repeated Ideas")
+		for index, cluster := range insightClusters {
+			if index >= digestMaxInsightClusterCount {
+				lines = append(lines, fmt.Sprintf("- %d more repeated idea(s) kept in the app.", len(insightClusters)-index))
+				break
+			}
+			lines = append(lines, fmt.Sprintf("- **%s**: %s", cluster.Label, truncateDigestText(cluster.Summary, digestSummaryLimit)))
+		}
+		lines = append(lines, "")
+	}
+	if len(insights) > 0 {
+		lines = append(lines, "## Insight Queue")
+		for index, insight := range insights {
+			if index >= digestMaxInsightCount {
+				lines = append(lines, fmt.Sprintf("- %d more insight(s) kept in the app.", len(insights)-index))
+				break
+			}
+			link := insight.SourceURL
+			title := fallback(insight.Title, "Source-backed insight")
+			if link == "" {
+				lines = append(lines, fmt.Sprintf("- **%s**: %s", title, truncateDigestText(insight.Insight, digestSummaryLimit)))
+			} else {
+				lines = append(lines, fmt.Sprintf("- **[%s](%s)**: %s", title, link, truncateDigestText(insight.Insight, digestSummaryLimit)))
+			}
+			if insight.Evidence != "" {
+				lines = append(lines, "  Evidence: "+truncateDigestText(insight.Evidence, digestSourceEvidenceLimit))
+			}
 		}
 		lines = append(lines, "")
 	}
 	if len(summaries) > 0 {
-		lines = append(lines, "## Source notes")
+		lines = append(lines, "## What To Read")
 		for index, summary := range summaries {
 			if index >= digestMaxSourceNoteCount {
 				lines = append(lines, fmt.Sprintf("- %d more source note(s) kept in the app.", len(summaries)-index))
 				break
 			}
-			lines = append(lines, fmt.Sprintf("- [%s](%s): %s", summary.Title, summary.SourceURL, truncateDigestText(summary.Summary, digestSummaryLimit)))
+			lines = append(lines, fmt.Sprintf("- **[%s](%s)**: %s", summary.Title, summary.SourceURL, truncateDigestText(summary.Summary, digestSummaryLimit)))
 			if summary.Quote != "" {
 				lines = append(lines, "  Evidence: "+truncateDigestText(summary.Quote, digestSourceEvidenceLimit))
 			}
@@ -511,7 +714,7 @@ func buildDigestIssue(cfgDigestTimezone string, generatedAt time.Time, summaries
 		lines = append(lines, "")
 	}
 	if len(connections) > 0 {
-		lines = append(lines, "## Connections")
+		lines = append(lines, "## Thread To Watch")
 		for index, connection := range connections {
 			if index >= digestMaxConnectionCount {
 				lines = append(lines, fmt.Sprintf("- %d more connection(s) kept in the app.", len(connections)-index))
@@ -529,6 +732,33 @@ func buildDigestIssue(cfgDigestTimezone string, generatedAt time.Time, summaries
 		BodyMarkdown:   bodyMarkdown,
 		Status:         "generated",
 	}
+}
+
+func parseDigestClock(value string) (int, int) {
+	parts := strings.Split(strings.TrimSpace(value), ":")
+	if len(parts) != 2 {
+		return 18, 0
+	}
+	hour := parseSmallInt(parts[0], 18)
+	minute := parseSmallInt(parts[1], 0)
+	if hour < 0 || hour > 23 || minute < 0 || minute > 59 {
+		return 18, 0
+	}
+	return hour, minute
+}
+
+func parseSmallInt(value string, fallbackValue int) int {
+	parsed := 0
+	if value == "" {
+		return fallbackValue
+	}
+	for _, r := range value {
+		if r < '0' || r > '9' {
+			return fallbackValue
+		}
+		parsed = parsed*10 + int(r-'0')
+	}
+	return parsed
 }
 
 func digestBodyFingerprint(bodyMarkdown string) string {

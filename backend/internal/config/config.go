@@ -25,15 +25,36 @@ type Config struct {
 	KnowledgeRunPath             string
 	XClientID                    string
 	XClientSecret                string
+	XRedirectURI                 string
+	XOAuthScopes                 []string
+	XSessionSecret               string
+	XSessionCookieName           string
+	XTokenEncryptionKey          string
+	XTokenRefreshDirect          bool
+	XExpectedUsername            string
+	XReauthorizeCommand          string
+	XKeychainTokenSuffix         string
+	XTokenRotationPath           string
 	YouTubePlaylistID            string
 	YouTubeTranscriptTestVideoID string
 	OpenAITranslationModel       string
 	OpenAISynthesisModel         string
+	OpenAIChatModel              string
 	OpenAIEmbeddingModel         string
 	DigestEmailTo                string
 	DigestEmailFrom              string
 	ResendAPIKey                 string
 	DigestTimezone               string
+	DigestTime                   string
+	RefreshTimeout               string
+	ProcessWorkerCount           int
+	WorkerRefreshInterval        string
+	WorkerDigestInterval         string
+	Neo4jURI                     string
+	Neo4jUsername                string
+	Neo4jPassword                string
+	Neo4jDatabase                string
+	GraphSyncBatchSize           int
 }
 
 func Load() Config {
@@ -53,17 +74,38 @@ func Load() Config {
 		OneCLIXRefreshSecretID:       os.Getenv("ONECLI_X_REFRESH_SECRET_ID"),
 		XBookmarkLimit:               intValue("X_BOOKMARK_LIMIT", 0),
 		KnowledgeRunPath:             value("KNOWLEDGE_RUN_PATH", "../data/runtime/latest-knowledge-run.json"),
-		XClientID:                    os.Getenv("X_CLIENT_ID"),
-		XClientSecret:                os.Getenv("X_CLIENT_SECRET"),
+		XClientID:                    firstEnv("X_CLIENT_ID", "X_CLIENT_ID_PROD"),
+		XClientSecret:                firstEnv("X_CLIENT_SECRET", "X_CLIENT_SECRET_PROD"),
+		XRedirectURI:                 value("X_REDIRECT_URI", "http://localhost:8080/api/auth/x/callback"),
+		XOAuthScopes:                 fields(value("X_OAUTH_SCOPES", "tweet.read tweet.write users.read bookmark.read offline.access")),
+		XSessionSecret:               os.Getenv("X_SESSION_SECRET"),
+		XSessionCookieName:           value("X_SESSION_COOKIE_NAME", "second_brain_session"),
+		XTokenEncryptionKey:          os.Getenv("X_TOKEN_ENCRYPTION_KEY"),
+		XTokenRefreshDirect:          os.Getenv("X_TOKEN_REFRESH_DIRECT") == "true",
+		XExpectedUsername:            value("X_EXPECTED_USERNAME", "mohantyabhijit"),
+		XReauthorizeCommand:          value("X_REAUTHORIZE_COMMAND", "npm run x:oauth"),
+		XKeychainTokenSuffix:         os.Getenv("X_KEYCHAIN_TOKEN_SUFFIX"),
+		XTokenRotationPath:           value("X_TOKEN_ROTATION_PATH", "../data/runtime/x-token-rotation.json"),
 		YouTubePlaylistID:            value("YOUTUBE_PLAYLIST_ID", defaultYouTubePlaylistID),
 		YouTubeTranscriptTestVideoID: os.Getenv("YOUTUBE_TRANSCRIPT_TEST_VIDEO_ID"),
 		OpenAITranslationModel:       value("OPENAI_TRANSLATION_MODEL", "gpt-4o-mini"),
 		OpenAISynthesisModel:         value("OPENAI_SYNTHESIS_MODEL", "gpt-4o-mini"),
+		OpenAIChatModel:              value("OPENAI_CHAT_MODEL", value("OPENAI_SYNTHESIS_MODEL", "gpt-4o-mini")),
 		OpenAIEmbeddingModel:         value("OPENAI_EMBEDDING_MODEL", "text-embedding-3-small"),
 		DigestEmailTo:                os.Getenv("DIGEST_EMAIL_TO"),
 		DigestEmailFrom:              value("DIGEST_EMAIL_FROM", "Second Brain <digest@second-brain.local>"),
 		ResendAPIKey:                 os.Getenv("RESEND_API_KEY"),
 		DigestTimezone:               value("DIGEST_TIMEZONE", "Asia/Singapore"),
+		DigestTime:                   value("DIGEST_TIME", "18:00"),
+		RefreshTimeout:               value("REFRESH_TIMEOUT", "90m"),
+		ProcessWorkerCount:           intValue("PROCESS_WORKER_COUNT", 8),
+		WorkerRefreshInterval:        value("WORKER_REFRESH_INTERVAL", "2h"),
+		WorkerDigestInterval:         value("WORKER_DIGEST_INTERVAL", "2h"),
+		Neo4jURI:                     os.Getenv("NEO4J_URI"),
+		Neo4jUsername:                os.Getenv("NEO4J_USERNAME"),
+		Neo4jPassword:                os.Getenv("NEO4J_PASSWORD"),
+		Neo4jDatabase:                value("NEO4J_DATABASE", "neo4j"),
+		GraphSyncBatchSize:           intValue("GRAPH_SYNC_BATCH_SIZE", 50),
 	}
 }
 
@@ -72,6 +114,15 @@ func value(key, fallback string) string {
 		return v
 	}
 	return fallback
+}
+
+func firstEnv(keys ...string) string {
+	for _, key := range keys {
+		if v := strings.TrimSpace(os.Getenv(key)); v != "" {
+			return v
+		}
+	}
+	return ""
 }
 
 func intValue(key string, fallback int) int {
@@ -96,6 +147,14 @@ func csv(raw string) []string {
 		if value := strings.TrimSpace(part); value != "" {
 			values = append(values, value)
 		}
+	}
+	return values
+}
+
+func fields(raw string) []string {
+	values := strings.Fields(raw)
+	if len(values) == 0 {
+		return nil
 	}
 	return values
 }

@@ -19,22 +19,26 @@ type Store interface {
 	SaveRun(ctx context.Context, result Result, sources []ProcessedSource) error
 	SaveFeedback(ctx context.Context, event FeedbackEvent) error
 	SaveDigest(ctx context.Context, digest DigestIssue) (*DigestIssue, error)
+	ReadXTokens(ctx context.Context, ownerID string) (*EncryptedXTokens, error)
+	SaveXTokens(ctx context.Context, tokens EncryptedXTokens) error
 }
 
 type Service struct {
-	cfg       config.Config
-	store     Store
-	client    *http.Client
-	logger    *slog.Logger
-	refreshMu sync.Mutex
-	refresh   RefreshStatus
+	cfg          config.Config
+	store        Store
+	client       *http.Client
+	logger       *slog.Logger
+	refreshMu    sync.Mutex
+	refresh      RefreshStatus
+	xOAuthMu     sync.Mutex
+	xOAuthStates map[string]xOAuthState
 }
 
 func NewService(cfg config.Config, store Store, client *http.Client) *Service {
 	if client == nil {
 		client = http.DefaultClient
 	}
-	return &Service{cfg: cfg, store: store, client: client, logger: slog.Default()}
+	return &Service{cfg: cfg, store: store, client: client, logger: slog.Default(), xOAuthStates: map[string]xOAuthState{}}
 }
 
 func (s *Service) SetLogger(logger *slog.Logger) {
@@ -44,7 +48,12 @@ func (s *Service) SetLogger(logger *slog.Logger) {
 }
 
 func (s *Service) ReadLatest(ctx context.Context) (*Result, error) {
-	return s.store.ReadLatest(ctx)
+	latest, err := s.store.ReadLatest(ctx)
+	if err != nil || latest == nil {
+		return latest, err
+	}
+	normalizeResultInsightEngine(latest)
+	return latest, nil
 }
 
 func (s *Service) StartRefresh() RefreshStatus {
@@ -58,12 +67,14 @@ func (s *Service) StartRefresh() RefreshStatus {
 		ID:        fmt.Sprintf("refresh-%d", time.Now().UTC().UnixNano()),
 		Status:    "running",
 		StartedAt: time.Now().UTC(),
+		Phase:     "starting",
+		Message:   "Starting knowledge refresh.",
 	}
 	s.refresh = status
 	s.refreshMu.Unlock()
 
 	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+		ctx, cancel := context.WithTimeout(context.Background(), s.refreshTimeout())
 		defer cancel()
 		_, err := s.Run(ctx)
 		finishedAt := time.Now().UTC()
@@ -74,10 +85,14 @@ func (s *Service) StartRefresh() RefreshStatus {
 		if err != nil {
 			s.refresh.Status = "failed"
 			s.refresh.Error = err.Error()
+			s.refresh.Phase = "failed"
+			s.refresh.Message = "Refresh failed before the inbox could be updated."
 			return
 		}
 		s.refresh.Status = "completed"
 		s.refresh.Error = ""
+		s.refresh.Phase = "completed"
+		s.refresh.Message = "Refresh completed. The latest source-grounded insights are ready."
 	}()
 
 	return status
@@ -91,9 +106,13 @@ func (s *Service) RefreshStatus() RefreshStatus {
 			ID:        "idle",
 			Status:    "idle",
 			StartedAt: time.Now().UTC(),
+			Phase:     "idle",
+			Message:   "No refresh is currently running.",
 		}
 	}
-	return s.refresh
+	status := s.refresh
+	status.ElapsedSeconds = int64(time.Since(status.StartedAt).Seconds())
+	return status
 }
 
 func (s *Service) Run(ctx context.Context) (Result, error) {
@@ -112,11 +131,13 @@ func (s *Service) Run(ctx context.Context) (Result, error) {
 		Blockers:     []string{},
 	}
 	s.logger.Info("knowledge refresh started", "owner_id", s.cfg.OwnerID)
+	s.setRefreshStage("checking_credentials", "Checking OneCLI, X, YouTube, Supabase, and model configuration.")
 
 	result.SourceStatus.OneCLI = s.oneCLIStatus(ctx)
 	result.SourceStatus.X = SourceNeedsSecrets
 	result.SourceStatus.YouTube = SourceNeedsSecrets
 	s.logger.Info("onecli status checked", "status", result.SourceStatus.OneCLI)
+	s.setRefreshStage("fetching_sources", "Fetching X bookmarks and YouTube playlist videos.")
 
 	type xFetchResult struct {
 		items    []XBookmark
@@ -180,9 +201,11 @@ func (s *Service) Run(ctx context.Context) (Result, error) {
 
 	candidates := append(candidatesFromBookmarks(xBookmarks), candidatesFromVideos(youtubeItems)...)
 	s.logger.Info("source candidates prepared", "count", len(candidates), "x_count", len(xBookmarks), "youtube_count", len(youtubeItems))
+	s.setRefreshStage("gleaning_insights", fmt.Sprintf("Gleaning insights from %d X bookmark(s) and %d YouTube video(s).", len(xBookmarks), len(youtubeItems)))
 	processStart := time.Now()
 	processed, synthesisBlockers := s.processSourceCandidates(ctx, candidates)
 	s.logger.Info("source candidates processed", "duration_ms", time.Since(processStart).Milliseconds(), "count", len(processed), "blockers", len(synthesisBlockers))
+	s.setRefreshStage("enriching_memory", "Embedding, ranking, clustering, and connecting repeated ideas across sources.")
 	enrichStart := time.Now()
 	processed = s.enrichProcessedSources(ctx, processed)
 	s.logger.Info("source enrichment completed", "duration_ms", time.Since(enrichStart).Milliseconds(), "count", len(processed))
@@ -223,8 +246,9 @@ func (s *Service) Run(ctx context.Context) (Result, error) {
 
 	result.Themes = buildThemeClusters(processed)
 	result.InsightClusters = buildInsightClusters(processed)
+	result.Insights = rankInsights(result.Insights, result.InsightClusters)
 	result.Connections = buildSourceConnections(processed)
-	digest := buildDigestIssue(s.cfg.DigestTimezone, result.GeneratedAt, result.Summaries, result.Themes, result.Connections)
+	digest := s.composeDigestIssue(ctx, result.GeneratedAt, result.Summaries, result.Insights, result.Themes, result.InsightClusters, result.Connections)
 	digest.OwnerID = s.cfg.OwnerID
 	result.Digest = &digest
 
@@ -260,6 +284,15 @@ func (s *Service) Run(ctx context.Context) (Result, error) {
 	result.Blockers = blockers
 
 	saveStart := time.Now()
+	s.setRefreshStage("saving_memory", "Saving source captures, vectors, feedback-ready insights, digest inputs, and graph sync events.")
+	if progressStore, ok := s.store.(interface {
+		SetRefreshProgressReporter(func(done int, total int))
+	}); ok {
+		progressStore.SetRefreshProgressReporter(func(done int, total int) {
+			s.setRefreshStage("saving_memory", fmt.Sprintf("Saving memory %d/%d: source captures, vectors, feedback-ready insights, digest inputs, and graph sync events.", done, total))
+		})
+		defer progressStore.SetRefreshProgressReporter(nil)
+	}
 	if err := s.store.SaveRun(ctx, result, processed); err != nil {
 		s.logger.Error("knowledge refresh persist failed", "duration_ms", time.Since(saveStart).Milliseconds(), "error", err)
 		return result, err
@@ -282,11 +315,30 @@ func (s *Service) Run(ctx context.Context) (Result, error) {
 	return result, nil
 }
 
+func (s *Service) setRefreshStage(phase string, message string) {
+	s.refreshMu.Lock()
+	defer s.refreshMu.Unlock()
+	if s.refresh.Status != "running" {
+		return
+	}
+	s.refresh.Phase = phase
+	s.refresh.Message = message
+	s.refresh.ElapsedSeconds = int64(time.Since(s.refresh.StartedAt).Seconds())
+}
+
+func (s *Service) refreshTimeout() time.Duration {
+	timeout, err := time.ParseDuration(strings.TrimSpace(s.cfg.RefreshTimeout))
+	if err != nil || timeout <= 0 {
+		return 90 * time.Minute
+	}
+	return timeout
+}
+
 func (s *Service) SaveFeedback(ctx context.Context, event FeedbackEvent) error {
 	event.OwnerID = s.cfg.OwnerID
 	event.Signal = strings.TrimSpace(strings.ToLower(event.Signal))
 	switch event.Signal {
-	case "useful", "obvious", "stale", "irrelevant", "more_like_this", "less_like_this", "archive", "expand":
+	case "useful", "obvious", "stale", "irrelevant", "more_like_this", "less_like_this", "archive", "expand", "copied", "tweeted", "upvote", "downvote":
 	default:
 		return fmt.Errorf("unsupported feedback signal %q", event.Signal)
 	}
@@ -304,7 +356,7 @@ func (s *Service) GenerateDigest(ctx context.Context) (*DigestIssue, error) {
 	if latest == nil {
 		return nil, fmt.Errorf("no knowledge run is available for digest generation")
 	}
-	digest := buildDigestIssue(s.cfg.DigestTimezone, time.Now().UTC(), latest.Summaries, latest.Themes, latest.Connections)
+	digest := s.composeDigestIssue(ctx, time.Now().UTC(), latest.Summaries, latest.Insights, latest.Themes, latest.InsightClusters, latest.Connections)
 	digest.OwnerID = s.cfg.OwnerID
 	digest.Deliveries = append(digest.Deliveries, s.deliverDigest(ctx, digest))
 	if len(digest.Deliveries) > 0 {
@@ -354,7 +406,10 @@ func (s *Service) processSourceCandidates(ctx context.Context, candidates []sour
 	jobs := make(chan int)
 	var wg sync.WaitGroup
 	var mu sync.Mutex
-	workerCount := 4
+	workerCount := s.cfg.ProcessWorkerCount
+	if workerCount <= 0 {
+		workerCount = 8
+	}
 	if len(candidates) < workerCount {
 		workerCount = len(candidates)
 	}

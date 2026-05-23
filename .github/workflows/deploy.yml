@@ -57,13 +57,16 @@ jobs:
           cd backend
           CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o ../dist/second-brain-api ./cmd/api
           CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o ../dist/second-brain-migrate ./cmd/migrate
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o ../dist/second-brain-refresh ./cmd/refresh
           CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o ../dist/second-brain-digest ./cmd/digest
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o ../dist/second-brain-graph-sync ./cmd/graph-sync
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o ../dist/second-brain-worker ./cmd/worker
 
       - name: Package deployment artifacts
         run: |
           mkdir -p artifacts
           tar -C frontend/out -czf artifacts/frontend.tgz .
-          tar -C dist -czf artifacts/api.tgz second-brain-api second-brain-migrate second-brain-digest
+          tar -C dist -czf artifacts/api.tgz second-brain-api second-brain-migrate second-brain-refresh second-brain-digest second-brain-graph-sync second-brain-worker
           tar -C supabase -czf artifacts/migrations.tgz migrations
 
       - name: Upload deployment artifacts
@@ -99,6 +102,15 @@ jobs:
       RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
       X_CLIENT_ID: ${{ secrets.X_CLIENT_ID }}
       X_CLIENT_SECRET: ${{ secrets.X_CLIENT_SECRET }}
+      X_CLIENT_ID_PROD: ${{ secrets.X_CLIENT_ID_PROD }}
+      X_CLIENT_SECRET_PROD: ${{ secrets.X_CLIENT_SECRET_PROD }}
+      X_SESSION_SECRET: ${{ secrets.X_SESSION_SECRET }}
+      X_TOKEN_ENCRYPTION_KEY: ${{ secrets.X_TOKEN_ENCRYPTION_KEY }}
+      NEO4J_URI: ${{ secrets.NEO4J_URI }}
+      NEO4J_USERNAME: ${{ secrets.NEO4J_USERNAME }}
+      NEO4J_PASSWORD: ${{ secrets.NEO4J_PASSWORD }}
+      NEO4J_DATABASE: ${{ secrets.NEO4J_DATABASE }}
+      EXA_API_KEY: ${{ secrets.EXA_API_KEY }}
 
     steps:
       - name: Check out repository
@@ -138,14 +150,34 @@ jobs:
           write_var YOUTUBE_PLAYLIST_ID "$YOUTUBE_PLAYLIST_ID"
           write_var YOUTUBE_TRANSCRIPT_TEST_VIDEO_ID "$YOUTUBE_TRANSCRIPT_TEST_VIDEO_ID"
           write_var OPENAI_TRANSLATION_MODEL gpt-4o-mini
-          write_var OPENAI_SYNTHESIS_MODEL gpt-4o-mini
+          write_var OPENAI_SYNTHESIS_MODEL gpt-5.5
+          write_var OPENAI_CHAT_MODEL gpt-5.5
           write_var OPENAI_EMBEDDING_MODEL text-embedding-3-small
+          write_var EXA_API_KEY "$EXA_API_KEY"
           write_var DIGEST_TIMEZONE Asia/Singapore
           write_var DIGEST_EMAIL_TO "$DIGEST_EMAIL_TO"
           write_var DIGEST_EMAIL_FROM "${DIGEST_EMAIL_FROM:-Second Brain <digest@second-brain.local>}"
           write_var RESEND_API_KEY "$RESEND_API_KEY"
-          write_var X_CLIENT_ID "$X_CLIENT_ID"
-          write_var X_CLIENT_SECRET "$X_CLIENT_SECRET"
+          write_var X_CLIENT_ID "${X_CLIENT_ID_PROD:-$X_CLIENT_ID}"
+          write_var X_CLIENT_SECRET "${X_CLIENT_SECRET_PROD:-$X_CLIENT_SECRET}"
+          write_var X_REDIRECT_URI "https://abhijitmohanty.com/second-brain/api/auth/x/callback"
+          write_var X_OAUTH_SCOPES "tweet.read tweet.write users.read bookmark.read offline.access"
+          write_var X_SESSION_SECRET "$X_SESSION_SECRET"
+          write_var X_TOKEN_ENCRYPTION_KEY "$X_TOKEN_ENCRYPTION_KEY"
+          write_var X_TOKEN_REFRESH_DIRECT true
+          write_var X_REAUTHORIZE_COMMAND "npm run x:oauth:prod"
+          write_var X_KEYCHAIN_TOKEN_SUFFIX "_PROD"
+          write_var X_TOKEN_ROTATION_PATH "/srv/second-brain/data/runtime/x-token-rotation.json"
+          write_var NEO4J_URI "$NEO4J_URI"
+          write_var NEO4J_USERNAME "$NEO4J_USERNAME"
+          write_var NEO4J_PASSWORD "$NEO4J_PASSWORD"
+          write_var NEO4J_DATABASE "${NEO4J_DATABASE:-neo4j}"
+          write_var WORKER_REFRESH_INTERVAL 2h
+          write_var WORKER_DIGEST_INTERVAL 2h
+          write_var REFRESH_TIMEOUT 90m
+          write_var PROCESS_WORKER_COUNT 8
+          write_var DIGEST_TIME 18:00
+          write_var GRAPH_SYNC_BATCH_SIZE 50
           printf '%s' "$ONECLI_API_KEY" > artifacts/runtime/onecli-api-key
           chmod 600 artifacts/runtime/onecli-api-key
 

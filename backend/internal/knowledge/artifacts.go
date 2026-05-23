@@ -76,20 +76,28 @@ func (s *Service) writeStorageArtifact(ctx context.Context, artifact SourceArtif
 	}
 
 	objectURL := strings.TrimRight(s.cfg.SupabaseURL, "/") + "/storage/v1/object/" + escapeObjectPath(artifact.Bucket) + "/" + escapeObjectPath(artifact.Path)
-	req, err := http.NewRequestWithContext(ctx, http.MethodPut, objectURL, bytes.NewReader(raw))
-	if err != nil {
-		artifact.Error = err.Error()
-		s.logger.Warn(label+" request build failed", "source", artifact.Source, "source_id", artifact.SourceID, "error", err)
-		return artifact
+	var response *http.Response
+	var err error
+	for attempt := 1; attempt <= 3; attempt++ {
+		response, err = s.putStorageArtifact(ctx, objectURL, artifact.ContentType, raw)
+		if err == nil && response != nil && response.StatusCode >= 200 && response.StatusCode < 300 {
+			break
+		}
+		if response != nil {
+			response.Body.Close()
+			if response.StatusCode < 500 {
+				break
+			}
+		}
+		if attempt < 3 {
+			select {
+			case <-ctx.Done():
+				artifact.Error = fmt.Sprintf("Supabase Storage upload failed: %v", ctx.Err())
+				return artifact
+			case <-time.After(time.Duration(attempt) * 500 * time.Millisecond):
+			}
+		}
 	}
-	if s.cfg.SupabaseStorageKey != "" {
-		req.Header.Set("Authorization", "Bearer "+s.cfg.SupabaseStorageKey)
-		req.Header.Set("apikey", s.cfg.SupabaseStorageKey)
-	}
-	req.Header.Set("Content-Type", artifact.ContentType)
-	req.Header.Set("x-upsert", "true")
-
-	response, err := s.client.Do(req)
 	if err != nil {
 		artifact.Error = fmt.Sprintf("Supabase Storage upload failed: %v", err)
 		s.logger.Warn(label+" upload failed", "source", artifact.Source, "source_id", artifact.SourceID, "bucket", artifact.Bucket, "path", artifact.Path, "duration_ms", time.Since(start).Milliseconds(), "error", err)
@@ -104,6 +112,20 @@ func (s *Service) writeStorageArtifact(ctx context.Context, artifact SourceArtif
 	artifact.Stored = true
 	s.logger.Info(label+" stored", "source", artifact.Source, "source_id", artifact.SourceID, "bucket", artifact.Bucket, "path", artifact.Path, "byte_size", artifact.ByteSize, "duration_ms", time.Since(start).Milliseconds())
 	return artifact
+}
+
+func (s *Service) putStorageArtifact(ctx context.Context, objectURL string, contentType string, raw []byte) (*http.Response, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodPut, objectURL, bytes.NewReader(raw))
+	if err != nil {
+		return nil, err
+	}
+	if s.cfg.SupabaseStorageKey != "" {
+		req.Header.Set("Authorization", "Bearer "+s.cfg.SupabaseStorageKey)
+		req.Header.Set("apikey", s.cfg.SupabaseStorageKey)
+	}
+	req.Header.Set("Content-Type", contentType)
+	req.Header.Set("x-upsert", "true")
+	return s.client.Do(req)
 }
 
 func synthesisStoragePath(candidate sourceCandidate, captureHash string, record SynthesisRecord) string {

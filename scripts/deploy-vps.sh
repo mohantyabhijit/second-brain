@@ -72,7 +72,13 @@ mv "$base/migrations.new/migrations" "$base/migrations"
 rm -rf "$base/migrations.new"
 mv "$tmp/second-brain.env" "$api_dir/second-brain.env"
 chmod 600 "$api_dir/second-brain.env"
-chmod +x "$api_dir/second-brain-api" "$api_dir/second-brain-migrate" "$api_dir/second-brain-digest"
+chmod +x \
+  "$api_dir/second-brain-api" \
+  "$api_dir/second-brain-migrate" \
+  "$api_dir/second-brain-refresh" \
+  "$api_dir/second-brain-digest" \
+  "$api_dir/second-brain-graph-sync" \
+  "$api_dir/second-brain-worker"
 onecli_api_key="$(cat "$tmp/onecli-api-key")"
 rm -f "$tmp/onecli-api-key"
 
@@ -109,6 +115,40 @@ sudo install -m 0644 /tmp/second-brain-api.service /etc/systemd/system/second-br
 sudo systemctl daemon-reload
 sudo systemctl enable second-brain-api >/dev/null
 sudo systemctl restart second-brain-api
+
+cat > /tmp/second-brain-cycle.service <<SERVICE
+[Unit]
+Description=Second Brain self-organizing cycle
+After=network-online.target second-brain-api.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=deploy
+WorkingDirectory=$api_dir
+EnvironmentFile=$api_dir/second-brain.env
+TimeoutStartSec=110min
+ExecStart=/bin/bash -lc 'set -euo pipefail; $onecli run --project second-brain -- $api_dir/second-brain-refresh; if [[ -n "\${NEO4J_URI:-}" && -n "\${NEO4J_USERNAME:-}" && -n "\${NEO4J_PASSWORD:-}" ]]; then $onecli run --project second-brain -- $api_dir/second-brain-graph-sync; else echo "skip graph sync: NEO4J_* not configured"; fi; $onecli run --project second-brain -- $api_dir/second-brain-digest'
+SERVICE
+sudo install -m 0644 /tmp/second-brain-cycle.service /etc/systemd/system/second-brain-cycle.service
+
+cat > /tmp/second-brain-cycle.timer <<'TIMER'
+[Unit]
+Description=Run Second Brain self-organizing cycle every 2 hours
+
+[Timer]
+OnBootSec=5min
+OnActiveSec=2min
+OnUnitActiveSec=2h
+Persistent=true
+Unit=second-brain-cycle.service
+
+[Install]
+WantedBy=timers.target
+TIMER
+sudo install -m 0644 /tmp/second-brain-cycle.timer /etc/systemd/system/second-brain-cycle.timer
+sudo systemctl daemon-reload
+sudo systemctl enable --now second-brain-cycle.timer >/dev/null
 
 ln -sfn "$frontend_release" "$base/frontend/current"
 find "$base/frontend/releases" -mindepth 1 -maxdepth 1 -type d | sort -r | tail -n +8 | xargs -r rm -rf

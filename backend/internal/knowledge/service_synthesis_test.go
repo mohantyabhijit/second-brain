@@ -34,6 +34,14 @@ func (s cacheStore) SaveDigest(ctx context.Context, digest DigestIssue) (*Digest
 	return &digest, nil
 }
 
+func (s cacheStore) ReadXTokens(ctx context.Context, ownerID string) (*EncryptedXTokens, error) {
+	return nil, nil
+}
+
+func (s cacheStore) SaveXTokens(ctx context.Context, tokens EncryptedXTokens) error {
+	return nil
+}
+
 func TestProcessSourceCandidatesUsesCachedSynthesis(t *testing.T) {
 	t.Setenv("OPENAI_API_KEY", "")
 	candidate := sourceCandidate{
@@ -245,7 +253,7 @@ func TestBuildInsightClustersGroupsRepeatedMechanismsAcrossSources(t *testing.T)
 	if cluster.Layer != "similar_insight" {
 		t.Fatalf("expected similar insight cluster layer, got %q", cluster.Layer)
 	}
-	if cluster.Score != 2 {
+	if cluster.Score != 2.5 {
 		t.Fatalf("expected score to count grouped insights, got %f", cluster.Score)
 	}
 	if got := strings.Join(cluster.InsightIDs, ","); got != "x-tweet-a-insight-1,youtube-video-a-insight-1" {
@@ -253,5 +261,99 @@ func TestBuildInsightClustersGroupsRepeatedMechanismsAcrossSources(t *testing.T)
 	}
 	if strings.Contains(strings.Join(cluster.InsightIDs, ","), "x-tweet-a-insight-2") {
 		t.Fatalf("one-off insight should not be grouped: %#v", cluster)
+	}
+}
+
+func TestBuildInsightClustersGroupsSimilarCanonicalInsightsAcrossSourceTypes(t *testing.T) {
+	sources := []ProcessedSource{
+		{
+			SourceType: SourceTypeX,
+			ExternalID: "tweet-b",
+			Synthesis: SynthesisRecord{Insights: []Insight{
+				{
+					ID:               "x-tweet-b-insight-1",
+					Insight:          "Agent workflows need eval loops before they can be trusted.",
+					CanonicalInsight: "AI agents improve when evaluation loops measure task quality.",
+					AbstractInsight:  "Closed-loop measurement improves automated systems.",
+					Mechanism:        "Evaluation feedback exposes failure modes and improves iteration.",
+					Topics:           []string{"agents", "evaluation", "workflow"},
+				},
+			}},
+		},
+		{
+			SourceType: SourceTypeYouTube,
+			ExternalID: "video-b",
+			Synthesis: SynthesisRecord{Insights: []Insight{
+				{
+					ID:               "youtube-video-b-insight-1",
+					Insight:          "Quality gets better when agents are scored against real workflow outcomes.",
+					CanonicalInsight: "Evaluation loops improve AI agent workflow quality.",
+					AbstractInsight:  "Closed-loop measurement improves automated systems.",
+					Mechanism:        "Measured feedback reveals agent failure modes and directs iteration.",
+					Topics:           []string{"ai agents", "evaluation", "quality"},
+				},
+			}},
+		},
+	}
+
+	clusters := buildInsightClusters(sources)
+
+	if len(clusters) != 1 {
+		t.Fatalf("expected similar canonical insights to cluster across sources, got %#v", clusters)
+	}
+	if got := strings.Join(clusters[0].InsightIDs, ","); got != "x-tweet-b-insight-1,youtube-video-b-insight-1" {
+		t.Fatalf("unexpected clustered insight IDs: %q", got)
+	}
+}
+
+func TestRankInsightsPromotesScoredAndClusteredInsights(t *testing.T) {
+	insights := []Insight{
+		{ID: "low", Insight: "Low-signal note.", Confidence: "low", ImportanceScore: 0.2, NoveltyScore: 0.2, ActionabilityScore: 0.1},
+		{ID: "clustered", Insight: "Repeated useful note.", Confidence: "medium", ImportanceScore: 0.6, NoveltyScore: 0.5, ActionabilityScore: 0.5},
+		{ID: "high", Insight: "Important actionable note.", Confidence: "high", ImportanceScore: 0.9, NoveltyScore: 0.8, ActionabilityScore: 0.8},
+	}
+	clusters := []InsightCluster{{Score: 4, InsightIDs: []string{"clustered"}}}
+
+	ranked := rankInsights(insights, clusters)
+
+	if got := ranked[0].ID; got != "high" {
+		t.Fatalf("expected strongest scored insight first, got %q", got)
+	}
+	if got := ranked[1].ID; got != "clustered" {
+		t.Fatalf("expected clustered insight ahead of low-signal item, got %q", got)
+	}
+}
+
+func TestNormalizeResultInsightEngineBuildsClustersForPersistedRuns(t *testing.T) {
+	result := &Result{Insights: []Insight{
+		{
+			ID:               "x-1",
+			Source:           "x",
+			SourceID:         "tweet-c",
+			Insight:          "Agent workflows need evaluation loops.",
+			CanonicalInsight: "AI agent workflows improve when evaluation loops measure quality.",
+			Mechanism:        "Evaluation feedback exposes failure modes and improves iteration.",
+			Topics:           []string{"agents", "evaluation"},
+			ImportanceScore:  0.6,
+		},
+		{
+			ID:               "youtube-1",
+			Source:           "youtube",
+			SourceID:         "video-c",
+			Insight:          "Agents get better when real workflow outcomes are scored.",
+			CanonicalInsight: "Evaluation loops improve AI agent workflow quality.",
+			Mechanism:        "Measured feedback reveals agent failure modes and directs iteration.",
+			Topics:           []string{"agents", "evaluation"},
+			ImportanceScore:  0.6,
+		},
+	}}
+
+	normalizeResultInsightEngine(result)
+
+	if len(result.InsightClusters) != 1 {
+		t.Fatalf("expected persisted run insights to cluster, got %#v", result.InsightClusters)
+	}
+	if result.Insights[0].ID == "" {
+		t.Fatalf("expected ranked insights to remain populated")
 	}
 }

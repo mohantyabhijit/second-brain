@@ -11,7 +11,7 @@ import (
 	"time"
 )
 
-const synthesisPromptVersion = "source-grounded-insights-v2"
+const synthesisPromptVersion = "source-grounded-insights-v3"
 const extractiveSynthesisModel = "extractive-fallback-v1"
 
 type promptSynthesisResponse struct {
@@ -181,9 +181,14 @@ func (s *Service) promptSynthesis(ctx context.Context, candidate sourceCandidate
 		"input": strings.Join([]string{
 			"You are the source-grounded synthesis module for a personal second brain.",
 			"Read the source text and return JSON only.",
+			"Boundary: use only the source text below. Do not use outside knowledge, inferred facts, or unstated context.",
 			"Extract multiple distinct, atomic insight candidates. A source can produce many insights; do not merge unrelated ideas.",
 			"Each insight must be meaningful on its own, grounded in source evidence, and different from the other insights.",
-			"Do not add facts that are not supported by the source text.",
+			"Prefer mechanisms, tradeoffs, operating principles, and decision rules over topic labels or generic summaries.",
+			"canonical_insight must be stable enough for deduplication across X and YouTube. Use one sentence in plain English.",
+			"abstract_insight must generalize the mechanism without naming the specific source unless the name is essential.",
+			"evidence must be a short source-backed quote or paraphrase. If the source does not support an insight, omit it.",
+			"Score importance_score, novelty_score, and actionability_score from 0.0 to 1.0. Use 0.5 when uncertain.",
 			"Use this JSON shape: {\"decision\":\"read_now|later|skip\",\"summary\":\"...\",\"confidence\":\"high|medium|low\",\"quote\":\"short supporting quote\",\"insights\":[{\"title\":\"...\",\"insight\":\"raw human-readable insight\",\"raw_insight\":\"...\",\"canonical_insight\":\"normalized form for similarity search\",\"abstract_insight\":\"cross-domain abstraction\",\"practical_text\":\"optional action rule\",\"mechanism\":\"underlying mechanism, not just topic\",\"insight_type\":\"principle|warning|tactic|framework|prediction|tradeoff|critique|mental_model|trend|question|contradiction\",\"domain\":\"...\",\"topics\":[\"...\"],\"entities\":[\"...\"],\"evidence\":\"short quote or paraphrase\",\"evidence_refs\":[{\"quote\":\"...\"}],\"explicit_or_inferred\":\"explicit|inferred\",\"confidence\":\"high|medium|low\",\"importance_score\":0.0,\"novelty_score\":0.0,\"actionability_score\":0.0}],\"action_items\":[{\"title\":\"...\",\"action\":\"...\",\"rationale\":\"...\",\"priority\":\"high|medium|low\"}]}",
 			"Source type: " + string(candidate.sourceType),
 			"Source title: " + candidate.title,

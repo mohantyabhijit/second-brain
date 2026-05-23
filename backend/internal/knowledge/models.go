@@ -212,6 +212,18 @@ type FeedbackEvent struct {
 	SourceURL  string `json:"sourceUrl,omitempty"`
 }
 
+type TweetShareRequest struct {
+	TargetType string `json:"targetType"`
+	TargetID   string `json:"targetId"`
+	Text       string `json:"text"`
+	SourceURL  string `json:"sourceUrl,omitempty"`
+}
+
+type TweetShareResult struct {
+	ID   string `json:"id"`
+	Text string `json:"text"`
+}
+
 type Result struct {
 	GeneratedAt  time.Time `json:"generatedAt"`
 	SourceStatus struct {
@@ -235,11 +247,38 @@ type Result struct {
 }
 
 type RefreshStatus struct {
-	ID         string     `json:"id"`
-	Status     string     `json:"status"`
-	StartedAt  time.Time  `json:"startedAt"`
-	FinishedAt *time.Time `json:"finishedAt,omitempty"`
-	Error      string     `json:"error,omitempty"`
+	ID             string     `json:"id"`
+	Status         string     `json:"status"`
+	StartedAt      time.Time  `json:"startedAt"`
+	FinishedAt     *time.Time `json:"finishedAt,omitempty"`
+	Error          string     `json:"error,omitempty"`
+	Phase          string     `json:"phase,omitempty"`
+	Message        string     `json:"message,omitempty"`
+	ElapsedSeconds int64      `json:"elapsedSeconds,omitempty"`
+}
+
+type AskSecondBrainRequest struct {
+	Question  string `json:"question"`
+	UseLatest bool   `json:"useLatest,omitempty"`
+}
+
+type AskSecondBrainSource struct {
+	ID        string  `json:"id"`
+	Title     string  `json:"title"`
+	Source    string  `json:"source"`
+	SourceURL string  `json:"sourceUrl"`
+	Excerpt   string  `json:"excerpt"`
+	Score     float64 `json:"score,omitempty"`
+}
+
+type AskSecondBrainResponse struct {
+	Answer       string                 `json:"answer"`
+	Sources      []AskSecondBrainSource `json:"sources"`
+	UsedLatest   bool                   `json:"usedLatest"`
+	Guardrail    string                 `json:"guardrail,omitempty"`
+	Model        string                 `json:"model,omitempty"`
+	GeneratedAt  time.Time              `json:"generatedAt"`
+	SearchStatus string                 `json:"searchStatus,omitempty"`
 }
 
 type SynthesisCacheKey struct {
