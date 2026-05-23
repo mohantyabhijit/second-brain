@@ -33,29 +33,37 @@ jobs:
       - name: Check public API snapshot
         run: |
           set -euo pipefail
-          curl -fsS https://abhijitmohanty.com/second-brain/api/knowledge-runs/latest > latest.json
-          jq -r '
-            .latest as $latest
-            | {
-                generatedAt: $latest.generatedAt,
-                xBookmarks: ($latest.xBookmarks | length),
-                youtube: (($latest.youtubeItems // $latest.youtube // []) | length),
-                summaries: ($latest.summaries | length),
-                insights: ($latest.insights | length),
-                digestStatus: $latest.digest.status,
-                digestScheduledFor: $latest.digest.scheduledFor,
-                blockers: ($latest.blockers | length)
-              }
-          ' latest.json
-          jq -e '
-            .latest
-            | (.xBookmarks | length) > 0
-            and ((.youtubeItems // .youtube // []) | length) > 0
-            and (.summaries | length) > 0
-            and (.insights | length) > 0
-            and (.digest.status == "sent")
-            and ((.blockers | length) == 0)
-          ' latest.json >/dev/null
+          for attempt in $(seq 1 30); do
+            curl -fsS https://abhijitmohanty.com/second-brain/api/knowledge-runs/latest > latest.json
+            jq -r --arg attempt "$attempt" '
+              .latest as $latest
+              | {
+                  attempt: $attempt,
+                  generatedAt: $latest.generatedAt,
+                  xBookmarks: ($latest.xBookmarks | length),
+                  youtube: (($latest.youtubeItems // $latest.youtube // []) | length),
+                  summaries: ($latest.summaries | length),
+                  insights: ($latest.insights | length),
+                  digestStatus: $latest.digest.status,
+                  digestScheduledFor: $latest.digest.scheduledFor,
+                  blockers: ($latest.blockers | length)
+                }
+            ' latest.json
+            if jq -e '
+              .latest
+              | (.xBookmarks | length) > 0
+              and ((.youtubeItems // .youtube // []) | length) > 0
+              and (.summaries | length) > 0
+              and (.insights | length) > 0
+              and (.digest.status == "sent")
+              and ((.blockers | length) == 0)
+            ' latest.json >/dev/null; then
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "Production API did not reach a sent digest state in time." >&2
+          exit 1
 
       - name: Check systemd timer and recent cycle logs
         run: |
