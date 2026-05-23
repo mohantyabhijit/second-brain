@@ -21,8 +21,8 @@ func main() {
 		os.Exit(1)
 	}
 	refreshToken := strings.TrimSpace(os.Getenv("X_REFRESH_TOKEN"))
-	if refreshToken == "" {
-		logger.Error("X_REFRESH_TOKEN is required")
+	if refreshToken == "" && !cfg.OneCLIGateway {
+		logger.Error("X_REFRESH_TOKEN is required unless ONECLI_GATEWAY=true injects refresh_token into the X token request")
 		os.Exit(1)
 	}
 

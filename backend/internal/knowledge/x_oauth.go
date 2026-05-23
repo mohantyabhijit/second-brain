@@ -226,7 +226,7 @@ func (s *Service) getValidXAccessToken(ctx context.Context) (string, bool, error
 
 func (s *Service) refreshXTokenSet(ctx context.Context, refreshToken string) (XTokenSet, error) {
 	clientID := strings.TrimSpace(s.cfg.XClientID)
-	if clientID == "" || strings.TrimSpace(refreshToken) == "" {
+	if clientID == "" || (strings.TrimSpace(refreshToken) == "" && !s.cfg.OneCLIGateway) {
 		return XTokenSet{}, fmt.Errorf("X_CLIENT_ID and stored X refresh token are required")
 	}
 	payload, err := s.requestXTokenRefresh(ctx, refreshToken)
