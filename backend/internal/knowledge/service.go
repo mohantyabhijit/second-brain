@@ -199,9 +199,21 @@ func (s *Service) Run(ctx context.Context) (Result, error) {
 	result.XBookmarks = xBookmarks
 	result.YouTubeItems = youtubeItems
 
-	candidates := append(candidatesFromBookmarks(xBookmarks), candidatesFromVideos(youtubeItems)...)
-	s.logger.Info("source candidates prepared", "count", len(candidates), "x_count", len(xBookmarks), "youtube_count", len(youtubeItems))
-	s.setRefreshStage("gleaning_insights", fmt.Sprintf("Gleaning insights from %d X bookmark(s) and %d YouTube video(s).", len(xBookmarks), len(youtubeItems)))
+	xCandidates := candidatesFromBookmarks(xBookmarks)
+	xProcessCount := len(xCandidates)
+	if s.cfg.XBookmarkProcessLimit > 0 && len(xCandidates) > s.cfg.XBookmarkProcessLimit {
+		xCandidates = xCandidates[:s.cfg.XBookmarkProcessLimit]
+		xProcessCount = len(xCandidates)
+	}
+	candidates := append(xCandidates, candidatesFromVideos(youtubeItems)...)
+	s.logger.Info(
+		"source candidates prepared",
+		"count", len(candidates),
+		"x_count", len(xBookmarks),
+		"x_processing_count", xProcessCount,
+		"youtube_count", len(youtubeItems),
+	)
+	s.setRefreshStage("gleaning_insights", fmt.Sprintf("Gleaning insights from %d/%d X bookmark(s) and %d YouTube video(s).", xProcessCount, len(xBookmarks), len(youtubeItems)))
 	processStart := time.Now()
 	processed, synthesisBlockers := s.processSourceCandidates(ctx, candidates)
 	s.logger.Info("source candidates processed", "duration_ms", time.Since(processStart).Milliseconds(), "count", len(processed), "blockers", len(synthesisBlockers))

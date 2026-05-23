@@ -98,3 +98,34 @@ func TestBuildDigestIssueKeepsEmailReadable(t *testing.T) {
 		t.Fatalf("expected rendered source link, got %s", htmlBody)
 	}
 }
+
+func TestBuildDigestIssueUsesFiveInsights(t *testing.T) {
+	insights := make([]Insight, 0, 8)
+	for index := 0; index < 8; index++ {
+		insights = append(insights, Insight{
+			ID:        string(rune('a' + index)),
+			Title:     "Insight title",
+			Insight:   "A useful pattern worth keeping short.",
+			Evidence:  "Saved source evidence.",
+			SourceURL: "https://example.com/source",
+		})
+	}
+
+	digest := buildDigestIssue(
+		"Asia/Singapore",
+		"18:00",
+		time.Date(2026, 5, 23, 9, 0, 0, 0, time.UTC),
+		nil,
+		insights,
+		nil,
+		nil,
+		nil,
+	)
+
+	if got := strings.Count(digest.BodyMarkdown, "**[Insight title]("); got != 5 {
+		t.Fatalf("expected five linked insights, got %d in %s", got, digest.BodyMarkdown)
+	}
+	if strings.Contains(digest.BodyMarkdown, "What To Read") {
+		t.Fatalf("expected insight-only digest when insights exist, got %s", digest.BodyMarkdown)
+	}
+}

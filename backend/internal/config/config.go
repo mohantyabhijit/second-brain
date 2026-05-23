@@ -22,6 +22,7 @@ type Config struct {
 	OneCLIXAccessSecretID        string
 	OneCLIXRefreshSecretID       string
 	XBookmarkLimit               int
+	XBookmarkProcessLimit        int
 	KnowledgeRunPath             string
 	XClientID                    string
 	XClientSecret                string
@@ -74,6 +75,7 @@ func Load() Config {
 		OneCLIXAccessSecretID:        os.Getenv("ONECLI_X_ACCESS_SECRET_ID"),
 		OneCLIXRefreshSecretID:       os.Getenv("ONECLI_X_REFRESH_SECRET_ID"),
 		XBookmarkLimit:               intValue("X_BOOKMARK_LIMIT", 0),
+		XBookmarkProcessLimit:        intValue("X_BOOKMARK_PROCESS_LIMIT", 50),
 		KnowledgeRunPath:             value("KNOWLEDGE_RUN_PATH", "../data/runtime/latest-knowledge-run.json"),
 		XClientID:                    firstEnv("X_CLIENT_ID", "X_CLIENT_ID_PROD"),
 		XClientSecret:                firstEnv("X_CLIENT_SECRET", "X_CLIENT_SECRET_PROD"),

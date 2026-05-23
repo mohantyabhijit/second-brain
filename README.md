@@ -84,7 +84,7 @@ npm run self:organize
 npm run worker:run
 ```
 
-`self:organize` runs one full cycle: refresh, optional graph sync, then digest delivery. By default the long-running worker refreshes every `2h`, generates and sends the newsletter every `2h`, and schedules the digest issue for `18:00` in `DIGEST_TIMEZONE`. Override with `WORKER_REFRESH_INTERVAL`, `WORKER_DIGEST_INTERVAL`, `REFRESH_TIMEOUT`, `DIGEST_TIME`, and `DIGEST_TIMEZONE`.
+`self:organize` runs one full cycle: refresh, optional graph sync, then digest delivery. By default the long-running worker refreshes every `2h`, generates and sends the newsletter every `2h`, and schedules the digest issue for `18:00` in `DIGEST_TIMEZONE`. Override with `WORKER_REFRESH_INTERVAL`, `WORKER_DIGEST_INTERVAL`, `REFRESH_TIMEOUT`, `DIGEST_TIME`, and `DIGEST_TIMEZONE`. The raw X bookmark fetch can remain unbounded for the Original X Bookmarks view, while `X_BOOKMARK_PROCESS_LIMIT` caps expensive insight synthesis to the newest 50 bookmarks by default.
 
 Production deploys install a `second-brain-cycle.timer` systemd timer on the VPS. The timer starts shortly after deploy and then every 2 hours, running refresh, graph sync when `NEO4J_*` is configured, and digest delivery under OneCLI secret injection.
 
@@ -153,7 +153,7 @@ npm run x:prod:check
 npm run x:token:status
 ```
 
-The digest command remains idempotent per owner and digest content fingerprint.
+The digest command remains idempotent per owner and digest content fingerprint. Each issue is intentionally short: it selects five rotating saved insights, links each one back to the original X bookmark or YouTube video, and keeps the newsletter crisp for mobile reading even when no new raw sources arrived.
 
 ## Secrets
 

@@ -27,8 +27,8 @@ const (
 	digestSummaryLimit           = 260
 	digestSourceEvidenceLimit    = 200
 	digestConnectionLimit        = 220
-	digestMaxSourceNoteCount     = 8
-	digestMaxInsightCount        = 10
+	digestMaxSourceNoteCount     = 5
+	digestMaxInsightCount        = 5
 	digestMaxInsightClusterCount = 6
 	digestMaxConnectionCount     = 5
 	insightClusterThreshold      = 0.25
@@ -658,40 +658,19 @@ func buildDigestIssue(cfgDigestTimezone string, cfgDigestTime string, generatedA
 	hour, minute := parseDigestClock(cfgDigestTime)
 	scheduledFor := time.Date(localDate.Year(), localDate.Month(), localDate.Day(), hour, minute, 0, 0, location)
 	digestDate := scheduledFor.Format("2006-01-02")
-	subject := "Your Second Brain briefing for " + digestDate
+	insights = selectDigestInsights(generatedAt, insights, digestMaxInsightCount)
+	subject := "Five Second Brain signals for " + digestDate
 	lines := []string{"# " + subject, ""}
-	lines = append(lines, "A quick read on what your saved sources are circling around, what is worth acting on, and what can wait.", "")
-	if len(themes) > 0 {
-		lines = append(lines, "## The Lead")
-		for _, theme := range themes {
-			lines = append(lines, fmt.Sprintf("- **%s** showed up across %.0f source(s). %s", theme.Label, theme.Score, truncateDigestText(theme.Evidence, digestThemeEvidenceLimit)))
-		}
-		lines = append(lines, "")
-	}
-	if len(insightClusters) > 0 {
-		lines = append(lines, "## Repeated Ideas")
-		for index, cluster := range insightClusters {
-			if index >= digestMaxInsightClusterCount {
-				lines = append(lines, fmt.Sprintf("- %d more repeated idea(s) kept in the app.", len(insightClusters)-index))
-				break
-			}
-			lines = append(lines, fmt.Sprintf("- **%s**: %s", cluster.Label, truncateDigestText(cluster.Summary, digestSummaryLimit)))
-		}
-		lines = append(lines, "")
-	}
+	lines = append(lines, "A short brief from five saved insights that are worth rereading before the next refresh.", "")
 	if len(insights) > 0 {
-		lines = append(lines, "## Insight Queue")
+		lines = append(lines, "## Five Signals")
 		for index, insight := range insights {
-			if index >= digestMaxInsightCount {
-				lines = append(lines, fmt.Sprintf("- %d more insight(s) kept in the app.", len(insights)-index))
-				break
-			}
 			link := insight.SourceURL
 			title := fallback(insight.Title, "Source-backed insight")
 			if link == "" {
-				lines = append(lines, fmt.Sprintf("- **%s**: %s", title, truncateDigestText(insight.Insight, digestSummaryLimit)))
+				lines = append(lines, fmt.Sprintf("%d. **%s**: %s", index+1, title, truncateDigestText(insight.Insight, digestSummaryLimit)))
 			} else {
-				lines = append(lines, fmt.Sprintf("- **[%s](%s)**: %s", title, link, truncateDigestText(insight.Insight, digestSummaryLimit)))
+				lines = append(lines, fmt.Sprintf("%d. **[%s](%s)**: %s", index+1, title, link, truncateDigestText(insight.Insight, digestSummaryLimit)))
 			}
 			if insight.Evidence != "" {
 				lines = append(lines, "  Evidence: "+truncateDigestText(insight.Evidence, digestSourceEvidenceLimit))
@@ -699,7 +678,14 @@ func buildDigestIssue(cfgDigestTimezone string, cfgDigestTime string, generatedA
 		}
 		lines = append(lines, "")
 	}
-	if len(summaries) > 0 {
+	if len(insights) == 0 && len(themes) > 0 {
+		lines = append(lines, "## The Lead")
+		for _, theme := range themes {
+			lines = append(lines, fmt.Sprintf("- **%s** showed up across %.0f source(s). %s", theme.Label, theme.Score, truncateDigestText(theme.Evidence, digestThemeEvidenceLimit)))
+		}
+		lines = append(lines, "")
+	}
+	if len(insights) == 0 && len(summaries) > 0 {
 		lines = append(lines, "## What To Read")
 		for index, summary := range summaries {
 			if index >= digestMaxSourceNoteCount {
@@ -713,15 +699,9 @@ func buildDigestIssue(cfgDigestTimezone string, cfgDigestTime string, generatedA
 		}
 		lines = append(lines, "")
 	}
-	if len(connections) > 0 {
-		lines = append(lines, "## Thread To Watch")
-		for index, connection := range connections {
-			if index >= digestMaxConnectionCount {
-				lines = append(lines, fmt.Sprintf("- %d more connection(s) kept in the app.", len(connections)-index))
-				break
-			}
-			lines = append(lines, "- "+truncateDigestText(connection.Evidence, digestConnectionLimit))
-		}
+	if len(insights) > 0 {
+		lines = append(lines, "## Next Move")
+		lines = append(lines, "Pick one signal, open the source, and turn it into a small note or action before the next two-hour cycle.")
 	}
 	bodyMarkdown := strings.Join(lines, "\n")
 	return DigestIssue{
@@ -732,6 +712,25 @@ func buildDigestIssue(cfgDigestTimezone string, cfgDigestTime string, generatedA
 		BodyMarkdown:   bodyMarkdown,
 		Status:         "generated",
 	}
+}
+
+func selectDigestInsights(generatedAt time.Time, insights []Insight, limit int) []Insight {
+	if limit <= 0 || len(insights) <= limit {
+		return insights
+	}
+	selected := slices.Clone(insights)
+	location := generatedAt.UTC()
+	seed := fmt.Sprintf("%s:%02d:%d", location.Format("2006-01-02"), location.Hour()/2, len(insights))
+	sort.SliceStable(selected, func(i int, j int) bool {
+		return digestInsightPickScore(seed, selected[i]) < digestInsightPickScore(seed, selected[j])
+	})
+	return selected[:limit]
+}
+
+func digestInsightPickScore(seed string, insight Insight) uint64 {
+	identity := strings.Join([]string{insight.ID, insight.Title, insight.SourceURL, insight.Insight}, "|")
+	sum := sha256.Sum256([]byte(seed + ":" + identity))
+	return binary.BigEndian.Uint64(sum[:8])
 }
 
 func parseDigestClock(value string) (int, int) {
