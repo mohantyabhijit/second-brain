@@ -21,6 +21,7 @@ type Config struct {
 	OneCLIProject                string
 	OneCLIXAccessSecretID        string
 	OneCLIXRefreshSecretID       string
+	XBookmarkLimit               int
 	KnowledgeRunPath             string
 	XClientID                    string
 	XClientSecret                string
@@ -50,6 +51,7 @@ func Load() Config {
 		OneCLIProject:                value("ONECLI_PROJECT", "second-brain"),
 		OneCLIXAccessSecretID:        os.Getenv("ONECLI_X_ACCESS_SECRET_ID"),
 		OneCLIXRefreshSecretID:       os.Getenv("ONECLI_X_REFRESH_SECRET_ID"),
+		XBookmarkLimit:               intValue("X_BOOKMARK_LIMIT", 0),
 		KnowledgeRunPath:             value("KNOWLEDGE_RUN_PATH", "../data/runtime/latest-knowledge-run.json"),
 		XClientID:                    os.Getenv("X_CLIENT_ID"),
 		XClientSecret:                os.Getenv("X_CLIENT_SECRET"),
@@ -70,6 +72,21 @@ func value(key, fallback string) string {
 		return v
 	}
 	return fallback
+}
+
+func intValue(key string, fallback int) int {
+	raw := strings.TrimSpace(os.Getenv(key))
+	if raw == "" {
+		return fallback
+	}
+	var value int
+	for _, r := range raw {
+		if r < '0' || r > '9' {
+			return fallback
+		}
+		value = value*10 + int(r-'0')
+	}
+	return value
 }
 
 func csv(raw string) []string {

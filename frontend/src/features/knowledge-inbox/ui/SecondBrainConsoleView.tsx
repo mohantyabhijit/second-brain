@@ -48,11 +48,11 @@ const pageCopy: Record<
     emptyTitle: string;
   }
 > = {
-  home: {
-    title: "Home",
-    description: "A running wall of summaries and quotes from everything entering your second brain.",
-    kicker: "Today",
-    emptyTitle: "No timeline items yet"
+  insights: {
+    title: "Insights",
+    description: "Only the reusable ideas extracted from your saved X bookmarks and source evidence.",
+    kicker: "Knowledge",
+    emptyTitle: "No insights yet"
   },
   "daily-newsletter": {
     title: "Daily Newsletter",
@@ -555,6 +555,9 @@ function metricDetail(label: string, value: string) {
 
 function getFeedItems(model: KnowledgeInboxViewModel, activePage: KnowledgeInboxPage): FeedItem[] {
   const summaries = model.summaries.items.map(summaryToFeedItem);
+  const insightItems = model.summaries.items
+    .filter((item) => item.source === "insight")
+    .map(summaryToFeedItem);
   const xPosts = model.intake.items
     .filter((item) => item.source === "X")
     .map((item): FeedItem => ({
@@ -582,9 +585,7 @@ function getFeedItems(model: KnowledgeInboxViewModel, activePage: KnowledgeInbox
     stats: item.statusLabel
   }));
 
-  const homeItems = [...summaries, ...xPosts, ...youtubePosts];
-
-  if (activePage === "home") return homeItems;
+  if (activePage === "insights") return insightItems;
   if (activePage === "original-x-posts") return xPosts;
   if (activePage === "original-youtube-posts") return youtubePosts;
 
@@ -651,7 +652,7 @@ function deriveTopicRows(items: FeedItem[]): TopicRow[] {
 
 function isActiveNav(item: NavigationItemViewModel, activePage: KnowledgeInboxPage) {
   return (
-    (activePage === "home" && item.href === "/") ||
+    (activePage === "insights" && (item.href === "/" || item.href === "/insights")) ||
     (activePage === "daily-newsletter" && item.href === "/daily-newsletter") ||
     (activePage === "original-x-posts" && item.href === "/original-x-posts") ||
     (activePage === "original-youtube-posts" && item.href === "/original-youtube-posts")

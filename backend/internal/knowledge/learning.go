@@ -22,6 +22,15 @@ const embeddingDimensions = 1536
 
 var keywordPattern = regexp.MustCompile(`[a-zA-Z][a-zA-Z0-9-]{2,}`)
 
+const (
+	digestThemeEvidenceLimit  = 180
+	digestSummaryLimit        = 260
+	digestSourceEvidenceLimit = 200
+	digestConnectionLimit     = 220
+	digestMaxSourceNoteCount  = 8
+	digestMaxConnectionCount  = 5
+)
+
 var stopwords = map[string]bool{
 	"about": true, "after": true, "again": true, "also": true, "and": true, "are": true, "because": true,
 	"but": true, "can": true, "from": true, "have": true, "into": true, "just": true, "like": true,
@@ -483,32 +492,64 @@ func buildDigestIssue(cfgDigestTimezone string, generatedAt time.Time, summaries
 	if len(themes) > 0 {
 		lines = append(lines, "## Themes")
 		for _, theme := range themes {
-			lines = append(lines, fmt.Sprintf("- %s: %.0f related source(s). %s", theme.Label, theme.Score, theme.Evidence))
+			lines = append(lines, fmt.Sprintf("- %s: %.0f related source(s). %s", theme.Label, theme.Score, truncateDigestText(theme.Evidence, digestThemeEvidenceLimit)))
 		}
 		lines = append(lines, "")
 	}
 	if len(summaries) > 0 {
 		lines = append(lines, "## Source notes")
-		for _, summary := range summaries {
-			lines = append(lines, fmt.Sprintf("- [%s](%s): %s", summary.Title, summary.SourceURL, summary.Summary))
+		for index, summary := range summaries {
+			if index >= digestMaxSourceNoteCount {
+				lines = append(lines, fmt.Sprintf("- %d more source note(s) kept in the app.", len(summaries)-index))
+				break
+			}
+			lines = append(lines, fmt.Sprintf("- [%s](%s): %s", summary.Title, summary.SourceURL, truncateDigestText(summary.Summary, digestSummaryLimit)))
 			if summary.Quote != "" {
-				lines = append(lines, "  Evidence: "+summary.Quote)
+				lines = append(lines, "  Evidence: "+truncateDigestText(summary.Quote, digestSourceEvidenceLimit))
 			}
 		}
 		lines = append(lines, "")
 	}
 	if len(connections) > 0 {
 		lines = append(lines, "## Connections")
-		for _, connection := range connections {
-			lines = append(lines, "- "+connection.Evidence)
+		for index, connection := range connections {
+			if index >= digestMaxConnectionCount {
+				lines = append(lines, fmt.Sprintf("- %d more connection(s) kept in the app.", len(connections)-index))
+				break
+			}
+			lines = append(lines, "- "+truncateDigestText(connection.Evidence, digestConnectionLimit))
 		}
 	}
+	bodyMarkdown := strings.Join(lines, "\n")
 	return DigestIssue{
 		DigestDate:     digestDate,
 		ScheduledFor:   scheduledFor.UTC(),
-		IdempotencyKey: "daily:" + digestDate,
+		IdempotencyKey: "daily:" + digestDate + ":" + digestBodyFingerprint(bodyMarkdown),
 		Subject:        subject,
-		BodyMarkdown:   strings.Join(lines, "\n"),
+		BodyMarkdown:   bodyMarkdown,
 		Status:         "generated",
 	}
+}
+
+func digestBodyFingerprint(bodyMarkdown string) string {
+	sum := sha256.Sum256([]byte(bodyMarkdown))
+	return hex.EncodeToString(sum[:])[:12]
+}
+
+func truncateDigestText(value string, limit int) string {
+	trimmed := strings.Join(strings.Fields(value), " ")
+	if trimmed == "" || limit <= 0 {
+		return ""
+	}
+	if limit <= 3 {
+		return truncate(trimmed, limit)
+	}
+	if len([]rune(trimmed)) <= limit {
+		return trimmed
+	}
+	truncated := strings.TrimSpace(truncate(trimmed, limit-3))
+	if truncated == "" {
+		return "..."
+	}
+	return truncated + "..."
 }

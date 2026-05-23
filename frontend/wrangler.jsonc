@@ -1,0 +1,9 @@
+{
+  "$schema": "../node_modules/wrangler/config-schema.json",
+  "name": "second-brain",
+  "compatibility_date": "2026-05-23",
+  "assets": {
+    "directory": "./out",
+    "not_found_handling": "404-page"
+  }
+}

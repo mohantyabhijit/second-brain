@@ -60,11 +60,38 @@ Open `http://localhost:3000`. The frontend calls the Go API at `NEXT_PUBLIC_API_
 
 For local demos without Supabase configured, the Go API falls back to `data/runtime/latest-knowledge-run.json` and still serves the same knowledge-run contract to the frontend.
 
+Cloudflare Workers deploys use Workers Static Assets from `frontend/out`. In the Cloudflare dashboard, use:
+
+```bash
+npm run cloudflare:build
+npm run cloudflare:deploy
+```
+
+The deploy script runs Wrangler from `frontend/` with an explicit `wrangler.jsonc`, which avoids Wrangler's workspace-root detection failure.
+
 Generate the daily digest from the latest persisted run:
 
 ```bash
 npm run digest:run
 ```
+
+The digest sender uses Resend. Store `RESEND_API_KEY` in OneCLI for `api.resend.com`; configure `DIGEST_EMAIL_TO` and a verified-domain `DIGEST_EMAIL_FROM` through `backend/.env`, process env, or matching Keychain services.
+
+Run a headless full knowledge refresh, including all available X bookmark pages by default:
+
+```bash
+npm run refresh:run
+```
+
+Set `X_BOOKMARK_LIMIT` to a positive number for capped validation runs. Leave it unset or set it to `0` to fetch every page returned by the X bookmarks API.
+
+If X returns `401 Unauthorized` or an invalid refresh token error, re-authorize the local app:
+
+```bash
+npm run x:oauth
+```
+
+The helper uses OAuth 2.0 Authorization Code with PKCE with `tweet.read users.read bookmark.read offline.access`, saves fresh `X_USER_ACCESS_TOKEN` and `X_REFRESH_TOKEN` values to Keychain, and updates matching OneCLI token secrets when they exist. The default callback is `http://127.0.0.1:8765/callback`; it must exactly match a callback URL configured on the X app. Override it with `X_REDIRECT_URI` if the app uses a different local callback.
 
 Use an external scheduler, such as GitHub Actions, cron, or a platform scheduler, to run that command at 5pm in `DIGEST_TIMEZONE`. The command is idempotent per owner and digest date.
 
@@ -80,8 +107,21 @@ export SUPADATA_API_KEY=...
 export OPENAI_API_KEY=...
 export SUPABASE_SERVICE_ROLE_KEY=...
 export RESEND_API_KEY=...
-export DIGEST_EMAIL_TO=...
 npm run onecli:save-secrets
+```
+
+To save only the Resend API key to OneCLI:
+
+```bash
+ONECLI_ONLY_SECRETS=RESEND_API_KEY RESEND_API_KEY=... npm run onecli:save-secrets
+```
+
+For local digest delivery, save non-secret email settings directly to Keychain:
+
+```bash
+DIGEST_EMAIL_TO=you@example.com \
+DIGEST_EMAIL_FROM='Second Brain <digest@updates.example.com>' \
+npm run email:save-secrets
 ```
 
 `YOUTUBE_PLAYLIST_ID` is intentionally a non-secret backend setting. Use a dedicated playlist such as `Second Brain Inbox`; the official YouTube API blocks Watch Later listing.

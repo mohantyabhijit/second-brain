@@ -15,6 +15,7 @@ func TestLoadAppliesDefaultsAndParsesCSV(t *testing.T) {
 	t.Setenv("ALLOWED_ORIGINS", " https://app.example, ,http://localhost:3000 ")
 	t.Setenv("ONECLI_BIN", "/tmp/onecli")
 	t.Setenv("ONECLI_GATEWAY", "true")
+	t.Setenv("X_BOOKMARK_LIMIT", "250")
 	t.Setenv("KNOWLEDGE_RUN_PATH", "/tmp/latest.json")
 	t.Setenv("YOUTUBE_PLAYLIST_ID", "playlist-1")
 	t.Setenv("YOUTUBE_TRANSCRIPT_TEST_VIDEO_ID", "video-1")
@@ -31,6 +32,9 @@ func TestLoadAppliesDefaultsAndParsesCSV(t *testing.T) {
 	}
 	if cfg.SupabaseStorageBucket != "source-artifacts" || cfg.KnowledgeRunPath != "/tmp/latest.json" {
 		t.Fatalf("unexpected storage/run config: %#v", cfg)
+	}
+	if cfg.XBookmarkLimit != 250 {
+		t.Fatalf("unexpected X bookmark limit: %d", cfg.XBookmarkLimit)
 	}
 	if cfg.YouTubePlaylistID != "playlist-1" || cfg.YouTubeTranscriptTestVideoID != "video-1" {
 		t.Fatalf("unexpected YouTube config: %#v", cfg)
@@ -49,6 +53,7 @@ func TestLoadFallsBackForBlankValues(t *testing.T) {
 	t.Setenv("SUPABASE_STORAGE_BUCKET", "")
 	t.Setenv("ALLOWED_ORIGINS", "")
 	t.Setenv("ONECLI_BIN", "")
+	t.Setenv("X_BOOKMARK_LIMIT", "")
 	t.Setenv("KNOWLEDGE_RUN_PATH", "")
 	t.Setenv("YOUTUBE_PLAYLIST_ID", "")
 	t.Setenv("OPENAI_TRANSLATION_MODEL", "")
@@ -61,6 +66,9 @@ func TestLoadFallsBackForBlankValues(t *testing.T) {
 	}
 	if cfg.SupabaseStorageBucket != "sources" {
 		t.Fatalf("expected default storage bucket, got %q", cfg.SupabaseStorageBucket)
+	}
+	if cfg.XBookmarkLimit != 0 {
+		t.Fatalf("expected all-bookmarks default limit, got %d", cfg.XBookmarkLimit)
 	}
 	if !reflect.DeepEqual(cfg.AllowedOrigins, []string{"http://localhost:3000", "http://127.0.0.1:3000"}) {
 		t.Fatalf("unexpected default allowed origins: %#v", cfg.AllowedOrigins)

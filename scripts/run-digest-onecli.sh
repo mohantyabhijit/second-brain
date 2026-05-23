@@ -61,6 +61,38 @@ if [[ -z "${X_CLIENT_SECRET:-}" ]]; then
   fi
 fi
 
+if [[ -z "${X_USER_ACCESS_TOKEN:-}" ]]; then
+  if X_USER_ACCESS_TOKEN="$(security find-generic-password -a "$USER" -s "second-brain/X_USER_ACCESS_TOKEN" -w 2>/dev/null)"; then
+    export X_USER_ACCESS_TOKEN
+  else
+    unset X_USER_ACCESS_TOKEN
+  fi
+fi
+
+if [[ -z "${X_REFRESH_TOKEN:-}" ]]; then
+  if X_REFRESH_TOKEN="$(security find-generic-password -a "$USER" -s "second-brain/X_REFRESH_TOKEN" -w 2>/dev/null)"; then
+    export X_REFRESH_TOKEN
+  else
+    unset X_REFRESH_TOKEN
+  fi
+fi
+
+if [[ -z "${DIGEST_EMAIL_TO:-}" ]]; then
+  if DIGEST_EMAIL_TO="$(security find-generic-password -a "$USER" -s "second-brain/DIGEST_EMAIL_TO" -w 2>/dev/null)"; then
+    export DIGEST_EMAIL_TO
+  else
+    unset DIGEST_EMAIL_TO
+  fi
+fi
+
+if [[ -z "${DIGEST_EMAIL_FROM:-}" ]]; then
+  if DIGEST_EMAIL_FROM="$(security find-generic-password -a "$USER" -s "second-brain/DIGEST_EMAIL_FROM" -w 2>/dev/null)"; then
+    export DIGEST_EMAIL_FROM
+  else
+    unset DIGEST_EMAIL_FROM
+  fi
+fi
+
 export ONECLI_GATEWAY=true
 export KNOWLEDGE_RUN_PATH="${KNOWLEDGE_RUN_PATH:-$ROOT_DIR/data/runtime/latest-knowledge-run.json}"
 

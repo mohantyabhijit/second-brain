@@ -16,7 +16,7 @@ import (
 func main() {
 	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
 	cfg := config.Load()
-	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
 	defer cancel()
 
 	var store knowledge.Store
@@ -37,24 +37,18 @@ func main() {
 	defer closeStore()
 
 	service := knowledge.NewService(cfg, store, httpclient.New())
-	digest, err := service.GenerateDigest(ctx)
+	service.SetLogger(logger)
+	result, err := service.Run(ctx)
 	if err != nil {
-		logger.Error("generate digest", "error", err)
+		logger.Error("knowledge refresh failed", "error", err)
 		os.Exit(1)
 	}
-	if digest == nil {
-		logger.Error("generate digest returned no issue")
-		os.Exit(1)
-	}
-	logger.Info("digest generated", "date", digest.DigestDate, "status", digest.Status, "subject", digest.Subject)
-	for _, delivery := range digest.Deliveries {
-		logger.Info(
-			"digest delivery",
-			"provider", delivery.Provider,
-			"recipient", delivery.Recipient,
-			"status", delivery.Status,
-			"provider_message_id", delivery.ProviderMessageID,
-			"error", delivery.Error,
-		)
-	}
+	logger.Info(
+		"knowledge refresh saved",
+		"x_bookmarks", len(result.XBookmarks),
+		"youtube_items", len(result.YouTubeItems),
+		"summaries", len(result.Summaries),
+		"insights", len(result.Insights),
+		"actions", len(result.ActionItems),
+	)
 }

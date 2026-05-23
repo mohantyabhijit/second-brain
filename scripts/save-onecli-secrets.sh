@@ -3,6 +3,7 @@ set -euo pipefail
 
 ONECLI="${ONECLI:-/Users/abhijitmohanty/.local/bin/onecli}"
 PROJECT="${ONECLI_PROJECT:-second-brain}"
+ONLY_SECRETS="${ONECLI_ONLY_SECRETS:-}"
 
 if ! "$ONECLI" auth status >/dev/null 2>&1; then
   echo "OneCLI is installed but not authenticated."
@@ -17,6 +18,10 @@ create_secret() {
   local header_name="${4:-Authorization}"
   local value_format="${5:-Bearer {value}}"
   local value="${!env_name:-}"
+
+  if ! should_create_secret "$env_name"; then
+    return 0
+  fi
 
   if [[ -z "$value" ]]; then
     echo "skip $env_name: environment variable is not set"
@@ -40,6 +45,10 @@ create_param_secret() {
   local param_name="$4"
   local value="${!env_name:-}"
 
+  if ! should_create_secret "$env_name"; then
+    return 0
+  fi
+
   if [[ -z "$value" ]]; then
     echo "skip $env_name: environment variable is not set"
     return 0
@@ -53,6 +62,14 @@ create_param_secret() {
     --host-pattern "$host_pattern" \
     --param-name "$param_name" \
     --param-format "{value}"
+}
+
+should_create_secret() {
+  local env_name="$1"
+  if [[ -z "$ONLY_SECRETS" ]]; then
+    return 0
+  fi
+  [[ ",$ONLY_SECRETS," == *",$env_name,"* ]]
 }
 
 create_secret X_USER_ACCESS_TOKEN "Second Brain X user access token" "api.x.com"

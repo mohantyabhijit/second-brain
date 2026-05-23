@@ -47,6 +47,10 @@ type xBookmarkResponse struct {
 			Username string `json:"username"`
 		} `json:"users"`
 	} `json:"includes"`
+	Meta *struct {
+		ResultCount int    `json:"result_count"`
+		NextToken   string `json:"next_token"`
+	} `json:"meta"`
 }
 
 type xTokenResponse struct {
@@ -77,18 +81,44 @@ func (s *Service) fetchXBookmarks(ctx context.Context, limit int) ([]XBookmark, 
 		return nil, fmt.Errorf("X /2/users/me did not return an authenticated user id")
 	}
 
-	requestURL := "https://api.x.com/2/users/" + me.Data.ID + "/bookmarks"
-	requestURL = appendQueryValue(requestURL, "max_results", strconv.Itoa(limit))
-	requestURL = appendQueryValue(requestURL, "tweet.fields", "article,created_at,public_metrics,author_id,entities")
-	requestURL = appendQueryValue(requestURL, "expansions", "author_id,article.cover_media")
-	requestURL = appendQueryValue(requestURL, "media.fields", "url,preview_image_url,type,alt_text")
-	requestURL = appendQueryValue(requestURL, "user.fields", "username,name")
-
-	var payload xBookmarkResponse
-	if err := s.requestJSON(ctx, http.MethodGet, requestURL, headers, nil, &payload); err != nil {
-		return nil, fmt.Errorf("X bookmarks failed: %w", err)
+	maxResults := 100
+	if limit > 0 && limit < maxResults {
+		maxResults = limit
 	}
 
+	bookmarks := make([]XBookmark, 0)
+	seenTokens := map[string]bool{}
+	nextToken := ""
+	for {
+		requestURL := "https://api.x.com/2/users/" + me.Data.ID + "/bookmarks"
+		requestURL = appendQueryValue(requestURL, "max_results", strconv.Itoa(maxResults))
+		requestURL = appendQueryValue(requestURL, "tweet.fields", "article,created_at,public_metrics,author_id,entities")
+		requestURL = appendQueryValue(requestURL, "expansions", "author_id,article.cover_media")
+		requestURL = appendQueryValue(requestURL, "media.fields", "url,preview_image_url,type,alt_text")
+		requestURL = appendQueryValue(requestURL, "user.fields", "username,name")
+		requestURL = appendQueryValue(requestURL, "pagination_token", nextToken)
+
+		var payload xBookmarkResponse
+		if err := s.requestJSON(ctx, http.MethodGet, requestURL, headers, nil, &payload); err != nil {
+			return nil, fmt.Errorf("X bookmarks failed: %w", err)
+		}
+
+		bookmarks = append(bookmarks, bookmarksFromXPayload(payload, remainingLimit(limit, len(bookmarks)))...)
+		if limit > 0 && len(bookmarks) >= limit {
+			return bookmarks[:limit], nil
+		}
+		if payload.Meta == nil || strings.TrimSpace(payload.Meta.NextToken) == "" {
+			return bookmarks, nil
+		}
+		nextToken = payload.Meta.NextToken
+		if seenTokens[nextToken] {
+			return bookmarks, nil
+		}
+		seenTokens[nextToken] = true
+	}
+}
+
+func bookmarksFromXPayload(payload xBookmarkResponse, limit int) []XBookmark {
 	users := map[string]struct {
 		Name     string
 		Username string
@@ -156,8 +186,18 @@ func (s *Service) fetchXBookmarks(ctx context.Context, limit int) ([]XBookmark, 
 			SourceURL:     sourceURL,
 		})
 	}
+	return bookmarks
+}
 
-	return bookmarks, nil
+func remainingLimit(limit int, count int) int {
+	if limit <= 0 {
+		return 100
+	}
+	remaining := limit - count
+	if remaining < 0 {
+		return 0
+	}
+	return remaining
 }
 
 func (s *Service) refreshXAccessToken(ctx context.Context) (string, error) {
@@ -177,15 +217,31 @@ func (s *Service) refreshXAccessToken(ctx context.Context) (string, error) {
 
 	var payload xTokenResponse
 	if err := s.requestJSON(ctx, http.MethodPost, "https://api.x.com/2/oauth2/token", headers, strings.NewReader(body), &payload); err != nil {
+		if configuredXAccessTokenAvailable(s.cfg.OneCLIGateway) {
+			s.logger.Warn("x token refresh failed; falling back to configured X access token", "error", err)
+			return strings.TrimSpace(os.Getenv("X_USER_ACCESS_TOKEN")), nil
+		}
 		return "", fmt.Errorf("X token refresh failed: %w", err)
 	}
 	if payload.Error != "" {
+		if configuredXAccessTokenAvailable(s.cfg.OneCLIGateway) {
+			s.logger.Warn("x token refresh returned an error; falling back to configured X access token", "error", payload.Error, "detail", payload.ErrorDetail)
+			return strings.TrimSpace(os.Getenv("X_USER_ACCESS_TOKEN")), nil
+		}
 		return "", fmt.Errorf("X token refresh failed: %s %s", payload.Error, payload.ErrorDetail)
 	}
 	if strings.TrimSpace(payload.AccessToken) == "" {
+		if configuredXAccessTokenAvailable(s.cfg.OneCLIGateway) {
+			s.logger.Warn("x token refresh returned no access token; falling back to configured X access token")
+			return strings.TrimSpace(os.Getenv("X_USER_ACCESS_TOKEN")), nil
+		}
 		return "", fmt.Errorf("X token refresh returned no access token")
 	}
 	if strings.TrimSpace(payload.RefreshToken) == "" {
+		if configuredXAccessTokenAvailable(s.cfg.OneCLIGateway) {
+			s.logger.Warn("x token refresh returned no rotated refresh token; falling back to configured X access token")
+			return strings.TrimSpace(os.Getenv("X_USER_ACCESS_TOKEN")), nil
+		}
 		return "", fmt.Errorf("X token refresh returned no rotated refresh token")
 	}
 	if err := s.rotateOneCLIXSecrets(ctx, payload.AccessToken, payload.RefreshToken); err != nil {
@@ -193,6 +249,10 @@ func (s *Service) refreshXAccessToken(ctx context.Context) (string, error) {
 	}
 	s.logger.Info("x token refresh completed", "duration_ms", time.Since(start).Milliseconds(), "expires_in", payload.ExpiresIn, "scope", payload.Scope)
 	return payload.AccessToken, nil
+}
+
+func configuredXAccessTokenAvailable(oneCLIGateway bool) bool {
+	return strings.TrimSpace(os.Getenv("X_USER_ACCESS_TOKEN")) != "" || oneCLIGateway
 }
 
 func (s *Service) rotateOneCLIXSecrets(ctx context.Context, accessToken string, refreshToken string) error {

@@ -6,6 +6,8 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
+    "cloudflare:build": "NEXT_OUTPUT=export next build",
+    "cloudflare:deploy": "npm run cloudflare:build && npx wrangler deploy",
     "start": "next start",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
@@ -26,6 +28,7 @@
     "eslint": "^9.39.2",
     "eslint-config-next": "^16.2.6",
     "typescript": "^5.9.3",
-    "vitest": "^4.1.7"
+    "vitest": "^4.1.7",
+    "wrangler": "^4.94.0"
   }
 }

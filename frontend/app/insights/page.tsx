@@ -1,5 +1,5 @@
 import KnowledgeInboxContainer from "@/features/knowledge-inbox/KnowledgeInboxContainer";
 
-export default function Home() {
+export default function InsightsPage() {
   return <KnowledgeInboxContainer initialPage="insights" />;
 }

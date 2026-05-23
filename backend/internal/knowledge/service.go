@@ -134,7 +134,7 @@ func (s *Service) Run(ctx context.Context) (Result, error) {
 
 	go func() {
 		xStart := time.Now()
-		items, err := s.fetchXBookmarks(ctx, 10)
+		items, err := s.fetchXBookmarks(ctx, s.cfg.XBookmarkLimit)
 		xFetch <- xFetchResult{items: items, err: err, duration: time.Since(xStart)}
 	}()
 
@@ -229,10 +229,8 @@ func (s *Service) Run(ctx context.Context) (Result, error) {
 	result.Digest = &digest
 
 	switch {
-	case len(xBookmarks) >= 10:
-		result.SourceStatus.X = SourceReady
 	case len(xBookmarks) > 0:
-		result.SourceStatus.X = SourcePartial
+		result.SourceStatus.X = SourceReady
 	}
 
 	switch {
@@ -246,7 +244,7 @@ func (s *Service) Run(ctx context.Context) (Result, error) {
 
 	result.Validation = []ValidationItem{
 		validation("X bookmark request", len(xBookmarks) > 0, fmt.Sprintf("%d bookmark(s) fetched.", len(xBookmarks)), "No X bookmarks fetched."),
-		validation("10 X bookmarks", len(xBookmarks) >= 10, "Fetched 10 X bookmarks.", fmt.Sprintf("Fetched %d X bookmark(s).", len(xBookmarks))),
+		validation(xBookmarkCoverageLabel(s.cfg.XBookmarkLimit), xBookmarkCoverageOK(len(xBookmarks), s.cfg.XBookmarkLimit), xBookmarkCoveragePassDetail(len(xBookmarks), s.cfg.XBookmarkLimit), xBookmarkCoverageBlockerDetail(len(xBookmarks), s.cfg.XBookmarkLimit)),
 		validation("X source links", allXBookmarksHaveSourceURLs(xBookmarks), "Every bookmark has a source URL.", "One or more bookmarks are missing source URLs."),
 		validation("X article bodies", anyXArticleBody(xBookmarks), "At least one X Article body was extracted.", "No expanded X Article body was extracted."),
 		validation("YouTube playlist check", len(youtubeItems) > 0, fmt.Sprintf("%d YouTube item(s) fetched.", len(youtubeItems)), "No YouTube playlist items fetched."),
@@ -458,6 +456,34 @@ func validation(label string, passed bool, passDetail string, failDetail string)
 		return ValidationItem{Label: label, Status: "pass", Detail: passDetail}
 	}
 	return ValidationItem{Label: label, Status: "blocked", Detail: failDetail}
+}
+
+func xBookmarkCoverageLabel(limit int) string {
+	if limit > 0 {
+		return fmt.Sprintf("%d X bookmarks", limit)
+	}
+	return "All X bookmarks"
+}
+
+func xBookmarkCoverageOK(count int, limit int) bool {
+	if limit > 0 {
+		return count >= limit
+	}
+	return count > 0
+}
+
+func xBookmarkCoveragePassDetail(count int, limit int) string {
+	if limit > 0 {
+		return fmt.Sprintf("Fetched %d configured X bookmark(s).", count)
+	}
+	return fmt.Sprintf("Fetched all available X bookmark page(s); %d bookmark(s) returned.", count)
+}
+
+func xBookmarkCoverageBlockerDetail(count int, limit int) string {
+	if limit > 0 {
+		return fmt.Sprintf("Fetched %d of %d configured X bookmark(s).", count, limit)
+	}
+	return fmt.Sprintf("Fetched %d X bookmark(s); expected at least one bookmark from the full pagination run.", count)
 }
 
 func allXBookmarksHaveSourceURLs(bookmarks []XBookmark) bool {
