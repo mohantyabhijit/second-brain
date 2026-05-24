@@ -13,7 +13,7 @@ import (
 	"time"
 )
 
-const synthesisPromptVersion = "source-grounded-insights-v5-json-markers"
+const synthesisPromptVersion = "source-grounded-insights-v6-compact-retry"
 const extractiveSynthesisModel = "extractive-fallback-v1"
 
 type promptSynthesisResponse struct {
@@ -231,7 +231,64 @@ func (s *Service) promptSynthesis(ctx context.Context, candidate sourceCandidate
 			"",
 			truncate(candidate.body, 12000),
 		}, "\n"),
-		"max_output_tokens": 3000,
+		"max_output_tokens": 4500,
+	}
+	raw, err := json.Marshal(requestBody)
+	if err != nil {
+		return promptSynthesisResponse{}, err
+	}
+	headers := authHeader("OPENAI_API_KEY", "Bearer {value}")
+	headers.Set("Content-Type", "application/json")
+
+	var response openAIResponse
+	if err := s.requestJSON(ctx, http.MethodPost, "https://api.openai.com/v1/responses", headers, bytes.NewReader(raw), &response); err != nil {
+		return promptSynthesisResponse{}, err
+	}
+	if response.Error != nil && response.Error.Message != "" {
+		return promptSynthesisResponse{}, fmt.Errorf(response.Error.Message)
+	}
+	text := response.OutputText
+	if strings.TrimSpace(text) == "" {
+		parts := []string{}
+		for _, output := range response.Output {
+			for _, content := range output.Content {
+				if strings.TrimSpace(content.Text) != "" {
+					parts = append(parts, strings.TrimSpace(content.Text))
+				}
+			}
+		}
+		text = strings.Join(parts, "\n")
+	}
+	var payload promptSynthesisResponse
+	if err := json.Unmarshal([]byte(extractJSONObject(text)), &payload); err != nil {
+		compactPayload, retryErr := s.promptCompactSynthesis(ctx, candidate, model, err)
+		if retryErr == nil {
+			return compactPayload, nil
+		}
+		return promptSynthesisResponse{}, err
+	}
+	return payload, nil
+}
+
+func (s *Service) promptCompactSynthesis(ctx context.Context, candidate sourceCandidate, model string, parseErr error) (promptSynthesisResponse, error) {
+	requestBody := map[string]any{
+		"model": model,
+		"text":  map[string]any{"format": map[string]any{"type": "json_object"}},
+		"input": strings.Join([]string{
+			"You are repairing a source-grounded Second Brain synthesis after the first JSON response was malformed or too long.",
+			"Return one compact valid JSON object only. No markdown. No comments. No trailing text.",
+			"Use only the source text. If the source is weak, still write a concise useful summary instead of copying metadata.",
+			"Hard limits: summary under 35 words, quote under 25 words, 1-3 insights, each insight under 24 words, action_items can be empty.",
+			"For YouTube descriptions with timestamps like (0:00), return important_time_markers from those chapters. Do not invent missing timestamps.",
+			"Use the same JSON shape as the main synthesis prompt, including quality and important_time_markers.",
+			"Parse error to avoid: " + parseErr.Error(),
+			"Source type: " + string(candidate.sourceType),
+			"Source title: " + candidate.title,
+			"Source URL: " + candidate.sourceURL,
+			"",
+			truncate(candidate.body, 5000),
+		}, "\n"),
+		"max_output_tokens": 1600,
 	}
 	raw, err := json.Marshal(requestBody)
 	if err != nil {
