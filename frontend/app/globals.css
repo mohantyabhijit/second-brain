@@ -855,12 +855,6 @@ blockquote {
   text-underline-offset: 3px;
 }
 
-.newsletter-bullet {
-  border-left: 3px solid var(--blue);
-  padding: 9px 11px;
-  background: #f8fafc;
-}
-
 .ask-brain {
   position: fixed;
   right: 22px;

@@ -412,11 +412,7 @@ function NewsletterBody({ markdown }: { markdown: string }) {
           return <h4 key={key}>{renderInlineMarkdown(line.slice(4))}</h4>;
         }
         if (line.startsWith("- ")) {
-          return (
-            <p key={key} className="newsletter-bullet">
-              {renderInlineMarkdown(line.slice(2))}
-            </p>
-          );
+          return <p key={key}>{renderInlineMarkdown(`- ${line.slice(2)}`)}</p>;
         }
         return <p key={key}>{renderInlineMarkdown(line)}</p>;
       })}

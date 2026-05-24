@@ -210,8 +210,11 @@ func TestBuildDigestIssueUsesFiveInsights(t *testing.T) {
 		nil,
 	)
 
-	if got := strings.Count(digest.BodyMarkdown, "**[Insight title]("); got != 5 {
+	if got := strings.Count(digest.BodyMarkdown, "[Insight title](https://example.com/source)"); got != 5 {
 		t.Fatalf("expected five linked insights, got %d in %s", got, digest.BodyMarkdown)
+	}
+	if strings.Contains(digest.BodyMarkdown, "In This Issue") {
+		t.Fatalf("expected fallback newsletter without teaser agenda, got %s", digest.BodyMarkdown)
 	}
 	if strings.Contains(digest.BodyMarkdown, "What To Read") {
 		t.Fatalf("expected insight-only digest when insights exist, got %s", digest.BodyMarkdown)

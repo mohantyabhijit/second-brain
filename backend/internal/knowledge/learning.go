@@ -665,27 +665,19 @@ func buildDigestIssue(cfgDigestTimezone string, cfgDigestTime string, generatedA
 	insights = selectDigestInsights(generatedAt, insights, digestMaxInsightCount)
 	subject := "Five signals worth rereading"
 	lines := []string{"# " + subject, ""}
-	lines = append(lines, "A source-linked newsletter from Abhijit's Second Brain, built from the saved ideas most worth turning into a note or decision.", "")
+	lines = append(lines, "Welcome back. This issue is about the saved ideas that still create useful context after the feed has moved on.", "")
 	if len(insights) > 0 {
-		lines = append(lines, "## Editor's Note")
-		lines = append(lines, "The useful pattern in this run is not volume; it is the handful of saved ideas that still have enough signal to change what you read, build, or ignore next.", "")
-		lines = append(lines, "## In This Issue")
-		for _, insight := range insights {
-			link := insight.SourceURL
-			title := fallback(insight.Title, "Source-backed insight")
-			if link == "" {
-				lines = append(lines, fmt.Sprintf("- **%s**: %s", title, truncateDigestText(insight.Insight, digestSummaryLimit)))
-			} else {
-				lines = append(lines, fmt.Sprintf("- **[%s](%s)**: %s", title, link, truncateDigestText(insight.Insight, digestSummaryLimit)))
-			}
-		}
-		lines = append(lines, "", "## The Newsletter")
+		lines = append(lines, "The useful pattern in this run is not volume; it is the small set of source-backed ideas that can change what you read, build, or ignore next.", "")
+		lines = append(lines, "## The Lead")
 		for index, insight := range insights {
 			title := fallback(insight.Title, "Source-backed insight")
-			lines = append(lines, fmt.Sprintf("### %d. %s", index+1, title))
-			lines = append(lines, "Why it matters: "+truncateDigestText(insight.Insight, digestSummaryLimit))
+			if index == 1 {
+				lines = append(lines, "## The Rest Of The Brief")
+			}
+			lines = append(lines, fmt.Sprintf("### %s", title))
+			lines = append(lines, truncateDigestText(insight.Insight, digestSummaryLimit))
 			if insight.Evidence != "" {
-				lines = append(lines, "Source note: "+truncateDigestText(insight.Evidence, digestSourceEvidenceLimit))
+				lines = append(lines, "The source-backed detail: "+truncateDigestText(insight.Evidence, digestSourceEvidenceLimit))
 			}
 			if insight.SourceURL != "" {
 				lines = append(lines, fmt.Sprintf("Read the original: [%s](%s)", title, insight.SourceURL))

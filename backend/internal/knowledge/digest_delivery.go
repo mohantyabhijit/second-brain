@@ -169,10 +169,10 @@ func digestHTML(digest DigestIssue) string {
 			builder.WriteString(renderInlineMarkdown(strings.TrimPrefix(trimmed, "### ")))
 			builder.WriteString(`</h3>`)
 		case strings.HasPrefix(trimmed, "- "):
-			builder.WriteString(`<div style="margin:10px 0;padding:13px 14px;border-left:4px solid #285c8f;background:#f8fafc;border-radius:8px;font-size:16px;line-height:24px;color:#344054;">`)
+			builder.WriteString(`<p style="margin:8px 0 8px 18px;font-size:16px;line-height:24px;color:#344054;">&bull; `)
 			builder.WriteString(renderInlineMarkdown(strings.TrimPrefix(trimmed, "- ")))
-			builder.WriteString(`</div>`)
-		case strings.HasPrefix(trimmed, "Evidence:"), strings.HasPrefix(trimmed, "Source note:"):
+			builder.WriteString(`</p>`)
+		case strings.HasPrefix(trimmed, "Evidence:"), strings.HasPrefix(trimmed, "Source note:"), strings.HasPrefix(trimmed, "The source-backed detail:"):
 			builder.WriteString(`<div style="margin:-2px 0 14px 16px;font-size:14px;line-height:20px;color:#667085;">`)
 			builder.WriteString(renderInlineMarkdown(trimmed))
 			builder.WriteString(`</div>`)
