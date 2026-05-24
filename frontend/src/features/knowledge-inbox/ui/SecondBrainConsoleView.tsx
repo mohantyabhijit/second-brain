@@ -5,7 +5,7 @@ import Link from "next/link";
 import type { KnowledgeInboxPage } from "../KnowledgeInboxContainer";
 import type { ChatMessage } from "../model/useKnowledgeInboxController";
 import type { KnowledgeInboxViewModel, NavigationItemViewModel, SummaryCardViewModel } from "../presentation/viewModel";
-import type { DigestIssue, FeedbackSignal, ImportantTimeMarker, QualityScore, RefreshStatus } from "../contracts";
+import type { DigestIssue, FeedbackSignal, ImportantTimeMarker, RefreshStatus } from "../contracts";
 type SecondBrainConsoleViewProps = {
   activePage: KnowledgeInboxPage;
   chatMessages: ChatMessage[];
@@ -33,7 +33,6 @@ type FeedItem = {
   timestamp: string;
   sourceUrl?: string;
   stats?: string;
-  quality?: QualityScore;
   timeMarkers?: ImportantTimeMarker[];
 };
 
@@ -267,7 +266,6 @@ function FeedCard({
       <div className="feed-identity">
         <span className={`feed-avatar ${item.source.toLowerCase()}`}>{sourceMark(item.source)}</span>
         <span>{item.timestamp}</span>
-        {item.source === "Newsletter" ? <span className="newsletter-chip">{item.eyebrow}</span> : null}
       </div>
 
       <div className="feed-main">
@@ -314,7 +312,6 @@ function FeedCard({
             {quote}
           </blockquote>
         ) : null}
-        {item.quality?.overall ? <QualityPill quality={item.quality} /> : null}
       </div>
     </article>
   );
@@ -337,15 +334,6 @@ function TimeMarkerRow({ markers, sourceUrl }: { markers: ImportantTimeMarker[];
         );
       })}
     </div>
-  );
-}
-
-function QualityPill({ quality }: { quality: QualityScore }) {
-  const score = Math.round((quality.overall ?? 0) * 100);
-  return (
-    <span className="quality-pill" title={quality.rationale || quality.verdict || "LLM quality judge score"}>
-      Q {score}
-    </span>
   );
 }
 
@@ -537,7 +525,6 @@ function summaryToFeedItem(summary: SummaryCardViewModel): FeedItem {
     timestamp: "Summary",
     sourceUrl: summary.sourceUrl,
     stats: `${summary.decisionLabel} - ${summary.confidenceLabel}${summary.cacheStatus ? ` - ${summary.cacheStatus}` : ""}`,
-    quality: summary.quality,
     timeMarkers: summary.timeMarkers
   };
 }

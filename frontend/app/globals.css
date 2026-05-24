@@ -454,20 +454,6 @@ h1 {
   background: var(--blue);
 }
 
-.newsletter-chip {
-  display: inline-flex;
-  min-height: 26px;
-  align-items: center;
-  justify-content: center;
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  padding: 0 8px;
-  background: #fff;
-  color: var(--blue-dark);
-  font-size: 0.68rem;
-  font-weight: 850;
-}
-
 .feed-avatar.insight {
   background: #5b5bd6;
 }
@@ -630,8 +616,7 @@ blockquote {
 }
 
 .time-marker-row a,
-.time-marker-row span,
-.quality-pill {
+.time-marker-row span {
   min-width: 0;
   max-width: 155px;
   display: inline-flex;
@@ -647,13 +632,6 @@ blockquote {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.quality-pill {
-  width: fit-content;
-  max-width: none;
-  margin-top: 8px;
-  color: var(--green);
 }
 
 .feed-actions {
