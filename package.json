@@ -15,6 +15,7 @@
     "backend:dev": "bash scripts/run-backend-onecli.sh",
     "refresh:run": "bash scripts/run-refresh-onecli.sh",
     "digest:run": "bash scripts/run-digest-onecli.sh",
+    "newsletter:eval": "bash scripts/run-newsletter-eval-onecli.sh",
     "graph:sync": "bash scripts/run-graph-sync-onecli.sh",
     "graph:stat": "bash scripts/run-graph-stat-onecli.sh",
     "worker:run": "bash scripts/run-worker-onecli.sh",

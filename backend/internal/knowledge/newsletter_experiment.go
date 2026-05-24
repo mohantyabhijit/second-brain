@@ -1,0 +1,413 @@
+package knowledge
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"os"
+	"strings"
+	"time"
+)
+
+const defaultNewsletterJudgeModel = "gpt-4o-mini"
+
+type NewsletterExperimentOptions struct {
+	Iterations     int
+	GeneratedAt    time.Time
+	GeneratorModel string
+	JudgeModel     string
+	ImproverModel  string
+}
+
+type NewsletterExperimentReport struct {
+	ID                  string                           `json:"id"`
+	GeneratedAt         time.Time                        `json:"generatedAt"`
+	DigestDate          string                           `json:"digestDate"`
+	PromptVersion       string                           `json:"promptVersion"`
+	IterationsRequested int                              `json:"iterationsRequested"`
+	GeneratorModel      string                           `json:"generatorModel"`
+	JudgeModel          string                           `json:"judgeModel"`
+	ImproverModel       string                           `json:"improverModel"`
+	Input               NewsletterExperimentInputSummary `json:"input"`
+	Runs                []NewsletterExperimentRun        `json:"runs"`
+	BaselineScore       float64                          `json:"baselineScore"`
+	FinalScore          float64                          `json:"finalScore"`
+	Improvement         float64                          `json:"improvement"`
+}
+
+type NewsletterExperimentInputSummary struct {
+	SummaryCount        int      `json:"summaryCount"`
+	InsightCount        int      `json:"insightCount"`
+	SelectedInsightIDs  []string `json:"selectedInsightIds"`
+	ThemeCount          int      `json:"themeCount"`
+	InsightClusterCount int      `json:"insightClusterCount"`
+	ConnectionCount     int      `json:"connectionCount"`
+}
+
+type NewsletterExperimentRun struct {
+	Iteration       int                      `json:"iteration"`
+	PromptAddendum  []string                 `json:"promptAddendum,omitempty"`
+	Subject         string                   `json:"subject"`
+	BodyMarkdown    string                   `json:"bodyMarkdown"`
+	Score           float64                  `json:"score"`
+	Judge           NewsletterJudgeScores    `json:"judge"`
+	RevisionForNext NewsletterPromptRevision `json:"revisionForNext,omitempty"`
+}
+
+type NewsletterJudgeScores struct {
+	Overall        float64  `json:"overall"`
+	Grounding      float64  `json:"grounding"`
+	Synthesis      float64  `json:"synthesis"`
+	EditorialVoice float64  `json:"editorialVoice"`
+	Usefulness     float64  `json:"usefulness"`
+	Structure      float64  `json:"structure"`
+	SourceLinking  float64  `json:"sourceLinking"`
+	Rationale      string   `json:"rationale"`
+	Strengths      []string `json:"strengths"`
+	Improvements   []string `json:"improvements"`
+}
+
+type NewsletterPromptRevision struct {
+	Summary       string   `json:"summary,omitempty"`
+	AddendumLines []string `json:"addendumLines,omitempty"`
+}
+
+func (s *Service) RunNewsletterPromptExperiment(ctx context.Context, opts NewsletterExperimentOptions) (*NewsletterExperimentReport, error) {
+	if strings.TrimSpace(os.Getenv("OPENAI_API_KEY")) == "" && !s.cfg.OneCLIGateway {
+		return nil, fmt.Errorf("OPENAI_API_KEY is required for newsletter prompt experiments")
+	}
+	if opts.Iterations <= 0 {
+		opts.Iterations = 5
+	}
+	if opts.Iterations > 10 {
+		opts.Iterations = 10
+	}
+	if opts.GeneratedAt.IsZero() {
+		opts.GeneratedAt = time.Now().UTC()
+	}
+	if strings.TrimSpace(opts.GeneratorModel) == "" {
+		opts.GeneratorModel = s.cfg.OpenAISynthesisModel
+	}
+	if strings.TrimSpace(opts.JudgeModel) == "" {
+		opts.JudgeModel = defaultNewsletterJudgeModel
+	}
+	if strings.TrimSpace(opts.ImproverModel) == "" {
+		opts.ImproverModel = opts.GeneratorModel
+	}
+
+	latest, err := s.ReadLatest(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if latest == nil {
+		return nil, fmt.Errorf("no knowledge run is available for newsletter prompt experiment")
+	}
+	if !hasDigestInputs(latest.Summaries, latest.Insights) {
+		return nil, fmt.Errorf("no source-grounded digest inputs are available")
+	}
+
+	selectedInsights := selectDigestInsights(opts.GeneratedAt, latest.Insights, digestMaxInsightCount)
+	base := buildDigestIssue(s.cfg.DigestTimezone, s.cfg.DigestTime, opts.GeneratedAt, latest.Summaries, selectedInsights, latest.Themes, latest.InsightClusters, latest.Connections)
+	inputJSON := digestPromptInput(latest.Summaries, selectedInsights, latest.Themes, latest.InsightClusters, latest.Connections)
+	report := &NewsletterExperimentReport{
+		ID:                  "newsletter-eval-" + opts.GeneratedAt.UTC().Format("20060102T150405Z"),
+		GeneratedAt:         opts.GeneratedAt.UTC(),
+		DigestDate:          base.DigestDate,
+		PromptVersion:       digestPromptVersion,
+		IterationsRequested: opts.Iterations,
+		GeneratorModel:      opts.GeneratorModel,
+		JudgeModel:          opts.JudgeModel,
+		ImproverModel:       opts.ImproverModel,
+		Input: NewsletterExperimentInputSummary{
+			SummaryCount:        len(latest.Summaries),
+			InsightCount:        len(latest.Insights),
+			SelectedInsightIDs:  insightIDs(selectedInsights),
+			ThemeCount:          len(latest.Themes),
+			InsightClusterCount: len(latest.InsightClusters),
+			ConnectionCount:     len(latest.Connections),
+		},
+		Runs: []NewsletterExperimentRun{},
+	}
+
+	addendum := []string{}
+	for iteration := 0; iteration <= opts.Iterations; iteration++ {
+		digest, err := s.generateExperimentNewsletter(ctx, opts.GeneratorModel, base, latest.Summaries, selectedInsights, latest.Themes, latest.InsightClusters, latest.Connections, addendum)
+		if err != nil {
+			return report, fmt.Errorf("generate experiment newsletter iteration %d: %w", iteration, err)
+		}
+		judge, err := s.judgeExperimentNewsletter(ctx, opts.JudgeModel, inputJSON, digest)
+		if err != nil {
+			return report, fmt.Errorf("judge experiment newsletter iteration %d: %w", iteration, err)
+		}
+		run := NewsletterExperimentRun{
+			Iteration:      iteration,
+			PromptAddendum: append([]string(nil), addendum...),
+			Subject:        digest.Subject,
+			BodyMarkdown:   digest.BodyMarkdown,
+			Score:          judge.Overall,
+			Judge:          judge,
+		}
+		report.Runs = append(report.Runs, run)
+
+		if iteration == opts.Iterations {
+			break
+		}
+		revision, err := s.reviseExperimentPrompt(ctx, opts.ImproverModel, inputJSON, addendum, digest, judge)
+		if err != nil {
+			return report, fmt.Errorf("revise experiment prompt after iteration %d: %w", iteration, err)
+		}
+		revision.AddendumLines = normalizeExperimentAddendum(revision.AddendumLines)
+		if len(revision.AddendumLines) == 0 {
+			revision.AddendumLines = fallbackExperimentAddendum(judge)
+		}
+		report.Runs[len(report.Runs)-1].RevisionForNext = revision
+		addendum = revision.AddendumLines
+	}
+
+	if len(report.Runs) > 0 {
+		report.BaselineScore = report.Runs[0].Score
+		report.FinalScore = report.Runs[len(report.Runs)-1].Score
+		report.Improvement = report.FinalScore - report.BaselineScore
+	}
+	return report, nil
+}
+
+func (s *Service) generateExperimentNewsletter(ctx context.Context, model string, base DigestIssue, summaries []Summary, insights []Insight, themes []ThemeCluster, insightClusters []InsightCluster, connections []SourceConnection, addendum []string) (DigestIssue, error) {
+	promptLines := digestNewsletterPromptLines(base)
+	if len(addendum) > 0 {
+		promptLines = append(promptLines,
+			"",
+			"EXPERIMENTAL PROMPT LEARNING ADDENDUM",
+		)
+		promptLines = append(promptLines, addendum...)
+	}
+	promptLines = append(promptLines,
+		"",
+		"INPUT JSON:",
+		truncate(digestPromptInput(summaries, insights, themes, insightClusters, connections), 16000),
+	)
+	payload, err := s.promptDigestWithLines(ctx, model, promptLines, 3000)
+	if err != nil {
+		return DigestIssue{}, err
+	}
+	if strings.TrimSpace(payload.Subject) == "" {
+		return DigestIssue{}, fmt.Errorf("newsletter synthesis returned an empty subject")
+	}
+	bodyMarkdown := strings.TrimSpace(payload.BodyMarkdown)
+	if bodyMarkdown == "" && len(payload.BodyLines) > 0 {
+		bodyMarkdown = strings.TrimSpace(strings.Join(payload.BodyLines, "\n"))
+	}
+	bodyMarkdown = ensureDigestSourceLinks(bodyMarkdown, insights)
+	if strings.TrimSpace(bodyMarkdown) == "" {
+		return DigestIssue{}, fmt.Errorf("newsletter synthesis returned an empty body")
+	}
+
+	digest := base
+	digest.Subject = strings.TrimSpace(payload.Subject)
+	digest.BodyMarkdown = bodyMarkdown
+	digest.IdempotencyKey = "experiment:" + base.DigestDate + ":" + digestBodyFingerprint(bodyMarkdown)
+	digest.Status = "evaluated"
+	return digest, nil
+}
+
+func (s *Service) judgeExperimentNewsletter(ctx context.Context, model string, inputJSON string, digest DigestIssue) (NewsletterJudgeScores, error) {
+	newsletterJSON := mustCompactJSON(map[string]string{
+		"subject":       digest.Subject,
+		"body_markdown": digest.BodyMarkdown,
+	})
+	prompt := strings.Join([]string{
+		"You are a strict but fair newsletter quality judge.",
+		"Evaluate the candidate issue against the source inputs and the rubric. Penalize unsupported claims, generic summary dumps, missing source links, weak synthesis, and unreadable phone-first structure.",
+		"Use the full 0-100 scale. A score above 85 means the issue is genuinely publishable for a smart personal research newsletter.",
+		"Return JSON only with this exact shape: {\"overall\":0,\"grounding\":0,\"synthesis\":0,\"editorialVoice\":0,\"usefulness\":0,\"structure\":0,\"sourceLinking\":0,\"rationale\":\"short rationale\",\"strengths\":[\"...\"],\"improvements\":[\"...\"]}",
+		"",
+		"RUBRIC",
+		"grounding: uses only supplied facts, keeps links intact, and avoids invented context.",
+		"synthesis: connects inputs into one argument instead of recapping sources one by one.",
+		"editorialVoice: sounds like a human editor with calm authority, not a template.",
+		"usefulness: leaves Abhijit with a clearer model or concrete next move.",
+		"structure: hook, context, thesis, evidence, synthesis, implication; no forbidden sections, bullets, or source dumps.",
+		"sourceLinking: every major claim is naturally linked to its source at the point of use.",
+		"",
+		"INPUT JSON:",
+		truncate(inputJSON, 12000),
+		"",
+		"CANDIDATE NEWSLETTER JSON:",
+		newsletterJSON,
+	}, "\n")
+	text, err := s.promptExperimentText(ctx, model, prompt, 1400)
+	if err != nil {
+		return NewsletterJudgeScores{}, err
+	}
+	var judge NewsletterJudgeScores
+	if err := json.Unmarshal([]byte(extractJSONObject(text)), &judge); err != nil {
+		return NewsletterJudgeScores{}, err
+	}
+	judge = normalizeJudgeScores(judge)
+	return judge, nil
+}
+
+func (s *Service) reviseExperimentPrompt(ctx context.Context, model string, inputJSON string, currentAddendum []string, digest DigestIssue, judge NewsletterJudgeScores) (NewsletterPromptRevision, error) {
+	feedbackJSON := mustCompactJSON(judge)
+	currentPromptJSON := mustCompactJSON(currentAddendum)
+	newsletterJSON := mustCompactJSON(map[string]string{
+		"subject":       digest.Subject,
+		"body_markdown": digest.BodyMarkdown,
+	})
+	prompt := strings.Join([]string{
+		"You improve a newsletter generation system prompt from judge feedback.",
+		"Create the next experimental prompt addendum only. Do not rewrite the whole base prompt. Do not weaken grounding, source-linking, format bans, or the JSON output contract.",
+		"Prefer precise behavioral instructions that the generator can apply on the next draft. Do not mention the judge or scores in the addendum.",
+		"Return JSON only with this exact shape: {\"summary\":\"what changed and why\",\"addendumLines\":[\"one instruction\",\"another instruction\"]}",
+		"Keep addendumLines to 3-7 lines.",
+		"",
+		"CURRENT ADDENDUM JSON:",
+		currentPromptJSON,
+		"",
+		"JUDGE FEEDBACK JSON:",
+		feedbackJSON,
+		"",
+		"CANDIDATE NEWSLETTER JSON:",
+		newsletterJSON,
+		"",
+		"INPUT JSON:",
+		truncate(inputJSON, 10000),
+	}, "\n")
+	text, err := s.promptExperimentText(ctx, model, prompt, 1200)
+	if err != nil {
+		return NewsletterPromptRevision{}, err
+	}
+	var revision NewsletterPromptRevision
+	if err := json.Unmarshal([]byte(extractJSONObject(text)), &revision); err != nil {
+		return NewsletterPromptRevision{}, err
+	}
+	return revision, nil
+}
+
+func (s *Service) promptExperimentText(ctx context.Context, model string, input string, maxOutputTokens int) (string, error) {
+	if strings.TrimSpace(model) == "" {
+		model = s.cfg.OpenAISynthesisModel
+	}
+	if maxOutputTokens <= 0 {
+		maxOutputTokens = 1000
+	}
+	requestBody := map[string]any{
+		"model":             model,
+		"input":             input,
+		"max_output_tokens": maxOutputTokens,
+	}
+	raw, err := json.Marshal(requestBody)
+	if err != nil {
+		return "", err
+	}
+	headers := authHeader("OPENAI_API_KEY", "Bearer {value}")
+	headers.Set("Content-Type", "application/json")
+
+	var response openAIResponse
+	if err := s.requestJSON(ctx, http.MethodPost, "https://api.openai.com/v1/responses", headers, bytes.NewReader(raw), &response); err != nil {
+		return "", err
+	}
+	if response.Error != nil && response.Error.Message != "" {
+		return "", fmt.Errorf("%s", response.Error.Message)
+	}
+	text := response.OutputText
+	if strings.TrimSpace(text) == "" {
+		parts := []string{}
+		for _, output := range response.Output {
+			for _, content := range output.Content {
+				if strings.TrimSpace(content.Text) != "" {
+					parts = append(parts, strings.TrimSpace(content.Text))
+				}
+			}
+		}
+		text = strings.Join(parts, "\n")
+	}
+	if strings.TrimSpace(text) == "" {
+		return "", fmt.Errorf("model returned empty output")
+	}
+	return text, nil
+}
+
+func insightIDs(insights []Insight) []string {
+	ids := make([]string, 0, len(insights))
+	for _, insight := range insights {
+		ids = append(ids, insight.ID)
+	}
+	return ids
+}
+
+func normalizeJudgeScores(judge NewsletterJudgeScores) NewsletterJudgeScores {
+	judge.Grounding = normalizeJudgeScore(judge.Grounding)
+	judge.Synthesis = normalizeJudgeScore(judge.Synthesis)
+	judge.EditorialVoice = normalizeJudgeScore(judge.EditorialVoice)
+	judge.Usefulness = normalizeJudgeScore(judge.Usefulness)
+	judge.Structure = normalizeJudgeScore(judge.Structure)
+	judge.SourceLinking = normalizeJudgeScore(judge.SourceLinking)
+	judge.Overall = normalizeJudgeScore(judge.Overall)
+	if judge.Overall == 0 {
+		total := 0.0
+		count := 0.0
+		for _, score := range []float64{judge.Grounding, judge.Synthesis, judge.EditorialVoice, judge.Usefulness, judge.Structure, judge.SourceLinking} {
+			if score > 0 {
+				total += score
+				count++
+			}
+		}
+		if count > 0 {
+			judge.Overall = total / count
+		}
+	}
+	return judge
+}
+
+func normalizeJudgeScore(score float64) float64 {
+	if score <= 0 {
+		return 0
+	}
+	if score <= 10 {
+		score *= 10
+	}
+	if score > 100 {
+		return 100
+	}
+	return score
+}
+
+func normalizeExperimentAddendum(lines []string) []string {
+	normalized := []string{}
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		normalized = append(normalized, line)
+		if len(normalized) >= 7 {
+			break
+		}
+	}
+	return normalized
+}
+
+func fallbackExperimentAddendum(judge NewsletterJudgeScores) []string {
+	feedback := strings.Join(judge.Improvements, "; ")
+	if strings.TrimSpace(feedback) == "" {
+		feedback = judge.Rationale
+	}
+	if strings.TrimSpace(feedback) == "" {
+		feedback = "make the next issue more grounded, more synthetic, and more useful"
+	}
+	return []string{
+		"Address this quality gap in the next draft: " + truncateDigestText(feedback, 360),
+		"Preserve all grounding, source-linking, JSON output, and no-section-label constraints from the base prompt.",
+	}
+}
+
+func mustCompactJSON(value any) string {
+	raw, err := json.Marshal(value)
+	if err != nil {
+		return "{}"
+	}
+	return string(raw)
+}

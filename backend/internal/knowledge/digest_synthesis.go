@@ -58,10 +58,20 @@ func (s *Service) promptDigest(ctx context.Context, base DigestIssue, summaries 
 		"INPUT JSON:",
 		truncate(digestPromptInput(summaries, insights, themes, insightClusters, connections), 16000),
 	)
+	return s.promptDigestWithLines(ctx, s.cfg.OpenAISynthesisModel, promptLines, 3000)
+}
+
+func (s *Service) promptDigestWithLines(ctx context.Context, model string, promptLines []string, maxOutputTokens int) (promptDigestResponse, error) {
+	if strings.TrimSpace(model) == "" {
+		model = s.cfg.OpenAISynthesisModel
+	}
+	if maxOutputTokens <= 0 {
+		maxOutputTokens = 3000
+	}
 	requestBody := map[string]any{
-		"model":             s.cfg.OpenAISynthesisModel,
+		"model":             model,
 		"input":             strings.Join(promptLines, "\n"),
-		"max_output_tokens": 3000,
+		"max_output_tokens": maxOutputTokens,
 	}
 	raw, err := json.Marshal(requestBody)
 	if err != nil {
