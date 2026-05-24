@@ -49,38 +49,44 @@ type XBookmark struct {
 }
 
 type YouTubeItem struct {
-	VideoID                     string   `json:"videoId"`
-	Title                       string   `json:"title"`
-	Description                 string   `json:"description,omitempty"`
-	ChannelTitle                string   `json:"channelTitle,omitempty"`
-	PublishedAt                 string   `json:"publishedAt,omitempty"`
-	SourceURL                   string   `json:"sourceUrl"`
-	TranscriptStatus            string   `json:"transcriptStatus"`
-	TranscriptLang              string   `json:"transcriptLang,omitempty"`
-	TranscriptSourceLang        string   `json:"transcriptSourceLang,omitempty"`
-	TranscriptAvailableLangs    []string `json:"transcriptAvailableLangs,omitempty"`
-	TranscriptTranslationStatus string   `json:"transcriptTranslationStatus,omitempty"`
-	TranscriptPreview           string   `json:"transcriptPreview,omitempty"`
-	TranscriptOriginalPreview   string   `json:"transcriptOriginalPreview,omitempty"`
-	TranscriptError             string   `json:"transcriptError,omitempty"`
-	CachedCaptureHash           string   `json:"-"`
+	VideoID                     string                `json:"videoId"`
+	Title                       string                `json:"title"`
+	Description                 string                `json:"description,omitempty"`
+	ChannelTitle                string                `json:"channelTitle,omitempty"`
+	PublishedAt                 string                `json:"publishedAt,omitempty"`
+	SourceURL                   string                `json:"sourceUrl"`
+	TranscriptStatus            string                `json:"transcriptStatus"`
+	TranscriptLang              string                `json:"transcriptLang,omitempty"`
+	TranscriptSourceLang        string                `json:"transcriptSourceLang,omitempty"`
+	TranscriptAvailableLangs    []string              `json:"transcriptAvailableLangs,omitempty"`
+	TranscriptTranslationStatus string                `json:"transcriptTranslationStatus,omitempty"`
+	TranscriptPreview           string                `json:"transcriptPreview,omitempty"`
+	TranscriptOriginalPreview   string                `json:"transcriptOriginalPreview,omitempty"`
+	TranscriptError             string                `json:"transcriptError,omitempty"`
+	ImportantTimeMarkers        []ImportantTimeMarker `json:"importantTimeMarkers,omitempty"`
+	TranscriptText              string                `json:"-"`
+	TranscriptOriginalText      string                `json:"-"`
+	TranscriptTimedText         string                `json:"-"`
+	CachedCaptureHash           string                `json:"-"`
 }
 
 type Summary struct {
-	ID            string     `json:"id"`
-	Source        string     `json:"source"`
-	Title         string     `json:"title"`
-	SourceURL     string     `json:"sourceUrl"`
-	Decision      Decision   `json:"decision"`
-	Summary       string     `json:"summary"`
-	Quote         string     `json:"quote,omitempty"`
-	Confidence    string     `json:"confidence"`
-	Notes         []string   `json:"notes"`
-	CacheStatus   string     `json:"cacheStatus,omitempty"`
-	CaptureHash   string     `json:"captureHash,omitempty"`
-	PromptVersion string     `json:"promptVersion,omitempty"`
-	Model         string     `json:"model,omitempty"`
-	GeneratedAt   *time.Time `json:"generatedAt,omitempty"`
+	ID                   string                `json:"id"`
+	Source               string                `json:"source"`
+	Title                string                `json:"title"`
+	SourceURL            string                `json:"sourceUrl"`
+	Decision             Decision              `json:"decision"`
+	Summary              string                `json:"summary"`
+	Quote                string                `json:"quote,omitempty"`
+	Confidence           string                `json:"confidence"`
+	Notes                []string              `json:"notes"`
+	Quality              *QualityScore         `json:"quality,omitempty"`
+	ImportantTimeMarkers []ImportantTimeMarker `json:"importantTimeMarkers,omitempty"`
+	CacheStatus          string                `json:"cacheStatus,omitempty"`
+	CaptureHash          string                `json:"captureHash,omitempty"`
+	PromptVersion        string                `json:"promptVersion,omitempty"`
+	Model                string                `json:"model,omitempty"`
+	GeneratedAt          *time.Time            `json:"generatedAt,omitempty"`
 }
 
 type Insight struct {
@@ -106,9 +112,28 @@ type Insight struct {
 	ImportanceScore    float64              `json:"importanceScore,omitempty"`
 	NoveltyScore       float64              `json:"noveltyScore,omitempty"`
 	ActionabilityScore float64              `json:"actionabilityScore,omitempty"`
+	Quality            *QualityScore        `json:"quality,omitempty"`
 	EmbeddingText      string               `json:"embeddingText,omitempty"`
 	CacheStatus        string               `json:"cacheStatus,omitempty"`
 	GeneratedAt        *time.Time           `json:"generatedAt,omitempty"`
+}
+
+type QualityScore struct {
+	Overall     float64 `json:"overall,omitempty"`
+	Conciseness float64 `json:"conciseness,omitempty"`
+	Efficacy    float64 `json:"efficacy,omitempty"`
+	Grounding   float64 `json:"grounding,omitempty"`
+	Novelty     float64 `json:"novelty,omitempty"`
+	Verdict     string  `json:"verdict,omitempty"`
+	Rationale   string  `json:"rationale,omitempty"`
+}
+
+type ImportantTimeMarker struct {
+	Label        string `json:"label"`
+	Timestamp    string `json:"timestamp"`
+	Seconds      int    `json:"seconds,omitempty"`
+	WhyItMatters string `json:"whyItMatters"`
+	Quote        string `json:"quote,omitempty"`
 }
 
 type InsightEvidenceRef struct {

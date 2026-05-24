@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"sort"
 	"strings"
 )
 
@@ -170,7 +171,7 @@ func (s *Service) fetchSupadataTranscript(ctx context.Context, videoID string) Y
 func (s *Service) fetchSupadataTranscriptAttempt(ctx context.Context, videoID string, attempt transcriptAttempt) YouTubeItem {
 	requestURL := "https://api.supadata.ai/v1/transcript"
 	requestURL = appendQueryValue(requestURL, "url", "https://www.youtube.com/watch?v="+videoID)
-	requestURL = appendQueryValue(requestURL, "text", "true")
+	requestURL = appendQueryValue(requestURL, "text", "false")
 	requestURL = appendQueryValue(requestURL, "lang", attempt.lang)
 	requestURL = appendQueryValue(requestURL, "mode", attempt.mode)
 
@@ -187,6 +188,7 @@ func (s *Service) fetchSupadataTranscriptAttempt(ctx context.Context, videoID st
 	if text == "" {
 		return YouTubeItem{TranscriptStatus: "missing", TranscriptError: fallback(payload.Message, fallback(payload.Error, "Supadata returned no transcript text."))}
 	}
+	timedText := transcriptTimedText(payload.Content)
 
 	if payload.Lang != "" && payload.Lang != "en" {
 		translated, err := s.translateTranscriptPreviewToEnglish(ctx, text, payload.Lang)
@@ -195,6 +197,9 @@ func (s *Service) fetchSupadataTranscriptAttempt(ctx context.Context, videoID st
 				TranscriptStatus:            "available",
 				TranscriptPreview:           truncate(text, 1200),
 				TranscriptOriginalPreview:   truncate(text, 1200),
+				TranscriptText:              text,
+				TranscriptOriginalText:      text,
+				TranscriptTimedText:         timedText,
 				TranscriptLang:              payload.Lang,
 				TranscriptSourceLang:        payload.Lang,
 				TranscriptAvailableLangs:    payload.AvailableLangs,
@@ -206,6 +211,9 @@ func (s *Service) fetchSupadataTranscriptAttempt(ctx context.Context, videoID st
 			TranscriptStatus:            "available",
 			TranscriptPreview:           truncate(translated, 1200),
 			TranscriptOriginalPreview:   truncate(text, 1200),
+			TranscriptText:              translated,
+			TranscriptOriginalText:      text,
+			TranscriptTimedText:         "",
 			TranscriptLang:              "en",
 			TranscriptSourceLang:        payload.Lang,
 			TranscriptAvailableLangs:    payload.AvailableLangs,
@@ -216,6 +224,8 @@ func (s *Service) fetchSupadataTranscriptAttempt(ctx context.Context, videoID st
 	return YouTubeItem{
 		TranscriptStatus:            "available",
 		TranscriptPreview:           truncate(text, 1200),
+		TranscriptText:              text,
+		TranscriptTimedText:         timedText,
 		TranscriptLang:              payload.Lang,
 		TranscriptSourceLang:        payload.Lang,
 		TranscriptAvailableLangs:    payload.AvailableLangs,
@@ -282,6 +292,10 @@ func mergeTranscript(item YouTubeItem, transcript YouTubeItem) YouTubeItem {
 	item.TranscriptTranslationStatus = transcript.TranscriptTranslationStatus
 	item.TranscriptPreview = transcript.TranscriptPreview
 	item.TranscriptOriginalPreview = transcript.TranscriptOriginalPreview
+	item.TranscriptText = transcript.TranscriptText
+	item.TranscriptOriginalText = transcript.TranscriptOriginalText
+	item.TranscriptTimedText = transcript.TranscriptTimedText
+	item.ImportantTimeMarkers = transcript.ImportantTimeMarkers
 	item.TranscriptError = transcript.TranscriptError
 	return item
 }
@@ -304,5 +318,83 @@ func transcriptText(content any) string {
 		return strings.Join(parts, " ")
 	default:
 		return ""
+	}
+}
+
+func transcriptTimedText(content any) string {
+	items, ok := content.([]any)
+	if !ok {
+		return ""
+	}
+	type segment struct {
+		seconds int
+		text    string
+	}
+	segments := []segment{}
+	for _, item := range items {
+		chunk, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		text, _ := chunk["text"].(string)
+		text = strings.Join(strings.Fields(text), " ")
+		if text == "" {
+			continue
+		}
+		seconds, ok := transcriptSegmentSeconds(chunk)
+		if !ok {
+			continue
+		}
+		segments = append(segments, segment{seconds: seconds, text: text})
+	}
+	if len(segments) == 0 {
+		return ""
+	}
+	sort.SliceStable(segments, func(i int, j int) bool {
+		return segments[i].seconds < segments[j].seconds
+	})
+	lines := make([]string, 0, len(segments))
+	for _, segment := range segments {
+		lines = append(lines, "["+formatTimeMarkerTimestamp(segment.seconds)+"] "+segment.text)
+	}
+	return strings.Join(lines, "\n")
+}
+
+func transcriptSegmentSeconds(chunk map[string]any) (int, bool) {
+	for _, key := range []string{"start", "startTime", "offset", "offsetSec", "offsetSeconds"} {
+		if seconds, ok := numericSeconds(chunk[key], false); ok {
+			return seconds, true
+		}
+	}
+	for _, key := range []string{"startMs", "offsetMs"} {
+		if seconds, ok := numericSeconds(chunk[key], true); ok {
+			return seconds, true
+		}
+	}
+	return 0, false
+}
+
+func numericSeconds(value any, milliseconds bool) (int, bool) {
+	switch typed := value.(type) {
+	case float64:
+		if typed < 0 {
+			return 0, false
+		}
+		if milliseconds || typed > 100000 {
+			typed = typed / 1000
+		}
+		return int(typed), true
+	case int:
+		if typed < 0 {
+			return 0, false
+		}
+		if milliseconds || typed > 100000 {
+			typed = typed / 1000
+		}
+		return typed, true
+	case string:
+		return parseTimestampSeconds(typed)
+	default:
+		return 0, false
 	}
 }

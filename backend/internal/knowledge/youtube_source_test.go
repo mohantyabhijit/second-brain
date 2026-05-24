@@ -70,6 +70,26 @@ func TestFetchSupadataTranscriptReportsAllMissingAttempts(t *testing.T) {
 	}
 }
 
+func TestFetchSupadataTranscriptKeepsTimedSegments(t *testing.T) {
+	t.Setenv("SUPADATA_API_KEY", "test-key")
+
+	service := &Service{
+		cfg: config.Config{OpenAITranslationModel: "test-model"},
+		client: &http.Client{Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
+			return jsonResponse(`{"content":[{"text":"first useful point","start":5.2},{"text":"second useful point","start":75}],"lang":"en","availableLangs":["en"]}`), nil
+		})},
+	}
+
+	transcript := service.fetchSupadataTranscript(context.Background(), "timed-video")
+
+	if transcript.TranscriptStatus != "available" {
+		t.Fatalf("expected available transcript, got %q: %s", transcript.TranscriptStatus, transcript.TranscriptError)
+	}
+	if !strings.Contains(transcript.TranscriptTimedText, "[0:05] first useful point") || !strings.Contains(transcript.TranscriptTimedText, "[1:15] second useful point") {
+		t.Fatalf("expected timestamped transcript text, got %q", transcript.TranscriptTimedText)
+	}
+}
+
 func jsonResponse(body string) *http.Response {
 	return &http.Response{
 		StatusCode: http.StatusOK,

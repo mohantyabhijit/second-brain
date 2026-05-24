@@ -226,6 +226,9 @@ func (s *Service) Run(ctx context.Context) (Result, error) {
 		result.Summaries = append(result.Summaries, item.Synthesis.Summary)
 		result.Insights = append(result.Insights, item.Synthesis.Insights...)
 		result.ActionItems = append(result.ActionItems, item.Synthesis.ActionItems...)
+		if item.SourceType == SourceTypeYouTube && len(item.Synthesis.Summary.ImportantTimeMarkers) > 0 {
+			attachYouTubeTimeMarkers(result.YouTubeItems, item.ExternalID, item.Synthesis.Summary.ImportantTimeMarkers)
+		}
 		if item.Artifact.Path != "" {
 			result.Artifacts = append(result.Artifacts, item.Artifact)
 		}
@@ -289,6 +292,8 @@ func (s *Service) Run(ctx context.Context) (Result, error) {
 		validation("Hindi transcript translation", anyHindiTranscriptTranslated(youtubeItems), "Hindi transcript translated to English locally.", "No Hindi transcript was translated to English."),
 		validation("Source-grounded summaries", len(result.Summaries) > 0, fmt.Sprintf("%d summary item(s) generated.", len(result.Summaries)), "No summaries generated."),
 		validation("Insight extraction", len(result.Insights) > 0, fmt.Sprintf("%d insight(s) available.", len(result.Insights)), "No insights generated."),
+		validation("LLM quality judge", anyJudgedContent(result.Summaries, result.Insights), "Synthesis carries LLM quality scores for summaries and insights.", "No LLM quality scores are present yet."),
+		validation("YouTube time markers", anyYouTubeTimeMarkers(result.Summaries), "At least one YouTube synthesis includes important timestamp markers.", "No YouTube timestamp markers extracted yet."),
 		validation("Insight grouping", len(result.InsightClusters) > 0 || len(result.Insights) > 0, fmt.Sprintf("%d insight cluster(s) available.", len(result.InsightClusters)), "No insights reached grouping."),
 		validation("Action item extraction", len(result.ActionItems) > 0, fmt.Sprintf("%d action item(s) available.", len(result.ActionItems)), "No action items generated."),
 		validation("Recompute control", anyCachedProcessing(result.Processing) || len(processed) > 0, "Source captures use prompt-versioned cache keys.", "No source captures reached the synthesis cache."),
@@ -646,6 +651,38 @@ func anyYouTubeTranscriptAvailable(items []YouTubeItem) bool {
 func anyHindiTranscriptTranslated(items []YouTubeItem) bool {
 	for _, item := range items {
 		if item.TranscriptTranslationStatus == "translated" && item.TranscriptSourceLang == "hi" && item.TranscriptLang == "en" {
+			return true
+		}
+	}
+	return false
+}
+
+func attachYouTubeTimeMarkers(items []YouTubeItem, videoID string, markers []ImportantTimeMarker) {
+	for index := range items {
+		if items[index].VideoID == videoID {
+			items[index].ImportantTimeMarkers = markers
+			return
+		}
+	}
+}
+
+func anyJudgedContent(summaries []Summary, insights []Insight) bool {
+	for _, summary := range summaries {
+		if summary.Quality != nil && summary.Quality.Overall > 0 {
+			return true
+		}
+	}
+	for _, insight := range insights {
+		if insight.Quality != nil && insight.Quality.Overall > 0 {
+			return true
+		}
+	}
+	return false
+}
+
+func anyYouTubeTimeMarkers(summaries []Summary) bool {
+	for _, summary := range summaries {
+		if summary.Source == string(SourceTypeYouTube) && len(summary.ImportantTimeMarkers) > 0 {
 			return true
 		}
 	}

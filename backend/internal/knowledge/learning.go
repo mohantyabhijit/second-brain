@@ -510,8 +510,12 @@ func insightRankScore(insight Insight, clusterScore float64) float64 {
 	case "medium":
 		confidenceBonus = 0.08
 	}
-	sourceDiversityBonus := math.Min(clusterScore, 5) * 0.08
-	return insight.ImportanceScore*0.4 + insight.ActionabilityScore*0.25 + insight.NoveltyScore*0.2 + confidenceBonus + sourceDiversityBonus
+	sourceDiversityBonus := math.Min(clusterScore, 5) * 0.06
+	qualityBonus := 0.0
+	if insight.Quality != nil {
+		qualityBonus = normalizedScore(insight.Quality.Overall, 0) * 0.18
+	}
+	return insight.ImportanceScore*0.34 + insight.ActionabilityScore*0.23 + insight.NoveltyScore*0.17 + qualityBonus + confidenceBonus + sourceDiversityBonus
 }
 
 func bestInsightCluster(accumulators []*insightClusterAccumulator, signature []string) *insightClusterAccumulator {

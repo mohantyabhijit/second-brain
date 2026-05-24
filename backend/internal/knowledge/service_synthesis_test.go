@@ -134,6 +134,9 @@ func TestFallbackSynthesisBuildsFirstClassInsightFields(t *testing.T) {
 	if insight.EmbeddingText == "" {
 		t.Fatal("expected insight embedding text")
 	}
+	if insight.Quality == nil || insight.Quality.Overall == 0 {
+		t.Fatalf("expected fallback insight quality score, got %#v", insight.Quality)
+	}
 
 	processed := []ProcessedSource{{
 		SourceType:  candidate.sourceType,
@@ -174,7 +177,7 @@ func TestPromptSynthesisBuildsMultipleNormalizedInsights(t *testing.T) {
 		}
 		requestBody = string(raw)
 		return jsonResponse(`{
-			"output_text": "{\"decision\":\"read_now\",\"summary\":\"The source explains why coordination costs slow teams.\",\"confidence\":\"high\",\"quote\":\"Small teams move quickly because they coordinate less.\",\"insights\":[{\"title\":\"Coordination cost\",\"insight\":\"Small teams move quickly because they coordinate less.\",\"raw_insight\":\"Small teams move quickly because they coordinate less.\",\"canonical_insight\":\"Team speed improves when coordination overhead is low.\",\"abstract_insight\":\"Lower system complexity improves execution speed.\",\"practical_text\":\"Keep teams small when work is tightly coupled.\",\"mechanism\":\"Lower coordination overhead increases speed.\",\"insight_type\":\"warning\",\"domain\":\"organizations\",\"topics\":[\"Coordination\",\"team-size\",\"coordination\"],\"entities\":[\"Teams\"],\"evidence\":\"Small teams move quickly because they coordinate less.\",\"evidence_refs\":[{\"chunkIndex\":0,\"quote\":\"Small teams move quickly because they coordinate less.\"}],\"explicit_or_inferred\":\"explicit\",\"confidence\":\"high\",\"importance_score\":1.2,\"novelty_score\":0.7,\"actionability_score\":0.6},{\"title\":\"Alignment load\",\"insight\":\"Alignment work grows when more people join tightly coupled work.\",\"canonical_insight\":\"Tightly coupled work gets slower as alignment load rises.\",\"mechanism\":\"Rising alignment load slows tightly coupled work.\",\"insight_type\":\"tactic\",\"domain\":\"organizations\",\"topics\":[\"alignment\"],\"evidence\":\"Alignment work grows when more people join tightly coupled work.\",\"confidence\":\"medium\"}],\"action_items\":[]}"
+			"output_text": "{\"decision\":\"read_now\",\"summary\":\"The source explains why coordination costs slow teams.\",\"confidence\":\"high\",\"quote\":\"Small teams move quickly because they coordinate less.\",\"quality\":{\"overall\":0.9,\"conciseness\":0.9,\"efficacy\":0.9,\"grounding\":0.95,\"novelty\":0.7,\"verdict\":\"pass\"},\"important_time_markers\":[],\"insights\":[{\"title\":\"Coordination cost\",\"insight\":\"Small teams move quickly because they coordinate less.\",\"raw_insight\":\"Small teams move quickly because they coordinate less.\",\"canonical_insight\":\"Team speed improves when coordination overhead is low.\",\"abstract_insight\":\"Lower system complexity improves execution speed.\",\"practical_text\":\"Keep teams small when work is tightly coupled.\",\"mechanism\":\"Lower coordination overhead increases speed.\",\"insight_type\":\"warning\",\"domain\":\"organizations\",\"topics\":[\"Coordination\",\"team-size\",\"coordination\"],\"entities\":[\"Teams\"],\"evidence\":\"Small teams move quickly because they coordinate less.\",\"evidence_refs\":[{\"chunkIndex\":0,\"quote\":\"Small teams move quickly because they coordinate less.\"}],\"explicit_or_inferred\":\"explicit\",\"confidence\":\"high\",\"importance_score\":1.2,\"novelty_score\":0.7,\"actionability_score\":0.6,\"quality\":{\"overall\":0.88,\"conciseness\":0.9,\"efficacy\":0.85,\"grounding\":0.95,\"novelty\":0.65,\"verdict\":\"pass\"}},{\"title\":\"Alignment load\",\"insight\":\"Alignment work grows when more people join tightly coupled work.\",\"canonical_insight\":\"Tightly coupled work gets slower as alignment load rises.\",\"mechanism\":\"Rising alignment load slows tightly coupled work.\",\"insight_type\":\"tactic\",\"domain\":\"organizations\",\"topics\":[\"alignment\"],\"evidence\":\"Alignment work grows when more people join tightly coupled work.\",\"confidence\":\"medium\"}],\"action_items\":[]}"
 		}`), nil
 	})}
 	service := NewService(config.Config{
@@ -195,6 +198,9 @@ func TestPromptSynthesisBuildsMultipleNormalizedInsights(t *testing.T) {
 	}
 	if first.ImportanceScore != 1 {
 		t.Fatalf("expected importance score to be clamped to 1, got %f", first.ImportanceScore)
+	}
+	if record.Summary.Quality == nil || record.Summary.Quality.Overall < 0.89 || first.Quality == nil || first.Quality.Overall < 0.87 {
+		t.Fatalf("expected prompt quality scores, got summary=%#v insight=%#v", record.Summary.Quality, first.Quality)
 	}
 	if got := strings.Join(first.Topics, ","); got != "coordination,team-size" {
 		t.Fatalf("expected normalized unique topics, got %q", got)

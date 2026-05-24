@@ -39,6 +39,25 @@ export type SavedYouTubeItem = {
   transcriptPreview?: string;
   transcriptOriginalPreview?: string;
   transcriptError?: string;
+  importantTimeMarkers?: ImportantTimeMarker[];
+};
+
+export type QualityScore = {
+  overall?: number;
+  conciseness?: number;
+  efficacy?: number;
+  grounding?: number;
+  novelty?: number;
+  verdict?: string;
+  rationale?: string;
+};
+
+export type ImportantTimeMarker = {
+  label: string;
+  timestamp: string;
+  seconds?: number;
+  whyItMatters: string;
+  quote?: string;
 };
 
 export type KnowledgeSummary = {
@@ -51,6 +70,8 @@ export type KnowledgeSummary = {
   quote?: string;
   confidence: "high" | "medium" | "low";
   notes: string[];
+  quality?: QualityScore;
+  importantTimeMarkers?: ImportantTimeMarker[];
   cacheStatus?: "generated" | "cached";
   captureHash?: string;
   promptVersion?: string;
@@ -85,6 +106,7 @@ export type KnowledgeInsight = {
   importanceScore?: number;
   noveltyScore?: number;
   actionabilityScore?: number;
+  quality?: QualityScore;
   embeddingText?: string;
   cacheStatus?: "generated" | "cached";
   generatedAt?: string;

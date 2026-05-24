@@ -1,4 +1,4 @@
-import type { Decision, DigestIssue, KnowledgeRunResult, SavedYouTubeItem, SourceStatus, ValidationItem } from "../contracts";
+import type { Decision, DigestIssue, ImportantTimeMarker, KnowledgeRunResult, QualityScore, SavedYouTubeItem, SourceStatus, ValidationItem } from "../contracts";
 
 export type IconName = "key" | "x" | "youtube" | "check" | "run" | "link" | "alert" | "spark";
 
@@ -53,6 +53,8 @@ export type SummaryCardViewModel = {
   decision: Decision;
   decisionLabel: string;
   confidenceLabel: string;
+  quality?: QualityScore;
+  timeMarkers?: ImportantTimeMarker[];
   cacheStatus?: string;
 };
 
@@ -64,6 +66,7 @@ export type TranscriptItemViewModel = {
   detail: string;
   timestamp: string;
   sourceUrl: string;
+  timeMarkers?: ImportantTimeMarker[];
 };
 
 export type EmptyStateViewModel = {
@@ -237,6 +240,8 @@ export function toKnowledgeInboxViewModel(run: KnowledgeRunResult, isRunning: bo
           decision: summary.decision,
           decisionLabel: decisionLabels[summary.decision],
           confidenceLabel: `${summary.confidence} confidence`,
+          quality: summary.quality,
+          timeMarkers: summary.importantTimeMarkers,
           cacheStatus: summary.cacheStatus
         })),
         ...run.insights.map((insight) => ({
@@ -249,6 +254,7 @@ export function toKnowledgeInboxViewModel(run: KnowledgeRunResult, isRunning: bo
           decision: "read_now" as Decision,
           decisionLabel: "Insight",
           confidenceLabel: `${insight.confidence} confidence`,
+          quality: insight.quality,
           cacheStatus: insight.cacheStatus
         })),
         ...run.actionItems.map((action) => ({
@@ -282,7 +288,8 @@ export function toKnowledgeInboxViewModel(run: KnowledgeRunResult, isRunning: bo
         statusLabel: transcriptLabel(item),
         detail: item.transcriptPreview ?? item.transcriptOriginalPreview ?? item.transcriptError ?? "Not tested in this run.",
         timestamp: formatSourceDate(item.publishedAt),
-        sourceUrl: item.sourceUrl
+        sourceUrl: item.sourceUrl,
+        timeMarkers: item.importantTimeMarkers
       })),
       empty: {
         icon: "youtube",

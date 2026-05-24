@@ -5,7 +5,7 @@ import Link from "next/link";
 import type { KnowledgeInboxPage } from "../KnowledgeInboxContainer";
 import type { ChatMessage } from "../model/useKnowledgeInboxController";
 import type { KnowledgeInboxViewModel, NavigationItemViewModel, SummaryCardViewModel } from "../presentation/viewModel";
-import type { DigestIssue, FeedbackSignal, RefreshStatus } from "../contracts";
+import type { DigestIssue, FeedbackSignal, ImportantTimeMarker, QualityScore, RefreshStatus } from "../contracts";
 type SecondBrainConsoleViewProps = {
   activePage: KnowledgeInboxPage;
   chatMessages: ChatMessage[];
@@ -33,6 +33,8 @@ type FeedItem = {
   timestamp: string;
   sourceUrl?: string;
   stats?: string;
+  quality?: QualityScore;
+  timeMarkers?: ImportantTimeMarker[];
 };
 
 const pageCopy: Record<
@@ -281,6 +283,7 @@ function FeedCard({
         <div className="summary-column">
           <span className={`feed-source ${item.source.toLowerCase()}`}>AI Summary</span>
           <p>{shortText(item.body, summaryPreviewLength)}</p>
+          {item.timeMarkers?.length ? <TimeMarkerRow markers={item.timeMarkers} sourceUrl={item.sourceUrl} /> : null}
         </div>
       </div>
 
@@ -311,8 +314,38 @@ function FeedCard({
             {quote}
           </blockquote>
         ) : null}
+        {item.quality?.overall ? <QualityPill quality={item.quality} /> : null}
       </div>
     </article>
+  );
+}
+
+function TimeMarkerRow({ markers, sourceUrl }: { markers: ImportantTimeMarker[]; sourceUrl?: string }) {
+  return (
+    <div className="time-marker-row" aria-label="Important time markers">
+      {markers.slice(0, 3).map((marker) => {
+        const href = sourceUrl && marker.seconds !== undefined ? `${sourceUrl}${sourceUrl.includes("?") ? "&" : "?"}t=${marker.seconds}s` : sourceUrl;
+        const label = `${marker.timestamp} ${marker.label}`;
+        return href ? (
+          <a key={`${marker.timestamp}-${marker.label}`} href={href} rel="noreferrer" target="_blank" title={marker.whyItMatters}>
+            {label}
+          </a>
+        ) : (
+          <span key={`${marker.timestamp}-${marker.label}`} title={marker.whyItMatters}>
+            {label}
+          </span>
+        );
+      })}
+    </div>
+  );
+}
+
+function QualityPill({ quality }: { quality: QualityScore }) {
+  const score = Math.round((quality.overall ?? 0) * 100);
+  return (
+    <span className="quality-pill" title={quality.rationale || quality.verdict || "LLM quality judge score"}>
+      Q {score}
+    </span>
   );
 }
 
@@ -479,7 +512,8 @@ function getFeedItems(model: KnowledgeInboxViewModel, activePage: KnowledgeInbox
     author: item.author,
     timestamp: item.timestamp,
     sourceUrl: item.sourceUrl,
-    stats: item.statusLabel
+    stats: item.statusLabel,
+    timeMarkers: item.timeMarkers
   }));
 
   if (activePage === "insights") return insightItems;
@@ -503,7 +537,9 @@ function summaryToFeedItem(summary: SummaryCardViewModel): FeedItem {
     author: isX ? "X" : "YouTube",
     timestamp: "Summary",
     sourceUrl: summary.sourceUrl,
-    stats: `${summary.decisionLabel} - ${summary.confidenceLabel}${summary.cacheStatus ? ` - ${summary.cacheStatus}` : ""}`
+    stats: `${summary.decisionLabel} - ${summary.confidenceLabel}${summary.cacheStatus ? ` - ${summary.cacheStatus}` : ""}`,
+    quality: summary.quality,
+    timeMarkers: summary.timeMarkers
   };
 }
 

@@ -621,6 +621,41 @@ blockquote {
   -webkit-line-clamp: 4;
 }
 
+.time-marker-row {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 6px;
+  margin-top: 10px;
+  overflow: hidden;
+}
+
+.time-marker-row a,
+.time-marker-row span,
+.quality-pill {
+  min-width: 0;
+  max-width: 155px;
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 3px 8px;
+  background: #fff;
+  color: var(--blue-dark);
+  font-size: 0.72rem;
+  font-weight: 850;
+  line-height: 1.2;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.quality-pill {
+  width: fit-content;
+  max-width: none;
+  margin-top: 8px;
+  color: var(--green);
+}
+
 .feed-actions {
   display: flex;
   flex-wrap: wrap;

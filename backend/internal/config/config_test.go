@@ -83,7 +83,7 @@ func TestLoadFallsBackForBlankValues(t *testing.T) {
 	if !reflect.DeepEqual(cfg.AllowedOrigins, []string{"http://localhost:3000", "http://127.0.0.1:3000"}) {
 		t.Fatalf("unexpected default allowed origins: %#v", cfg.AllowedOrigins)
 	}
-	if cfg.YouTubePlaylistID == "" || cfg.OpenAITranslationModel != "gpt-4o-mini" || cfg.OpenAISynthesisModel != "gpt-4o-mini" {
+	if cfg.YouTubePlaylistID == "" || cfg.OpenAITranslationModel != "gpt-4o-mini" || cfg.OpenAISynthesisModel != "gpt-5.5" {
 		t.Fatalf("expected model and playlist defaults, got %#v", cfg)
 	}
 }

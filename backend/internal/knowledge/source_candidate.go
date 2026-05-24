@@ -54,7 +54,7 @@ func candidatesFromBookmarks(bookmarks []XBookmark) []sourceCandidate {
 func candidatesFromVideos(items []YouTubeItem) []sourceCandidate {
 	candidates := []sourceCandidate{}
 	for _, item := range items {
-		body := fallback(item.TranscriptPreview, item.TranscriptOriginalPreview)
+		body := fallback(fallback(item.TranscriptTimedText, item.TranscriptText), fallback(item.TranscriptPreview, item.TranscriptOriginalPreview))
 		artifactKind := "transcript"
 		contentType := "text/plain; charset=utf-8"
 		if body == "" {
