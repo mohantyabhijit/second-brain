@@ -1168,8 +1168,7 @@ blockquote {
 .graph-stage {
   min-height: min(720px, calc(100vh - 210px));
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(260px, 320px);
-  gap: 16px;
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .graph-viewport {
@@ -1324,88 +1323,6 @@ blockquote {
   stroke-dasharray: 6 5;
   stroke-width: 1.2;
   pointer-events: none;
-}
-
-.graph-details {
-  align-self: start;
-  min-height: 280px;
-  display: grid;
-  gap: 12px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  padding: 18px;
-  background: #fff;
-  box-shadow: var(--soft-shadow);
-}
-
-.graph-details h2 {
-  margin: 0;
-  color: var(--ink);
-  font-size: 1.12rem;
-  line-height: 1.2;
-}
-
-.graph-details p {
-  margin: 0;
-  color: var(--ink-soft);
-  font-size: 0.9rem;
-  line-height: 1.55;
-}
-
-.graph-details dl {
-  display: grid;
-  gap: 5px;
-  margin: 0;
-}
-
-.graph-details dt {
-  color: var(--muted);
-  font-size: 0.72rem;
-  font-weight: 850;
-  text-transform: uppercase;
-}
-
-.graph-details dd {
-  margin: 0;
-  color: var(--ink-soft);
-  font-size: 0.88rem;
-  line-height: 1.45;
-}
-
-.graph-detail-grid,
-.graph-topic-list {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 7px;
-}
-
-.graph-detail-grid span,
-.graph-topic-list span {
-  min-height: 28px;
-  display: inline-flex;
-  align-items: center;
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  padding: 0 9px;
-  background: var(--surface-muted);
-  color: var(--ink-soft);
-  font-size: 0.74rem;
-  font-weight: 800;
-}
-
-.graph-source-link {
-  min-height: 36px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  padding: 0 12px;
-  background: var(--ink);
-  color: #fff;
-  font-size: 0.82rem;
-  font-weight: 850;
-  text-decoration: none;
 }
 
 .error-banner {

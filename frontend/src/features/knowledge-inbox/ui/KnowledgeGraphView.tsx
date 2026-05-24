@@ -21,7 +21,7 @@ import {
   zoomViewportAtScreenPoint
 } from "../graph/canvasViewport";
 import { readInsightGraph } from "../api/knowledgeRuns";
-import type { InsightGraphNode, InsightGraphResponse } from "../contracts";
+import type { InsightGraphResponse } from "../contracts";
 import { createInsightGraphLayout, fallbackGraphLabelMeasure, type GraphLayoutNode } from "../graph/graphLayout";
 import { measurePretextGraphLabel } from "../graph/pretextMeasure";
 
@@ -218,11 +218,6 @@ export function KnowledgeGraphView() {
     }
     return map;
   }, [canvasState.shapes]);
-
-  const selectedNode = useMemo(() => {
-    const nodeId = selectionIds.map(getNodeSelectionId).find(Boolean);
-    return nodeId ? nodesById.get(nodeId) ?? null : null;
-  }, [nodesById, selectionIds]);
 
   const effectiveTool: CanvasTool = isSpacePanning ? "hand" : tool;
   const selectedIdSet = useMemo(() => new Set(selectionIds), [selectionIds]);
@@ -759,7 +754,6 @@ export function KnowledgeGraphView() {
               </g>
             </svg>
           </div>
-          <InsightDetails node={selectedNode} selectedCount={selectionIds.length} />
         </div>
       ) : null}
     </section>
@@ -770,47 +764,6 @@ function handleViewportKeyDown(event: ReactKeyboardEvent<HTMLDivElement>) {
   if (event.code === "Space") {
     event.preventDefault();
   }
-}
-
-function InsightDetails({ node, selectedCount }: { node: InsightGraphNode | null; selectedCount: number }) {
-  if (!node) {
-    return (
-      <aside className="graph-details">
-        <span className="feed-source insight">Selection</span>
-        <h2>{selectedCount ? `${selectedCount} object${selectedCount === 1 ? "" : "s"} selected` : "No selection"}</h2>
-      </aside>
-    );
-  }
-  return (
-    <aside className="graph-details">
-      <span className="feed-source insight">Insight</span>
-      <h2>{node.label}</h2>
-      {node.canonicalInsight ? <p>{node.canonicalInsight}</p> : null}
-      {node.mechanism ? (
-        <dl>
-          <dt>Mechanism</dt>
-          <dd>{node.mechanism}</dd>
-        </dl>
-      ) : null}
-      <div className="graph-detail-grid">
-        {node.domain ? <span>{node.domain}</span> : null}
-        {node.type ? <span>{node.type}</span> : null}
-        {node.confidence ? <span>{node.confidence}</span> : null}
-      </div>
-      {node.topics.length ? (
-        <div className="graph-topic-list">
-          {node.topics.slice(0, 8).map((topic) => (
-            <span key={`${node.id}-${topic}`}>{topic}</span>
-          ))}
-        </div>
-      ) : null}
-      {node.sourceUrl ? (
-        <a className="graph-source-link" href={node.sourceUrl} rel="noreferrer" target="_blank">
-          Open source
-        </a>
-      ) : null}
-    </aside>
-  );
 }
 
 function ToolButton({ active, icon, label, onClick }: { active: boolean; icon: CanvasTool; label: string; onClick: () => void }) {
