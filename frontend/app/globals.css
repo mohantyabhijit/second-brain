@@ -1046,6 +1046,37 @@ blockquote {
   gap: 8px;
 }
 
+.source-loading-feed {
+  align-items: center;
+  cursor: default;
+}
+
+.source-loading-feed:hover,
+.source-loading-feed:focus-visible {
+  border-color: var(--line);
+  background: transparent;
+}
+
+.source-loading-icon {
+  grid-column: 2;
+  width: 38px;
+  height: 38px;
+  display: inline-grid;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.source-loading-feed > p {
+  grid-column: 3;
+  margin: 0;
+  color: var(--ink);
+  font-size: clamp(1.05rem, 1.32vw, 1.22rem);
+  font-weight: 760;
+  line-height: 1.28;
+}
+
 .feed-sentinel {
   min-height: 58px;
   display: grid;
@@ -1432,6 +1463,19 @@ blockquote {
     min-height: 220px;
     grid-template-columns: 1fr;
     grid-template-rows: none;
+  }
+
+  .feed-card.source-loading-feed {
+    grid-template-columns: 42px minmax(0, 1fr);
+    gap: 12px;
+  }
+
+  .source-loading-icon {
+    grid-column: 1;
+  }
+
+  .source-loading-feed > p {
+    grid-column: 2;
   }
 
   .feed-main {

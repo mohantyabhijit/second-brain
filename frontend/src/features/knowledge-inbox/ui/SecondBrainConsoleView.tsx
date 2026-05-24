@@ -221,11 +221,7 @@ export function SecondBrainConsoleView({ activePage, chatMessages, digestIssues,
                   );
                 })
               ) : (
-                <div className="feed-card empty-feed">
-                  <span className="feed-source">Source required</span>
-                  <h2>{page.emptyTitle}</h2>
-                  <p>No sourced items are available for this view yet. Refresh the inbox after X or YouTube credentials are connected.</p>
-                </div>
+                <EmptyFeedState activePage={activePage} emptyTitle={page.emptyTitle} />
               )}
               {baseItems.length ? (
                 <div ref={sentinelRef} className="feed-sentinel" aria-hidden="true">
@@ -240,6 +236,29 @@ export function SecondBrainConsoleView({ activePage, chatMessages, digestIssues,
       {openSummaryItem ? <SummaryModal item={openSummaryItem} onClose={() => setOpenSummaryItem(null)} /> : null}
       <AskSecondBrainWidget isAsking={isAsking} messages={chatMessages} onAsk={onAsk} />
     </main>
+  );
+}
+
+function EmptyFeedState({ activePage, emptyTitle }: { activePage: KnowledgeInboxPage; emptyTitle: string }) {
+  if (activePage === "original-youtube-posts" || activePage === "original-x-posts") {
+    const message = activePage === "original-youtube-posts" ? "Loading your YouTube saved videos" : "Loading your X saved posts";
+    return (
+      <div aria-busy="true" className="feed-card empty-feed source-loading-feed" role="status">
+        <span className="source-loading-icon" aria-hidden="true">
+          <span className="loading-spinner" />
+        </span>
+        <span aria-hidden="true" />
+        <p>{message}</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="feed-card empty-feed">
+      <span className="feed-source">Source required</span>
+      <h2>{emptyTitle}</h2>
+      <p>No sourced items are available for this view yet. Refresh the inbox after X or YouTube credentials are connected.</p>
+    </div>
   );
 }
 
