@@ -117,39 +117,31 @@ sudo systemctl daemon-reload
 sudo systemctl enable second-brain-api >/dev/null
 sudo systemctl restart second-brain-api
 
-cat > /tmp/second-brain-cycle.service <<SERVICE
+cat > /tmp/second-brain-worker.service <<SERVICE
 [Unit]
-Description=Second Brain self-organizing cycle
+Description=Second Brain rcron self-organizing worker
 After=network-online.target second-brain-api.service
 Wants=network-online.target
 
 [Service]
-Type=oneshot
+Type=simple
 User=deploy
 WorkingDirectory=$api_dir
 EnvironmentFile=$api_dir/second-brain.env
-TimeoutStartSec=110min
-ExecStart=/bin/bash -lc 'set -euo pipefail; $onecli run --project second-brain -- $api_dir/second-brain-refresh; if [[ -n "\${NEO4J_URI:-}" && -n "\${NEO4J_USERNAME:-}" && -n "\${NEO4J_PASSWORD:-}" ]]; then $onecli run --project second-brain -- $api_dir/second-brain-graph-sync; else echo "skip graph sync: NEO4J_* not configured"; fi; $onecli run --project second-brain -- $api_dir/second-brain-digest'
-SERVICE
-sudo install -m 0644 /tmp/second-brain-cycle.service /etc/systemd/system/second-brain-cycle.service
-
-cat > /tmp/second-brain-cycle.timer <<'TIMER'
-[Unit]
-Description=Run Second Brain self-organizing cycle every 2 hours
-
-[Timer]
-OnBootSec=5min
-OnActiveSec=2min
-OnUnitActiveSec=2h
-Persistent=true
-Unit=second-brain-cycle.service
+ExecStart=$onecli run --project second-brain -- $api_dir/second-brain-worker
+Restart=on-failure
+RestartSec=30
 
 [Install]
-WantedBy=timers.target
-TIMER
-sudo install -m 0644 /tmp/second-brain-cycle.timer /etc/systemd/system/second-brain-cycle.timer
+WantedBy=multi-user.target
+SERVICE
+sudo install -m 0644 /tmp/second-brain-worker.service /etc/systemd/system/second-brain-worker.service
+sudo systemctl disable --now second-brain-cycle.timer >/dev/null 2>&1 || true
+sudo rm -f /etc/systemd/system/second-brain-cycle.timer /etc/systemd/system/second-brain-cycle.service
+sudo rm -f /etc/cron.d/second-brain
 sudo systemctl daemon-reload
-sudo systemctl enable --now second-brain-cycle.timer >/dev/null
+sudo systemctl enable second-brain-worker >/dev/null
+sudo systemctl restart second-brain-worker
 
 ln -sfn "$frontend_release" "$base/frontend/current"
 find "$base/frontend/releases" -mindepth 1 -maxdepth 1 -type d | sort -r | tail -n +8 | xargs -r rm -rf

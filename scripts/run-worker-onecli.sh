@@ -61,8 +61,8 @@ export X_REAUTHORIZE_COMMAND="${X_REAUTHORIZE_COMMAND:-npm run x:oauth:prod}"
 export X_KEYCHAIN_TOKEN_SUFFIX="${X_KEYCHAIN_TOKEN_SUFFIX:-_PROD}"
 export KNOWLEDGE_RUN_PATH="${KNOWLEDGE_RUN_PATH:-$ROOT_DIR/data/runtime/latest-knowledge-run.json}"
 export WORKER_REFRESH_INTERVAL="${WORKER_REFRESH_INTERVAL:-2h}"
-export WORKER_DIGEST_INTERVAL="${WORKER_DIGEST_INTERVAL:-2h}"
 export DIGEST_TIME="${DIGEST_TIME:-18:00}"
+export DIGEST_TIMEZONE="${DIGEST_TIMEZONE:-Asia/Singapore}"
 
 cd "$BACKEND_DIR"
 exec "$ONECLI" run --project "$PROJECT" -- go run ./cmd/worker

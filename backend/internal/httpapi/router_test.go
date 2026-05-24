@@ -93,6 +93,25 @@ func TestRouterReadsAndRefreshesKnowledgeRunsWithoutProviderSecrets(t *testing.T
 	if !strings.Contains(latestAfterRefresh.Body.String(), "\"latest\"") {
 		t.Fatalf("expected persisted latest run payload, got %s", latestAfterRefresh.Body.String())
 	}
+
+	invalidDigestSend := httptest.NewRecorder()
+	router.ServeHTTP(invalidDigestSend, httptest.NewRequest(http.MethodPost, "/api/digests/send", strings.NewReader(`{"recipientEmail":"not-an-email"}`)))
+	if invalidDigestSend.Code != http.StatusBadRequest {
+		t.Fatalf("expected invalid digest send status 400, got %d", invalidDigestSend.Code)
+	}
+
+	digestSend := httptest.NewRecorder()
+	router.ServeHTTP(digestSend, httptest.NewRequest(http.MethodPost, "/api/digests/send", strings.NewReader(`{"recipientEmail":"reader@example.com"}`)))
+	if digestSend.Code != http.StatusOK {
+		t.Fatalf("expected digest send status 200, got %d: %s", digestSend.Code, digestSend.Body.String())
+	}
+	var digest knowledge.DigestIssue
+	if err := json.Unmarshal(digestSend.Body.Bytes(), &digest); err != nil {
+		t.Fatalf("decode digest send response: %v", err)
+	}
+	if len(digest.Deliveries) != 1 || digest.Deliveries[0].Recipient != "reader@example.com" {
+		t.Fatalf("expected delivery to requested recipient, got %#v", digest.Deliveries)
+	}
 }
 
 func waitForLatestRun(t *testing.T, router http.Handler) knowledge.Result {

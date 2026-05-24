@@ -3,10 +3,9 @@ import type { KnowledgeInboxViewModel } from "../presentation/viewModel";
 type NavigationRailProps = {
   brand: KnowledgeInboxViewModel["brand"];
   navigation: KnowledgeInboxViewModel["navigation"];
-  note: KnowledgeInboxViewModel["sidebarNote"];
 };
 
-export function NavigationRail({ brand, navigation, note }: NavigationRailProps) {
+export function NavigationRail({ brand, navigation }: NavigationRailProps) {
   return (
     <aside className="sidebar" aria-label="Product navigation">
       <div className="brand-lockup">
@@ -23,10 +22,6 @@ export function NavigationRail({ brand, navigation, note }: NavigationRailProps)
           </a>
         ))}
       </nav>
-      <div className="sidebar-note">
-        <span>{note.label}</span>
-        <strong>{note.value}</strong>
-      </div>
     </aside>
   );
 }

@@ -370,11 +370,59 @@ func (s *Service) GenerateDigest(ctx context.Context) (*DigestIssue, error) {
 	}
 	digest := s.composeDigestIssue(ctx, time.Now().UTC(), latest.Summaries, latest.Insights, latest.Themes, latest.InsightClusters, latest.Connections)
 	digest.OwnerID = s.cfg.OwnerID
-	digest.Deliveries = append(digest.Deliveries, s.deliverDigest(ctx, digest))
+	digest.Deliveries = append(digest.Deliveries, s.deliverDigest(ctx, digest, ""))
 	if len(digest.Deliveries) > 0 {
 		digest.Status = digest.Deliveries[0].Status
 	}
 	return s.store.SaveDigest(ctx, digest)
+}
+
+func (s *Service) SendLatestDigest(ctx context.Context, recipientEmail string) (*DigestIssue, error) {
+	recipient, err := normalizeDigestRecipient(recipientEmail)
+	if err != nil {
+		return nil, err
+	}
+	latest, err := s.ReadLatest(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if latest == nil {
+		return nil, fmt.Errorf("no knowledge run is available for digest delivery")
+	}
+	var digest DigestIssue
+	if latest.Digest != nil && strings.TrimSpace(latest.Digest.BodyMarkdown) != "" {
+		digest = *latest.Digest
+	} else {
+		digest = s.composeDigestIssue(ctx, time.Now().UTC(), latest.Summaries, latest.Insights, latest.Themes, latest.InsightClusters, latest.Connections)
+	}
+	digest.OwnerID = s.cfg.OwnerID
+	delivery := s.deliverDigest(ctx, digest, recipient)
+	digest.Deliveries = []DigestDelivery{delivery}
+	digest.Status = delivery.Status
+	return s.store.SaveDigest(ctx, digest)
+}
+
+func (s *Service) SendProvidedDigest(ctx context.Context, recipientEmail string, digest DigestIssue) (*DigestIssue, error) {
+	recipient, err := normalizeDigestRecipient(recipientEmail)
+	if err != nil {
+		return nil, err
+	}
+	digest.Subject = strings.TrimSpace(digest.Subject)
+	digest.BodyMarkdown = strings.TrimSpace(digest.BodyMarkdown)
+	if digest.Subject == "" || digest.BodyMarkdown == "" {
+		return nil, fmt.Errorf("displayed digest is not available for delivery")
+	}
+	if digest.DigestDate == "" {
+		digest.DigestDate = time.Now().UTC().Format("2006-01-02")
+	}
+	if strings.TrimSpace(digest.IdempotencyKey) == "" {
+		digest.IdempotencyKey = "manual:" + digest.DigestDate + ":" + digestBodyFingerprint(digest.BodyMarkdown)
+	}
+	digest.OwnerID = s.cfg.OwnerID
+	delivery := s.deliverDigest(ctx, digest, recipient)
+	digest.Deliveries = []DigestDelivery{delivery}
+	digest.Status = delivery.Status
+	return &digest, nil
 }
 
 func (s *Service) processSourceCandidates(ctx context.Context, candidates []sourceCandidate) ([]ProcessedSource, []string) {

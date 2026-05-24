@@ -204,6 +204,11 @@ type DigestIssue struct {
 	Deliveries     []DigestDelivery `json:"deliveries,omitempty"`
 }
 
+type DigestSendRequest struct {
+	RecipientEmail string       `json:"recipientEmail"`
+	Digest         *DigestIssue `json:"digest,omitempty"`
+}
+
 type FeedbackEvent struct {
 	OwnerID    string `json:"-"`
 	TargetType string `json:"targetType"`

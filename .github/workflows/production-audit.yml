@@ -65,34 +65,23 @@ jobs:
           echo "Production API did not reach a sent digest state in time." >&2
           exit 1
 
-      - name: Check systemd timer and recent cycle logs
+      - name: Check rcron worker and recent cycle logs
         run: |
           set -euo pipefail
           ssh -i "$HOME/.ssh/second-brain-audit" -p "$DEPLOY_PORT" "$DEPLOY_USER@$DEPLOY_HOST" 'bash -s' <<'REMOTE'
           set -euo pipefail
           echo "== unit activity =="
           systemctl is-active second-brain-api.service
-          systemctl is-active second-brain-cycle.timer
+          systemctl is-active second-brain-worker.service
           echo
-          echo "== timer =="
-          systemctl list-timers --all second-brain-cycle.timer --no-pager
-          echo
-          echo "== timer properties =="
-          systemctl show second-brain-cycle.timer \
+          echo "== worker properties =="
+          systemctl show second-brain-worker.service \
             -p ActiveState \
             -p SubState \
-            -p LastTriggerUSecRealtime \
-            -p NextElapseUSecRealtime \
-            -p Unit
-          echo
-          echo "== service properties =="
-          systemctl show second-brain-cycle.service \
-            -p ActiveState \
             -p Result \
             -p ExecMainStatus \
-            -p ExecMainStartTimestamp \
-            -p ExecMainExitTimestamp
+            -p ExecMainStartTimestamp
           echo
-          echo "== recent cycle logs =="
-          journalctl -u second-brain-cycle.service -n 180 --no-pager
+          echo "== recent worker logs =="
+          journalctl -u second-brain-worker.service -n 220 --no-pager
           REMOTE

@@ -66,6 +66,27 @@ func NewRouter(cfg config.Config, service *knowledge.Service, logger *slog.Logge
 		httputil.JSON(w, http.StatusOK, digest)
 	}
 
+	sendDigest := func(w http.ResponseWriter, r *http.Request) {
+		var input knowledge.DigestSendRequest
+		if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+			httputil.Error(w, http.StatusBadRequest, "invalid digest delivery payload")
+			return
+		}
+		var digest *knowledge.DigestIssue
+		var err error
+		if input.Digest != nil {
+			digest, err = service.SendProvidedDigest(r.Context(), input.RecipientEmail, *input.Digest)
+		} else {
+			digest, err = service.SendLatestDigest(r.Context(), input.RecipientEmail)
+		}
+		if err != nil {
+			logger.Error("send latest digest", "error", err)
+			httputil.Error(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		httputil.JSON(w, http.StatusOK, digest)
+	}
+
 	shareTweet := func(w http.ResponseWriter, r *http.Request) {
 		var input knowledge.TweetShareRequest
 		if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
@@ -138,6 +159,7 @@ func NewRouter(cfg config.Config, service *knowledge.Service, logger *slog.Logge
 	mux.HandleFunc("POST /api/knowledge-runs/refresh", runInbox)
 	mux.HandleFunc("POST /api/feedback", saveFeedback)
 	mux.HandleFunc("POST /api/digests/generate", generateDigest)
+	mux.HandleFunc("POST /api/digests/send", sendDigest)
 	mux.HandleFunc("POST /api/share/tweet", shareTweet)
 	mux.HandleFunc("POST /api/ask", askSecondBrain)
 

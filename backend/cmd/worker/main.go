@@ -2,10 +2,14 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"os"
+	"os/exec"
 	"os/signal"
+	"path/filepath"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -14,6 +18,7 @@ import (
 	"github.com/abhijitmohanty/second-brain/backend/internal/platform/httpclient"
 	"github.com/abhijitmohanty/second-brain/backend/internal/store/localfile"
 	"github.com/abhijitmohanty/second-brain/backend/internal/store/postgres"
+	rcron "github.com/robfig/cron/v3"
 )
 
 func main() {
@@ -29,50 +34,95 @@ func main() {
 	service.SetLogger(logger)
 
 	refreshEvery := parseDuration(cfg.WorkerRefreshInterval, 2*time.Hour)
-	digestEvery := parseDuration(cfg.WorkerDigestInterval, 2*time.Hour)
-	logger.Info("self organizing worker started", "refresh_interval", refreshEvery.String(), "digest_interval", digestEvery.String(), "digest_time", cfg.DigestTime, "timezone", cfg.DigestTimezone)
-
-	var lastDigest time.Time
-	for {
-		runOnce(ctx, cfg, service, logger)
-		if digestEvery > 0 && time.Since(lastDigest) >= digestEvery {
-			generateDigest(ctx, service, logger)
-			lastDigest = time.Now()
-		}
-		if strings.EqualFold(os.Getenv("WORKER_ONCE"), "true") {
-			return
-		}
-		timer := time.NewTimer(refreshEvery)
-		select {
-		case <-ctx.Done():
-			timer.Stop()
-			logger.Info("self organizing worker stopped")
-			return
-		case <-timer.C:
+	cronRunner := rcron.New(rcron.WithChain(rcron.Recover(rcron.DefaultLogger)))
+	var runLock sync.Mutex
+	runCycle := func(reason string) {
+		runLock.Lock()
+		defer runLock.Unlock()
+		logger.Info("worker cycle started", "reason", reason)
+		if runOnce(ctx, cfg, service, logger) {
+			runGraphSync(ctx, cfg, logger)
+			generateDigest(ctx, service, logger, "after_refresh")
 		}
 	}
+	runDigest := func(reason string) {
+		runLock.Lock()
+		defer runLock.Unlock()
+		generateDigest(ctx, service, logger, reason)
+	}
+
+	runCycle("startup")
+	if strings.EqualFold(os.Getenv("WORKER_ONCE"), "true") {
+		return
+	}
+
+	refreshSpec := "@every " + refreshEvery.String()
+	digestSpec := digestCronSpec(cfg)
+	if _, err := cronRunner.AddFunc(refreshSpec, func() { runCycle("scheduled_refresh") }); err != nil {
+		logger.Error("schedule worker refresh", "spec", refreshSpec, "error", err)
+		os.Exit(1)
+	}
+	if _, err := cronRunner.AddFunc(digestSpec, func() { runDigest("scheduled_time") }); err != nil {
+		logger.Error("schedule worker digest", "spec", digestSpec, "error", err)
+		os.Exit(1)
+	}
+	logger.Info("self organizing worker started", "refresh_spec", refreshSpec, "digest_after_refresh", true, "daily_digest_spec", digestSpec)
+	cronRunner.Start()
+	<-ctx.Done()
+	stopCtx := cronRunner.Stop()
+	<-stopCtx.Done()
+	logger.Info("self organizing worker stopped")
 }
 
-func runOnce(ctx context.Context, cfg config.Config, service *knowledge.Service, logger *slog.Logger) {
+func runOnce(ctx context.Context, cfg config.Config, service *knowledge.Service, logger *slog.Logger) bool {
 	runCtx, cancel := context.WithTimeout(ctx, parseDuration(cfg.RefreshTimeout, 90*time.Minute))
 	defer cancel()
 	result, err := service.Run(runCtx)
 	if err != nil {
 		logger.Error("worker refresh failed", "error", err)
-		return
+		return false
 	}
 	logger.Info("worker refresh completed", "x_bookmarks", len(result.XBookmarks), "youtube_items", len(result.YouTubeItems), "insights", len(result.Insights), "blockers", len(result.Blockers))
+	return true
 }
 
-func generateDigest(ctx context.Context, service *knowledge.Service, logger *slog.Logger) {
+func generateDigest(ctx context.Context, service *knowledge.Service, logger *slog.Logger, reason string) {
 	digestCtx, cancel := context.WithTimeout(ctx, 3*time.Minute)
 	defer cancel()
 	digest, err := service.GenerateDigest(digestCtx)
 	if err != nil {
-		logger.Error("worker digest failed", "error", err)
+		logger.Error("worker digest failed", "reason", reason, "error", err)
 		return
 	}
-	logger.Info("worker digest completed", "date", digest.DigestDate, "status", digest.Status, "subject", digest.Subject)
+	logger.Info("worker digest completed", "reason", reason, "date", digest.DigestDate, "status", digest.Status, "subject", digest.Subject)
+}
+
+func runGraphSync(ctx context.Context, cfg config.Config, logger *slog.Logger) {
+	if strings.TrimSpace(cfg.Neo4jURI) == "" || strings.TrimSpace(cfg.Neo4jUsername) == "" || strings.TrimSpace(cfg.Neo4jPassword) == "" {
+		logger.Info("worker graph sync skipped", "reason", "NEO4J_URI, NEO4J_USERNAME, and NEO4J_PASSWORD are required for graph sync")
+		return
+	}
+	executable, err := os.Executable()
+	if err != nil {
+		logger.Warn("worker graph sync skipped", "error", err)
+		return
+	}
+	graphSyncPath := filepath.Join(filepath.Dir(executable), "second-brain-graph-sync")
+	if _, err := os.Stat(graphSyncPath); err != nil {
+		logger.Warn("worker graph sync skipped", "path", graphSyncPath, "error", err)
+		return
+	}
+	graphCtx, cancel := context.WithTimeout(ctx, 3*time.Minute)
+	defer cancel()
+	command := exec.CommandContext(graphCtx, graphSyncPath)
+	command.Stdout = os.Stdout
+	command.Stderr = os.Stderr
+	command.Env = os.Environ()
+	if err := command.Run(); err != nil {
+		logger.Warn("worker graph sync failed", "error", err)
+		return
+	}
+	logger.Info("worker graph sync completed")
 }
 
 func openStore(ctx context.Context, cfg config.Config, logger *slog.Logger) (knowledge.Store, func()) {
@@ -94,4 +144,45 @@ func parseDuration(value string, fallbackValue time.Duration) time.Duration {
 		return fallbackValue
 	}
 	return parsed
+}
+
+func digestCronSpec(cfg config.Config) string {
+	timezone := strings.TrimSpace(cfg.DigestTimezone)
+	if timezone == "" {
+		timezone = "Asia/Singapore"
+	}
+	_, err := time.LoadLocation(timezone)
+	if err != nil {
+		timezone = "Asia/Singapore"
+	}
+	hour, minute := parseClock(strings.TrimSpace(cfg.DigestTime), 18, 0)
+	return fmt.Sprintf("CRON_TZ=%s %d %d * * *", timezone, minute, hour)
+}
+
+func parseClock(value string, fallbackHour int, fallbackMinute int) (int, int) {
+	parts := strings.Split(value, ":")
+	if len(parts) != 2 {
+		return fallbackHour, fallbackMinute
+	}
+	hour, okHour := parseClockPart(parts[0])
+	minute, okMinute := parseClockPart(parts[1])
+	if !okHour || !okMinute || hour > 23 || minute > 59 {
+		return fallbackHour, fallbackMinute
+	}
+	return hour, minute
+}
+
+func parseClockPart(value string) (int, bool) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return 0, false
+	}
+	parsed := 0
+	for _, r := range value {
+		if r < '0' || r > '9' {
+			return 0, false
+		}
+		parsed = parsed*10 + int(r-'0')
+	}
+	return parsed, true
 }

@@ -63,4 +63,61 @@ describe("knowledge run API client", () => {
       headers: { "Content-Type": "application/json" }
     });
   });
+
+  it("sends the displayed digest payload for one-off email delivery", async () => {
+    vi.stubEnv("NEXT_PUBLIC_API_BASE_URL", "https://api.example.test");
+    const fetchMock = vi.fn(async () => {
+      return new Response(
+        JSON.stringify({
+          digestDate: "2026-05-24",
+          subject: "Displayed digest",
+          bodyMarkdown: "# Displayed digest",
+          status: "sent"
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } }
+      );
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { sendLatestDigest } = await import("../knowledgeRuns");
+    await sendLatestDigest({
+      recipientEmail: "reader@example.com",
+      digest: {
+        digestDate: "2026-05-24",
+        scheduledFor: "2026-05-24T10:00:00Z",
+        idempotencyKey: "daily:2026-05-24",
+        subject: "Displayed digest",
+        bodyMarkdown: "# Displayed digest",
+        status: "sent"
+      }
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith("https://api.example.test/api/digests/send", {
+      method: "POST",
+      body: JSON.stringify({
+        recipientEmail: "reader@example.com",
+        digest: {
+          digestDate: "2026-05-24",
+          scheduledFor: "2026-05-24T10:00:00Z",
+          idempotencyKey: "daily:2026-05-24",
+          subject: "Displayed digest",
+          bodyMarkdown: "# Displayed digest",
+          status: "sent"
+        }
+      }),
+      headers: { "Content-Type": "application/json" }
+    });
+  });
+
+  it("sanitizes raw database connection errors from JSON error payloads", async () => {
+    vi.stubEnv("NEXT_PUBLIC_API_BASE_URL", "https://api.example.test");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(JSON.stringify({ error: "failed to connect to `user=postgres database=postgres`: dial tcp [2406::1]:5432: connect: no route to host" }), { status: 400 }))
+    );
+
+    const { sendLatestDigest } = await import("../knowledgeRuns");
+
+    await expect(sendLatestDigest({ recipientEmail: "reader@example.com" })).rejects.toThrow("Local backend cannot reach Supabase Postgres.");
+  });
 });

@@ -87,10 +87,6 @@ export type KnowledgeInboxViewModel = {
     descriptor: string;
   };
   navigation: NavigationItemViewModel[];
-  sidebarNote: {
-    label: string;
-    value: string;
-  };
   header: {
     eyebrow: string;
     title: string;
@@ -148,10 +144,6 @@ export function toKnowledgeInboxViewModel(run: KnowledgeRunResult, isRunning: bo
       descriptor: "Knowledge Inbox"
     },
     navigation: navItems,
-    sidebarNote: {
-      label: "Operating mode",
-      value: "Source-grounded research memory"
-    },
     header: {
       eyebrow: "Knowledge inbox",
       title: "Second Brain Command Center",

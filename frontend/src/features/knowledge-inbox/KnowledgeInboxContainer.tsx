@@ -21,10 +21,9 @@ export default function KnowledgeInboxContainer({ initialPage = "insights" }: Kn
     refreshStatus,
     chatMessages,
     error,
-    runValidation,
     saveFeedback,
     generateDigest,
-    shareTweet,
+    sendDigest,
     askBrain
   } = useKnowledgeInboxController();
   const model = useMemo(() => toKnowledgeInboxViewModel(run, isRunning, error), [run, isRunning, error]);
@@ -40,9 +39,8 @@ export default function KnowledgeInboxContainer({ initialPage = "insights" }: Kn
       chatMessages={chatMessages}
       onAsk={askBrain}
       onDigest={generateDigest}
+      onSendDigest={sendDigest}
       onFeedback={saveFeedback}
-      onRun={runValidation}
-      onTweet={shareTweet}
     />
   );
 }

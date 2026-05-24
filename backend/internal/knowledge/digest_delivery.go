@@ -3,10 +3,13 @@ package knowledge
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"html"
 	"net/http"
+	"net/mail"
 	"strings"
 	"time"
 )
@@ -18,15 +21,20 @@ type resendResponse struct {
 	} `json:"error"`
 }
 
-func (s *Service) deliverDigest(ctx context.Context, digest DigestIssue) DigestDelivery {
+func (s *Service) deliverDigest(ctx context.Context, digest DigestIssue, recipientOverride string) DigestDelivery {
 	now := time.Now().UTC()
+	manualRecipient := strings.TrimSpace(recipientOverride) != ""
+	recipient := strings.TrimSpace(recipientOverride)
+	if recipient == "" {
+		recipient = strings.TrimSpace(s.cfg.DigestEmailTo)
+	}
 	delivery := DigestDelivery{
 		Provider:    "resend",
-		Recipient:   s.cfg.DigestEmailTo,
+		Recipient:   recipient,
 		Status:      "blocked",
 		AttemptedAt: &now,
 	}
-	if strings.TrimSpace(s.cfg.DigestEmailTo) == "" {
+	if recipient == "" {
 		delivery.Error = "DIGEST_EMAIL_TO is not configured."
 		return delivery
 	}
@@ -37,7 +45,7 @@ func (s *Service) deliverDigest(ctx context.Context, digest DigestIssue) DigestD
 
 	body := map[string]any{
 		"from":    s.cfg.DigestEmailFrom,
-		"to":      []string{s.cfg.DigestEmailTo},
+		"to":      []string{recipient},
 		"subject": digest.Subject,
 		"html":    digestHTML(digest),
 		"text":    digestText(digest),
@@ -49,7 +57,7 @@ func (s *Service) deliverDigest(ctx context.Context, digest DigestIssue) DigestD
 	}
 	headers := resendAuthHeader(s.cfg.ResendAPIKey)
 	headers.Set("Content-Type", "application/json")
-	headers.Set("Idempotency-Key", digest.IdempotencyKey)
+	headers.Set("Idempotency-Key", digestDeliveryIdempotencyKey(digest.IdempotencyKey, manualRecipient, now))
 	var response resendResponse
 	if err := s.requestJSON(ctx, http.MethodPost, "https://api.resend.com/emails", headers, bytes.NewReader(raw), &response); err != nil {
 		delivery.Status = "failed"
@@ -64,6 +72,30 @@ func (s *Service) deliverDigest(ctx context.Context, digest DigestIssue) DigestD
 	delivery.Status = "sent"
 	delivery.ProviderMessageID = response.ID
 	return delivery
+}
+
+func normalizeDigestRecipient(value string) (string, error) {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return "", fmt.Errorf("recipientEmail is required")
+	}
+	address, err := mail.ParseAddress(trimmed)
+	if err != nil || address.Address == "" {
+		return "", fmt.Errorf("recipientEmail must be a valid email address")
+	}
+	return address.Address, nil
+}
+
+func digestDeliveryIdempotencyKey(baseKey string, manualRecipient bool, attemptedAt time.Time) string {
+	key := strings.TrimSpace(baseKey)
+	if key == "" {
+		key = "digest"
+	}
+	if !manualRecipient {
+		return key
+	}
+	sum := sha256.Sum256([]byte(attemptedAt.UTC().Format(time.RFC3339Nano)))
+	return key + ":manual:" + hex.EncodeToString(sum[:])[:16]
 }
 
 func resendAuthHeader(apiKey string) http.Header {

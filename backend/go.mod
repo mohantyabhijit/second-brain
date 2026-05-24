@@ -6,6 +6,7 @@ require (
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/jackc/pgx/v5 v5.7.2
 	github.com/neo4j/neo4j-go-driver/v5 v5.28.4
+	github.com/robfig/cron/v3 v3.0.1
 	golang.org/x/oauth2 v0.30.0
 )
 

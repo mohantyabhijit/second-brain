@@ -151,6 +151,14 @@ export type DigestIssue = {
   subject: string;
   bodyMarkdown: string;
   status: "generated" | "sent" | "failed" | "blocked";
+  deliveries?: Array<{
+    provider: string;
+    recipient: string;
+    status: "sent" | "failed" | "blocked";
+    providerMessageId?: string;
+    error?: string;
+    attemptedAt?: string;
+  }>;
 };
 
 export type FeedbackSignal =

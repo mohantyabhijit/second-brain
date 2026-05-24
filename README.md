@@ -84,9 +84,9 @@ npm run self:organize
 npm run worker:run
 ```
 
-`self:organize` runs one full cycle: refresh, optional graph sync, then digest delivery. By default the long-running worker refreshes every `2h`, generates and sends the newsletter every `2h`, and schedules the digest issue for `18:00` in `DIGEST_TIMEZONE`. Override with `WORKER_REFRESH_INTERVAL`, `WORKER_DIGEST_INTERVAL`, `REFRESH_TIMEOUT`, `DIGEST_TIME`, and `DIGEST_TIMEZONE`. The raw X bookmark fetch can remain unbounded for the Original X Bookmarks view, while `X_BOOKMARK_PROCESS_LIMIT` caps expensive insight synthesis to the newest 50 bookmarks by default.
+`self:organize` runs one full cycle: refresh, optional graph sync, then digest delivery to `DIGEST_EMAIL_TO`. By default the long-running worker uses the Go `robfig/cron` scheduler to refresh every `2h`, send a digest after each successful refresh, and also send the daily digest at `18:00` in `DIGEST_TIMEZONE`. Override with `WORKER_REFRESH_INTERVAL`, `REFRESH_TIMEOUT`, `DIGEST_TIME`, and `DIGEST_TIMEZONE`. The raw X bookmark fetch can remain unbounded for the Original X Bookmarks view, while `X_BOOKMARK_PROCESS_LIMIT` caps expensive insight synthesis to the newest 50 bookmarks by default.
 
-Production deploys install a `second-brain-cycle.timer` systemd timer on the VPS. The timer starts shortly after deploy and then every 2 hours, running refresh, graph sync when `NEO4J_*` is configured, and digest delivery under OneCLI secret injection.
+Production deploys run `second-brain-worker` as a long-lived service under OneCLI secret injection. The worker owns scheduling in-process: refresh-plus-digest every 2 hours and digest-only at 6 PM SGT, both delivered only through the configured `DIGEST_EMAIL_TO`.
 
 Sync pending graph events into Neo4j:
 

@@ -182,7 +182,6 @@ jobs:
           write_var NEO4J_PASSWORD "$NEO4J_PASSWORD"
           write_var NEO4J_DATABASE "${NEO4J_DATABASE:-neo4j}"
           write_var WORKER_REFRESH_INTERVAL 2h
-          write_var WORKER_DIGEST_INTERVAL 2h
           write_var REFRESH_TIMEOUT 90m
           write_var PROCESS_WORKER_COUNT 8
           write_var DIGEST_TIME 18:00

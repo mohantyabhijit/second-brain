@@ -51,7 +51,6 @@ type Config struct {
 	RefreshTimeout               string
 	ProcessWorkerCount           int
 	WorkerRefreshInterval        string
-	WorkerDigestInterval         string
 	Neo4jURI                     string
 	Neo4jUsername                string
 	Neo4jPassword                string
@@ -104,7 +103,6 @@ func Load() Config {
 		RefreshTimeout:               value("REFRESH_TIMEOUT", "90m"),
 		ProcessWorkerCount:           intValue("PROCESS_WORKER_COUNT", 8),
 		WorkerRefreshInterval:        value("WORKER_REFRESH_INTERVAL", "2h"),
-		WorkerDigestInterval:         value("WORKER_DIGEST_INTERVAL", "2h"),
 		Neo4jURI:                     os.Getenv("NEO4J_URI"),
 		Neo4jUsername:                os.Getenv("NEO4J_USERNAME"),
 		Neo4jPassword:                os.Getenv("NEO4J_PASSWORD"),

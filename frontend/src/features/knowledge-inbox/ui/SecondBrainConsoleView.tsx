@@ -5,9 +5,7 @@ import Link from "next/link";
 import type { KnowledgeInboxPage } from "../KnowledgeInboxContainer";
 import type { ChatMessage } from "../model/useKnowledgeInboxController";
 import type { KnowledgeInboxViewModel, NavigationItemViewModel, SummaryCardViewModel } from "../presentation/viewModel";
-import type { FeedbackSignal, RefreshStatus } from "../contracts";
-import { Icon } from "./primitives/Icon";
-
+import type { DigestIssue, FeedbackSignal, RefreshStatus } from "../contracts";
 type SecondBrainConsoleViewProps = {
   activePage: KnowledgeInboxPage;
   chatMessages: ChatMessage[];
@@ -18,9 +16,8 @@ type SecondBrainConsoleViewProps = {
   refreshStatus: RefreshStatus | null;
   onAsk: (question: string, useLatest?: boolean) => Promise<void>;
   onDigest: () => void;
+  onSendDigest: (recipientEmail: string) => Promise<DigestIssue>;
   onFeedback: (targetType: string, targetId: string, signal: FeedbackSignal, sourceUrl?: string) => void;
-  onRun: () => void;
-  onTweet: (targetType: string, targetId: string, text: string, sourceUrl?: string) => Promise<void>;
 };
 
 type FeedSource = "Summary" | "Quote" | "Insight" | "Action" | "X" | "YouTube" | "Newsletter";
@@ -37,15 +34,6 @@ type FeedItem = {
   timestamp: string;
   sourceUrl?: string;
   stats?: string;
-};
-
-type ExpandablePanelKey = "digest" | "topics" | "sources" | "blockers" | "sidebar-note";
-
-type TopicRow = {
-  key: string;
-  label: string;
-  value: string;
-  dot: "blue" | "green" | "amber";
 };
 
 const pageCopy: Record<
@@ -83,19 +71,16 @@ const pageCopy: Record<
   }
 };
 
-export function SecondBrainConsoleView({ activePage, chatMessages, isAsking, isDigesting, isLoading, model, refreshStatus, onAsk, onDigest, onFeedback, onRun, onTweet }: SecondBrainConsoleViewProps) {
+export function SecondBrainConsoleView({ activePage, chatMessages, isAsking, isDigesting, isLoading, model, refreshStatus, onAsk, onDigest, onSendDigest, onFeedback }: SecondBrainConsoleViewProps) {
   const [visibleCount, setVisibleCount] = useState(10);
   const [expandedItems, setExpandedItems] = useState<Set<string>>(new Set());
   const [copiedItems, setCopiedItems] = useState<Set<string>>(new Set());
-  const [savedItems, setSavedItems] = useState<Set<string>>(new Set());
-  const [tweetedItems, setTweetedItems] = useState<Set<string>>(new Set());
-  const [expandedPanels, setExpandedPanels] = useState<Set<ExpandablePanelKey>>(new Set(["digest", "topics", "sources"]));
-  const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
+  const [digestEmail, setDigestEmail] = useState("");
+  const [digestSendMessage, setDigestSendMessage] = useState<string | null>(null);
   const sentinelRef = useRef<HTMLDivElement | null>(null);
   const page = pageCopy[activePage];
   const baseItems = useMemo(() => getFeedItems(model, activePage), [model, activePage]);
   const feedItems = useMemo(() => sliceItems(baseItems, visibleCount), [baseItems, visibleCount]);
-  const topics = useMemo(() => deriveTopicRows(baseItems), [baseItems]);
 
   useEffect(() => {
     const sentinel = sentinelRef.current;
@@ -128,16 +113,25 @@ export function SecondBrainConsoleView({ activePage, chatMessages, isAsking, isD
     onFeedback(item.source.toLowerCase(), item.id, "copied", item.sourceUrl);
   }
 
-  function toggleSavedItem(key: string) {
-    setSavedItems((items) => toggleSetItem(items, key));
-  }
-
-  function togglePanel(key: ExpandablePanelKey) {
-    setExpandedPanels((items) => toggleSetItem(items, key));
-  }
-
-  function toggleRow(key: string) {
-    setExpandedRows((items) => toggleSetItem(items, key));
+  async function submitDigestEmail(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const recipient = digestEmail.trim();
+    if (!recipient) {
+      setDigestSendMessage("Enter an email address.");
+      return;
+    }
+    setDigestSendMessage(null);
+    try {
+      const digest = await onSendDigest(recipient);
+      const delivery = digest.deliveries?.[0];
+      if (delivery?.status === "sent") {
+        setDigestSendMessage(`Sent latest digest to ${delivery.recipient}.`);
+        return;
+      }
+      setDigestSendMessage(delivery?.error || `Digest delivery ${delivery?.status ?? digest.status}.`);
+    } catch (error) {
+      setDigestSendMessage(error instanceof Error ? error.message : "Digest delivery failed.");
+    }
   }
 
   return (
@@ -156,19 +150,6 @@ export function SecondBrainConsoleView({ activePage, chatMessages, isAsking, isD
             <NavLink key={item.href} active={isActiveNav(item, activePage)} item={item} />
           ))}
         </nav>
-
-        <button
-          aria-expanded={expandedPanels.has("sidebar-note")}
-          className="sidebar-note interactive-panel-trigger"
-          onClick={() => togglePanel("sidebar-note")}
-          type="button"
-        >
-          <span>{model.sidebarNote.label}</span>
-          <strong>{model.sidebarNote.value}</strong>
-          {expandedPanels.has("sidebar-note") ? (
-            <small>Feeds stay source-grounded and preserve the original trail for every quote.</small>
-          ) : null}
-        </button>
       </aside>
 
       <section className="wall-workspace">
@@ -178,15 +159,28 @@ export function SecondBrainConsoleView({ activePage, chatMessages, isAsking, isD
             <h1>{page.title}</h1>
             <p>{page.description}</p>
           </div>
-          <button className="primary-action" aria-busy={model.header.isRunning} onClick={onRun} type="button">
-            <Icon name="run" />
-            {model.header.actionLabel}
-          </button>
           {activePage === "daily-newsletter" ? (
-            <button className="secondary-action" disabled={isDigesting} onClick={onDigest} type="button">
-              {isDigesting ? <span className="button-spinner" aria-hidden="true" /> : null}
-              Generate Digest
-            </button>
+            <div className="digest-email-tools">
+              <button className="secondary-action" disabled={isDigesting} onClick={onDigest} type="button">
+                {isDigesting ? <span className="button-spinner" aria-hidden="true" /> : null}
+                Generate Digest
+              </button>
+              <form className="digest-email-form" onSubmit={submitDigestEmail}>
+                <input
+                  aria-label="Digest recipient email"
+                  disabled={isDigesting}
+                  onChange={(event) => setDigestEmail(event.target.value)}
+                  placeholder="reader@example.com"
+                  type="email"
+                  value={digestEmail}
+                />
+                <button disabled={isDigesting} type="submit">
+                  {isDigesting ? <span className="button-spinner" aria-hidden="true" /> : null}
+                  Send Latest
+                </button>
+              </form>
+              {digestSendMessage ? <p role="status">{digestSendMessage}</p> : null}
+            </div>
           ) : null}
         </header>
 
@@ -214,22 +208,8 @@ export function SecondBrainConsoleView({ activePage, chatMessages, isAsking, isD
                     index={index}
                     item={item}
                     itemKey={itemKey}
-                    saved={savedItems.has(itemKey)}
-                    tweeted={tweetedItems.has(itemKey)}
                     onCopy={() => toggleCopiedItem(itemKey, item.quote ?? item.body, item)}
                     onExpand={() => toggleExpandedItem(itemKey)}
-                    onFeedback={(signal) => onFeedback(item.source.toLowerCase(), item.id, signal, item.sourceUrl)}
-                    onSave={() => {
-                      toggleSavedItem(itemKey);
-                    }}
-                    onTweet={() => {
-                      const text = tweetTextForItem(item);
-                      void onTweet(item.source.toLowerCase(), item.id, text, item.sourceUrl)
-                        .then(() => {
-                          setTweetedItems((items) => toggleSetItem(items, itemKey));
-                        })
-                        .catch(() => undefined);
-                    }}
                   />
                 );
               })
@@ -247,133 +227,6 @@ export function SecondBrainConsoleView({ activePage, chatMessages, isAsking, isD
             ) : null}
           </section>
 
-          <aside className="context-rail" aria-label="Daily context">
-            <div className="rail-panel digest-panel">
-              <button
-                aria-expanded={expandedPanels.has("digest")}
-                className="rail-heading"
-                onClick={() => togglePanel("digest")}
-                type="button"
-              >
-                <span>
-                  <span className="section-label">Today</span>
-                  <strong>Daily Digest</strong>
-                </span>
-                <span className="expand-glyph">{expandedPanels.has("digest") ? "Hide" : "Show"}</span>
-              </button>
-              {expandedPanels.has("digest") ? (
-                <dl>
-                  {model.metrics.map((metric) => {
-                    const rowKey = `metric-${metric.label}`;
-                    return (
-                      <div key={metric.label} className={expandedRows.has(rowKey) ? "expanded" : undefined}>
-                        <button aria-expanded={expandedRows.has(rowKey)} onClick={() => toggleRow(rowKey)} type="button">
-                          <dt>{metric.label}</dt>
-                          <dd>{metric.value}</dd>
-                        </button>
-                        {expandedRows.has(rowKey) ? <p>{metricDetail(metric.label, metric.value)}</p> : null}
-                      </div>
-                    );
-                  })}
-                </dl>
-              ) : null}
-            </div>
-
-            <div className="rail-panel topic-panel">
-              <button
-                aria-expanded={expandedPanels.has("topics")}
-                className="rail-heading"
-                onClick={() => togglePanel("topics")}
-                type="button"
-              >
-                  <span>
-                    <span className="section-label">Top topics</span>
-                  <strong>Topic lanes</strong>
-                </span>
-                <span className="expand-glyph">{expandedPanels.has("topics") ? "Hide" : "Show"}</span>
-              </button>
-              {expandedPanels.has("topics") ? (
-                topics.length ? (
-                  <ul>
-                    {topics.map((topic) => {
-                      const rowKey = `topic-${topic.key}`;
-                      return (
-                        <li key={topic.key} className={expandedRows.has(rowKey) ? "expanded" : undefined}>
-                          <button aria-expanded={expandedRows.has(rowKey)} onClick={() => toggleRow(rowKey)} type="button">
-                            <span className={`topic-dot ${topic.dot}`} />
-                            <span>{topic.label}</span>
-                            <strong>{topic.value}</strong>
-                          </button>
-                          {expandedRows.has(rowKey) ? <p>{topic.label} appears in {topic.value} sourced feed items.</p> : null}
-                        </li>
-                      );
-                    })}
-                  </ul>
-                ) : (
-                  <p className="rail-empty">Topics will appear after real source items are loaded.</p>
-                )
-              ) : null}
-            </div>
-
-            <div className="rail-panel source-panel">
-              <button
-                aria-expanded={expandedPanels.has("sources")}
-                className="rail-heading"
-                onClick={() => togglePanel("sources")}
-                type="button"
-              >
-                <span>
-                  <span className="section-label">Sources</span>
-                  <strong>Inbox health</strong>
-                </span>
-                <span className="expand-glyph">{expandedPanels.has("sources") ? "Hide" : "Show"}</span>
-              </button>
-              {expandedPanels.has("sources") ? (
-                <ul>
-                  {model.sources.map((source) => {
-                    const rowKey = `source-${source.label}`;
-                    return (
-                      <li key={source.label} className={`${source.status} ${expandedRows.has(rowKey) ? "expanded" : ""}`}>
-                        <button aria-expanded={expandedRows.has(rowKey)} onClick={() => toggleRow(rowKey)} type="button">
-                          <span className="source-dot" />
-                          <span>
-                            <strong>{source.label}</strong>
-                            <small>{source.statusLabel}</small>
-                          </span>
-                        </button>
-                        {expandedRows.has(rowKey) ? <p>{source.detail}. Status: {source.statusLabel}.</p> : null}
-                      </li>
-                    );
-                  })}
-                </ul>
-              ) : null}
-            </div>
-
-            {model.blockers.items.length ? (
-              <div className="rail-panel blocker-panel">
-                <button
-                  aria-expanded={expandedPanels.has("blockers")}
-                  className="rail-heading"
-                  onClick={() => togglePanel("blockers")}
-                  type="button"
-                >
-                  <span>
-                    <span className="section-label">{model.blockers.eyebrow}</span>
-                    <strong>{model.blockers.title}</strong>
-                  </span>
-                  <span className="expand-glyph">{expandedPanels.has("blockers") ? "Hide" : "Show"}</span>
-                </button>
-                {expandedPanels.has("blockers")
-                  ? model.blockers.items.map((blocker) => (
-                      <button key={blocker} className="blocker-row" onClick={() => toggleRow(`blocker-${blocker}`)} type="button">
-                        <span>{blocker}</span>
-                        {expandedRows.has(`blocker-${blocker}`) ? <small>Refresh after provider credentials are available.</small> : null}
-                      </button>
-                    ))
-                  : null}
-              </div>
-            ) : null}
-          </aside>
         </div>
       </section>
       <AskSecondBrainWidget isAsking={isAsking} messages={chatMessages} onAsk={onAsk} />
@@ -408,26 +261,16 @@ function FeedCard({
   index,
   item,
   itemKey,
-  saved,
-  tweeted,
   onCopy,
-  onExpand,
-  onFeedback,
-  onSave,
-  onTweet
+  onExpand
 }: {
   copied: boolean;
   expanded: boolean;
   index: number;
   item: FeedItem;
   itemKey: string;
-  saved: boolean;
-  tweeted: boolean;
   onCopy: () => void;
   onExpand: () => void;
-  onFeedback: (signal: FeedbackSignal) => void;
-  onSave: () => void;
-  onTweet: () => void;
 }) {
   return (
     <article
@@ -472,43 +315,6 @@ function FeedCard({
 
       <div className="quote-column">
         <div className="feed-actions" aria-label={`Actions for item ${index + 1}`}>
-          {item.sourceUrl ? (
-            <a
-              href={item.sourceUrl}
-              onClick={(event) => event.stopPropagation()}
-              rel="noreferrer"
-              target="_blank"
-            >
-              Open Source
-            </a>
-          ) : null}
-          <span className="vote-actions" aria-label="Insight feedback">
-            <button
-              aria-label="Upvote insight"
-              className={saved ? "active icon-action" : "icon-action"}
-              onClick={(event) => {
-                event.stopPropagation();
-                onSave();
-                onFeedback("upvote");
-              }}
-              title="Upvote"
-              type="button"
-            >
-              <ThumbUpIcon />
-            </button>
-            <button
-              aria-label="Downvote insight"
-              className="icon-action"
-              onClick={(event) => {
-                event.stopPropagation();
-                onFeedback("downvote");
-              }}
-              title="Downvote"
-              type="button"
-            >
-              <ThumbDownIcon />
-            </button>
-          </span>
           <button
             aria-label="Copy insight"
             className={copied ? "active" : undefined}
@@ -520,17 +326,6 @@ function FeedCard({
           >
             {copied ? "Copied" : "Copy Insight"}
           </button>
-          <button
-            aria-label="Tweet insight"
-            className={tweeted ? "active" : undefined}
-            onClick={(event) => {
-              event.stopPropagation();
-              onTweet();
-            }}
-            type="button"
-          >
-            {tweeted ? "Tweeted" : "Tweet"}
-          </button>
         </div>
         {item.quote ? (
           <blockquote>
@@ -538,7 +333,6 @@ function FeedCard({
             {item.quote}
           </blockquote>
         ) : null}
-        {item.stats ? <div className="feed-stats">{item.stats}</div> : null}
         {expanded ? (
           <div className="feed-expanded">
             <span>{item.eyebrow}</span>
@@ -571,26 +365,6 @@ function NewsletterBody({ lines }: { lines: string[] }) {
           return <p key={`${line}-${index}`}>{renderInlineMarkdownParts(line)}</p>;
         })}
     </div>
-  );
-}
-
-function ThumbUpIcon() {
-  return (
-    <svg aria-hidden="true" className="vote-icon" viewBox="0 0 24 24">
-      <path d="M7 10v10" />
-      <path d="M7 11 11.5 4c.6-.9 2-.5 2 .6v4.1h5c1.3 0 2.2 1.2 1.9 2.4l-1.4 6.3A3.2 3.2 0 0 1 15.8 20H7" />
-      <path d="M3 10h4v10H3z" />
-    </svg>
-  );
-}
-
-function ThumbDownIcon() {
-  return (
-    <svg aria-hidden="true" className="vote-icon" viewBox="0 0 24 24">
-      <path d="M7 14V4" />
-      <path d="M7 13 11.5 20c.6.9 2 .5 2-.6v-4.1h5c1.3 0 2.2-1.2 1.9-2.4L19 6.6A3.2 3.2 0 0 0 15.8 4H7" />
-      <path d="M3 4h4v10H3z" />
-    </svg>
   );
 }
 
@@ -768,24 +542,6 @@ function expandedDetail(item: FeedItem) {
   return "Expanded view keeps the short summary, quote, source context, and source decision together.";
 }
 
-function tweetTextForItem(item: FeedItem) {
-  const source = item.sourceUrl ? `\n\nSource: ${item.sourceUrl}` : "";
-  return `${item.title}\n\n${item.body}${source}`;
-}
-
-function metricDetail(label: string, value: string) {
-  if (label === "Captured items") return `${value} total items are currently available from the connected sources.`;
-  if (label === "Summaries") return `${value} summaries are ready for review in this run.`;
-  if (label === "Insights") return `${value} source-grounded insights are ready for review in this run.`;
-  if (label === "Action items") return `${value} possible follow-up actions were extracted from saved material.`;
-  if (label === "Cache hits") return `${value} source captures reused existing synthesis instead of recomputing.`;
-  if (label === "Transcripts") return `${value} YouTube transcripts are currently usable for evidence.`;
-  if (label === "Themes") return `${value} recurring theme clusters were derived from the current run.`;
-  if (label === "Connections") return `${value} cross-source evidence connections were found in the current run.`;
-  if (label === "Digest") return `The latest daily digest status is ${value}.`;
-  return `${value} blockers need attention before the inbox can be trusted end to end.`;
-}
-
 function getFeedItems(model: KnowledgeInboxViewModel, activePage: KnowledgeInboxPage): FeedItem[] {
   const summaries = model.summaries.items.map(summaryToFeedItem);
   const insightItems = model.summaries.items
@@ -887,30 +643,6 @@ function markdownToPlain(value: string) {
 
 function sliceItems(items: FeedItem[], visibleCount: number) {
   return items.slice(0, visibleCount);
-}
-
-function deriveTopicRows(items: FeedItem[]): TopicRow[] {
-  const topicMatchers: Array<{ key: string; label: string; dot: TopicRow["dot"]; patterns: RegExp[] }> = [
-    { key: "ai", label: "AI", dot: "blue", patterns: [/\bai\b/i, /artificial intelligence/i, /model/i, /llm/i] },
-    { key: "productivity", label: "Productivity", dot: "green", patterns: [/productivity/i, /workflow/i, /habit/i, /review/i] },
-    { key: "systems", label: "Systems Thinking", dot: "amber", patterns: [/system/i, /process/i, /architecture/i, /workflow/i] }
-  ];
-
-  return topicMatchers
-    .map((topic) => {
-      const value = items.filter((item) => {
-        const text = `${item.title} ${item.body} ${item.quote ?? ""}`;
-        return topic.patterns.some((pattern) => pattern.test(text));
-      }).length;
-
-      return {
-        key: topic.key,
-        label: topic.label,
-        value: String(value),
-        dot: topic.dot
-      };
-    })
-    .filter((topic) => topic.value !== "0");
 }
 
 function isActiveNav(item: NavigationItemViewModel, activePage: KnowledgeInboxPage) {

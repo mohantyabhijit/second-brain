@@ -1,7 +1,7 @@
 "use client";
 
 import { startTransition, useCallback, useEffect, useState } from "react";
-import { askSecondBrain, generateDailyDigest, readKnowledgeRefreshStatus, readLatestKnowledgeRun, saveKnowledgeFeedback, shareInsightToX, startKnowledgeInboxRefresh } from "../api/knowledgeRuns";
+import { askSecondBrain, generateDailyDigest, readKnowledgeRefreshStatus, readLatestKnowledgeRun, saveKnowledgeFeedback, sendLatestDigest, shareInsightToX, startKnowledgeInboxRefresh } from "../api/knowledgeRuns";
 import type { AskSecondBrainResponse, FeedbackSignal, KnowledgeRunResult, RefreshStatus } from "../contracts";
 import { initialKnowledgeRun } from "./initialKnowledgeRun";
 
@@ -127,6 +127,23 @@ export function useKnowledgeInboxController() {
     }
   }, []);
 
+  const sendDigest = useCallback(async (recipientEmail: string) => {
+    setIsDigesting(true);
+    setError(null);
+    try {
+      const currentDigest = run.digest;
+      const digest = await sendLatestDigest({ recipientEmail, digest: currentDigest });
+      startTransition(() => setRun((current) => ({ ...current, digest })));
+      return digest;
+    } catch (digestError) {
+      const message = digestError instanceof Error ? digestError.message : "Digest delivery failed.";
+      setError(message);
+      throw digestError;
+    } finally {
+      setIsDigesting(false);
+    }
+  }, [run.digest]);
+
   const shareTweet = useCallback(async (targetType: string, targetId: string, text: string, sourceUrl?: string) => {
     setError(null);
     try {
@@ -188,6 +205,7 @@ export function useKnowledgeInboxController() {
     runValidation,
     saveFeedback,
     generateDigest,
+    sendDigest,
     shareTweet,
     askBrain
   };

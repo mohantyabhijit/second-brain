@@ -5,6 +5,7 @@ const basePath = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
 const staticExport = process.env.NEXT_OUTPUT === "export";
 
 const nextConfig: NextConfig = {
+  devIndicators: false,
   turbopack: {
     root: path.join(__dirname, "..")
   },
