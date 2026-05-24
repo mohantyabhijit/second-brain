@@ -434,7 +434,7 @@ function AskSecondBrainWidget({
           <header>
             <span>
               <strong>Ask Your Second Brain</strong>
-              <small>Answers cite saved X bookmarks, YouTube videos, and knowledge graph signals.</small>
+              <small>Ask across saved X bookmarks, YouTube videos, and knowledge graph signals.</small>
             </span>
             <button aria-label="Close Ask Your Second Brain" onClick={() => setOpen(false)} type="button">
               ×
