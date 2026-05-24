@@ -719,6 +719,7 @@ func buildDigestIssue(cfgDigestTimezone string, cfgDigestTime string, generatedA
 }
 
 func selectDigestInsights(generatedAt time.Time, insights []Insight, limit int) []Insight {
+	insights = digestQualityInsights(insights)
 	if limit <= 0 || len(insights) <= limit {
 		return insights
 	}
@@ -754,6 +755,20 @@ func selectDigestInsights(generatedAt time.Time, insights []Insight, limit int) 
 		used[identity] = true
 	}
 	return picked
+}
+
+func digestQualityInsights(insights []Insight) []Insight {
+	filtered := []Insight{}
+	for _, insight := range insights {
+		if insight.Quality != nil && insight.Quality.Overall > 0 && insight.Quality.Overall < 0.7 {
+			continue
+		}
+		filtered = append(filtered, insight)
+	}
+	if len(filtered) == 0 {
+		return insights
+	}
+	return filtered
 }
 
 func digestInsightPickScore(seed string, insight Insight) uint64 {

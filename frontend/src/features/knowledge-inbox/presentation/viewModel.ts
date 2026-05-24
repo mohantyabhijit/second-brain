@@ -230,7 +230,7 @@ export function toKnowledgeInboxViewModel(run: KnowledgeRunResult, isRunning: bo
       description: "Reading decisions, insights, action items, and cache-aware synthesis with attribution preserved.",
       icon: "link",
       items: [
-        ...run.summaries.map((summary) => ({
+        ...run.summaries.filter(hasDisplayQuality).map((summary) => ({
           id: `${summary.source}-${summary.id}`,
           source: summary.source,
           title: summary.title,
@@ -244,7 +244,7 @@ export function toKnowledgeInboxViewModel(run: KnowledgeRunResult, isRunning: bo
           timeMarkers: summary.importantTimeMarkers,
           cacheStatus: summary.cacheStatus
         })),
-        ...run.insights.map((insight) => ({
+        ...run.insights.filter(hasDisplayQuality).map((insight) => ({
           id: `insight-${insight.id}`,
           source: "insight" as const,
           title: insight.title,
@@ -314,6 +314,10 @@ function sourceCard(label: string, detail: string, status: SourceStatus, icon: I
     statusLabel: statusLabels[status],
     icon
   };
+}
+
+function hasDisplayQuality(item: { quality?: QualityScore }) {
+  return !item.quality?.overall || item.quality.overall >= 0.7;
 }
 
 function transcriptLabel(item: SavedYouTubeItem) {
