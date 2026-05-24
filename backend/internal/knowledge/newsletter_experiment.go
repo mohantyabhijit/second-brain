@@ -9,6 +9,8 @@ import (
 	"os"
 	"strings"
 	"time"
+
+	"github.com/abhijitmohanty/second-brain/backend/prompts"
 )
 
 const defaultNewsletterJudgeModel = "gpt-4o-mini"
@@ -177,15 +179,10 @@ func (s *Service) RunNewsletterPromptExperiment(ctx context.Context, opts Newsle
 func (s *Service) generateExperimentNewsletter(ctx context.Context, model string, base DigestIssue, summaries []Summary, insights []Insight, themes []ThemeCluster, insightClusters []InsightCluster, connections []SourceConnection, addendum []string) (DigestIssue, error) {
 	promptLines := digestNewsletterPromptLines(base)
 	if len(addendum) > 0 {
-		promptLines = append(promptLines,
-			"",
-			"EXPERIMENTAL PROMPT LEARNING ADDENDUM",
-		)
-		promptLines = append(promptLines, addendum...)
+		promptLines = prompts.AppendExperimentAddendum(promptLines, addendum)
 	}
-	promptLines = append(promptLines,
-		"",
-		"INPUT JSON:",
+	promptLines = prompts.AppendInputJSON(
+		promptLines,
 		truncate(digestPromptInput(summaries, insights, themes, insightClusters, connections), 16000),
 	)
 	payload, err := s.promptDigestWithLines(ctx, model, promptLines, 3000)
@@ -217,26 +214,7 @@ func (s *Service) judgeExperimentNewsletter(ctx context.Context, model string, i
 		"subject":       digest.Subject,
 		"body_markdown": digest.BodyMarkdown,
 	})
-	prompt := strings.Join([]string{
-		"You are a strict but fair newsletter quality judge.",
-		"Evaluate the candidate issue against the source inputs and the rubric. Penalize unsupported claims, generic summary dumps, missing source links, weak synthesis, and unreadable phone-first structure.",
-		"Use the full 0-100 scale. A score above 85 means the issue is genuinely publishable for a smart personal research newsletter.",
-		"Return JSON only with this exact shape: {\"overall\":0,\"grounding\":0,\"synthesis\":0,\"editorialVoice\":0,\"usefulness\":0,\"structure\":0,\"sourceLinking\":0,\"rationale\":\"short rationale\",\"strengths\":[\"...\"],\"improvements\":[\"...\"]}",
-		"",
-		"RUBRIC",
-		"grounding: uses only supplied facts, keeps links intact, and avoids invented context.",
-		"synthesis: connects inputs into one argument instead of recapping sources one by one.",
-		"editorialVoice: sounds like a human editor with calm authority, not a template.",
-		"usefulness: leaves Abhijit with a clearer model or concrete next move.",
-		"structure: hook, context, thesis, evidence, synthesis, implication; no forbidden sections, bullets, or source dumps.",
-		"sourceLinking: every major claim is naturally linked to its source at the point of use.",
-		"",
-		"INPUT JSON:",
-		truncate(inputJSON, 12000),
-		"",
-		"CANDIDATE NEWSLETTER JSON:",
-		newsletterJSON,
-	}, "\n")
+	prompt := prompts.NewsletterExperimentJudge(truncate(inputJSON, 12000), newsletterJSON)
 	text, err := s.promptExperimentText(ctx, model, prompt, 1400)
 	if err != nil {
 		return NewsletterJudgeScores{}, err
@@ -256,25 +234,7 @@ func (s *Service) reviseExperimentPrompt(ctx context.Context, model string, inpu
 		"subject":       digest.Subject,
 		"body_markdown": digest.BodyMarkdown,
 	})
-	prompt := strings.Join([]string{
-		"You improve a newsletter generation system prompt from judge feedback.",
-		"Create the next experimental prompt addendum only. Do not rewrite the whole base prompt. Do not weaken grounding, source-linking, format bans, or the JSON output contract.",
-		"Prefer precise behavioral instructions that the generator can apply on the next draft. Do not mention the judge or scores in the addendum.",
-		"Return JSON only with this exact shape: {\"summary\":\"what changed and why\",\"addendumLines\":[\"one instruction\",\"another instruction\"]}",
-		"Keep addendumLines to 3-7 lines.",
-		"",
-		"CURRENT ADDENDUM JSON:",
-		currentPromptJSON,
-		"",
-		"JUDGE FEEDBACK JSON:",
-		feedbackJSON,
-		"",
-		"CANDIDATE NEWSLETTER JSON:",
-		newsletterJSON,
-		"",
-		"INPUT JSON:",
-		truncate(inputJSON, 10000),
-	}, "\n")
+	prompt := prompts.NewsletterExperimentImprover(currentPromptJSON, feedbackJSON, newsletterJSON, truncate(inputJSON, 10000))
 	text, err := s.promptExperimentText(ctx, model, prompt, 1200)
 	if err != nil {
 		return NewsletterPromptRevision{}, err
@@ -398,10 +358,7 @@ func fallbackExperimentAddendum(judge NewsletterJudgeScores) []string {
 	if strings.TrimSpace(feedback) == "" {
 		feedback = "make the next issue more grounded, more synthetic, and more useful"
 	}
-	return []string{
-		"Address this quality gap in the next draft: " + truncateDigestText(feedback, 360),
-		"Preserve all grounding, source-linking, JSON output, and no-section-label constraints from the base prompt.",
-	}
+	return prompts.FallbackExperimentAddendum(truncateDigestText(feedback, 360))
 }
 
 func mustCompactJSON(value any) string {

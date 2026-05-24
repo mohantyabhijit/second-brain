@@ -11,9 +11,11 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/abhijitmohanty/second-brain/backend/prompts"
 )
 
-const synthesisPromptVersion = "source-grounded-insights-v6-compact-retry"
+const synthesisPromptVersion = prompts.SynthesisPromptVersion
 const extractiveSynthesisModel = "extractive-fallback-v1"
 
 type promptSynthesisResponse struct {
@@ -206,31 +208,12 @@ func (s *Service) promptSynthesis(ctx context.Context, candidate sourceCandidate
 	requestBody := map[string]any{
 		"model": model,
 		"text":  map[string]any{"format": map[string]any{"type": "json_object"}},
-		"input": strings.Join([]string{
-			"You are the GPT-5.5 source-grounded synthesis module for a personal second brain.",
-			"Read the source text, improve it into compact reusable knowledge, self-judge the result, and return JSON only.",
-			"Boundary: use only the source text below. Do not add outside facts, implied dates, or unsupported claims.",
-			"Summary: write 1-2 engaging sentences under 55 words. Start with the reusable idea, not source metadata, and make the first line strong enough to earn a click.",
-			"Quote: keep one short supporting quote or tight source paraphrase under 45 words. Never paste a full post, newsletter, or transcript block.",
-			"Insights: extract 3-8 distinct atomic insights when the source supports them. Omit filler rather than padding.",
-			"Each insight must be useful by itself, grounded in evidence, and non-overlapping with the other insights.",
-			"Prefer mechanisms, tradeoffs, operating principles, decision rules, money/business implications, and concrete tactics over topic labels.",
-			"Titles must be specific. Avoid generic titles like Source-backed insight, Summary, Note, or Key idea.",
-			"canonical_insight must be stable enough for deduplication across X and YouTube. Use one sentence in plain English.",
-			"abstract_insight must generalize the mechanism without naming the source unless the name is essential.",
-			"evidence must be short and source-backed. If the source does not support an insight, omit it.",
-			"For YouTube transcripts with [MM:SS] or [HH:MM:SS] lines, extract 3-8 important_time_markers with timestamp, seconds, label, whyItMatters, and a short quote.",
-			"If timestamps are absent, return an empty important_time_markers array instead of inventing times.",
-			"Quality gate before returning: judge summary, quote, insights, and markers for conciseness, efficacy, grounding, and novelty from 0.0 to 1.0.",
-			"Rewrite internally until quality.overall is at least 0.82 when the source has enough signal. Use lower scores honestly for weak sources.",
-			"Score importance_score, novelty_score, and actionability_score from 0.0 to 1.0. Use 0.5 when uncertain.",
-			"Use this JSON shape: {\"decision\":\"read_now|later|skip\",\"summary\":\"...\",\"confidence\":\"high|medium|low\",\"quote\":\"short supporting quote\",\"quality\":{\"overall\":0.0,\"conciseness\":0.0,\"efficacy\":0.0,\"grounding\":0.0,\"novelty\":0.0,\"verdict\":\"pass|revise|weak_source\",\"rationale\":\"one short reason\"},\"important_time_markers\":[{\"label\":\"...\",\"timestamp\":\"MM:SS\",\"seconds\":0,\"whyItMatters\":\"...\",\"quote\":\"...\"}],\"insights\":[{\"title\":\"...\",\"insight\":\"raw human-readable insight\",\"raw_insight\":\"...\",\"canonical_insight\":\"normalized form for similarity search\",\"abstract_insight\":\"cross-domain abstraction\",\"practical_text\":\"optional action rule\",\"mechanism\":\"underlying mechanism, not just topic\",\"insight_type\":\"principle|warning|tactic|framework|prediction|tradeoff|critique|mental_model|trend|question|contradiction\",\"domain\":\"...\",\"topics\":[\"...\"],\"entities\":[\"...\"],\"evidence\":\"short quote or paraphrase\",\"evidence_refs\":[{\"quote\":\"...\"}],\"explicit_or_inferred\":\"explicit|inferred\",\"confidence\":\"high|medium|low\",\"importance_score\":0.0,\"novelty_score\":0.0,\"actionability_score\":0.0,\"quality\":{\"overall\":0.0,\"conciseness\":0.0,\"efficacy\":0.0,\"grounding\":0.0,\"novelty\":0.0,\"verdict\":\"pass|revise|weak_source\",\"rationale\":\"one short reason\"}}],\"action_items\":[{\"title\":\"...\",\"action\":\"...\",\"rationale\":\"...\",\"priority\":\"high|medium|low\"}]}",
-			"Source type: " + string(candidate.sourceType),
-			"Source title: " + candidate.title,
-			"Source URL: " + candidate.sourceURL,
-			"",
+		"input": prompts.SourceSynthesis(
+			string(candidate.sourceType),
+			candidate.title,
+			candidate.sourceURL,
 			truncate(candidate.body, 12000),
-		}, "\n"),
+		),
 		"max_output_tokens": 4500,
 	}
 	raw, err := json.Marshal(requestBody)
@@ -274,20 +257,13 @@ func (s *Service) promptCompactSynthesis(ctx context.Context, candidate sourceCa
 	requestBody := map[string]any{
 		"model": model,
 		"text":  map[string]any{"format": map[string]any{"type": "json_object"}},
-		"input": strings.Join([]string{
-			"You are repairing a source-grounded Second Brain synthesis after the first JSON response was malformed or too long.",
-			"Return one compact valid JSON object only. No markdown. No comments. No trailing text.",
-			"Use only the source text. If the source is weak, still write a concise useful summary instead of copying metadata.",
-			"Hard limits: summary under 35 words, quote under 25 words, 1-3 insights, each insight under 24 words, action_items can be empty.",
-			"For YouTube descriptions with timestamps like (0:00), return important_time_markers from those chapters. Do not invent missing timestamps.",
-			"Use the same JSON shape as the main synthesis prompt, including quality and important_time_markers.",
-			"Parse error to avoid: " + parseErr.Error(),
-			"Source type: " + string(candidate.sourceType),
-			"Source title: " + candidate.title,
-			"Source URL: " + candidate.sourceURL,
-			"",
+		"input": prompts.CompactSourceSynthesis(
+			string(candidate.sourceType),
+			candidate.title,
+			candidate.sourceURL,
 			truncate(candidate.body, 5000),
-		}, "\n"),
+			parseErr.Error(),
+		),
 		"max_output_tokens": 1600,
 	}
 	raw, err := json.Marshal(requestBody)
@@ -334,23 +310,13 @@ func (s *Service) judgeSynthesis(ctx context.Context, candidate sourceCandidate,
 	requestBody := map[string]any{
 		"model": model,
 		"text":  map[string]any{"format": map[string]any{"type": "json_object"}},
-		"input": strings.Join([]string{
-			"You are the LLM-as-judge and prompt improver for Second Brain synthesis.",
-			"Judge the generated JSON against the source text only. Grade conciseness, efficacy, grounding, novelty, quote length, insight uniqueness, and YouTube timestamp usefulness.",
-			"If overall_score is below 0.86, return a revised_response using the same schema as the synthesis response.",
-			"Revised output must be more concise, more source-grounded, and more useful. Do not add unsupported facts.",
-			"Keep quotes under 45 words. Keep summary under 55 words. Keep each insight direct and non-overlapping.",
-			"Return JSON only: {\"overall_score\":0.0,\"verdict\":\"pass|revised|weak_source\",\"rationale\":\"short reason\",\"revised_response\":null}.",
-			"Source type: " + string(candidate.sourceType),
-			"Source title: " + candidate.title,
-			"Source URL: " + candidate.sourceURL,
-			"",
-			"SOURCE TEXT:",
+		"input": prompts.SourceSynthesisJudge(
+			string(candidate.sourceType),
+			candidate.title,
+			candidate.sourceURL,
 			truncate(candidate.body, 9000),
-			"",
-			"GENERATED JSON:",
 			string(payloadJSON),
-		}, "\n"),
+		),
 		"max_output_tokens": 2500,
 	}
 	raw, err := json.Marshal(requestBody)

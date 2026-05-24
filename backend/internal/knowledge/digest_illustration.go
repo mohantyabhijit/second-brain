@@ -12,6 +12,8 @@ import (
 	"net/url"
 	"os"
 	"strings"
+
+	"github.com/abhijitmohanty/second-brain/backend/prompts"
 )
 
 type openAIImageResponse struct {
@@ -182,15 +184,7 @@ func digestIllustrationPrompt(digest DigestIssue, insights []Insight, themes []T
 		signals = append(signals, "connected notes", "decision making", "learning loop")
 	}
 
-	return strings.Join([]string{
-		"Create one simple black-on-white hand-drawn illustration for a personal research newsletter.",
-		"Style: Excalidraw-like rough marker strokes, white background, black ink only, minimal shapes, editorial sketch, plenty of empty space.",
-		"Do not include text, letters, numbers, logos, brand marks, UI screenshots, realistic people, gradients, color, or photorealism.",
-		"Visual metaphor: a small second brain workspace connecting saved ideas into one clear next move.",
-		"Newsletter subject: " + subject,
-		"Context pattern: " + pattern,
-		"Signals to evoke: " + strings.Join(signals, "; "),
-	}, "\n")
+	return prompts.DigestIllustration(subject, pattern, signals)
 }
 
 func digestIllustrationAlt(digest DigestIssue, insights []Insight, themes []ThemeCluster) string {
