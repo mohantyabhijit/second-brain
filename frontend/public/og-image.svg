@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630" width="1200" height="630">
+  <rect width="1200" height="630" fill="#f7faf8"/>
+  <rect x="54" y="54" width="1092" height="522" rx="34" fill="#ffffff" stroke="#d7dfd8" stroke-width="2"/>
+  <rect x="96" y="96" width="92" height="92" rx="18" fill="#16221d"/>
+  <text x="142" y="154" text-anchor="middle" font-family="Inter, Arial, sans-serif" font-size="38" font-weight="850" fill="#ffffff">SB</text>
+  <text x="96" y="248" font-family="Inter, Arial, sans-serif" font-size="34" font-weight="800" letter-spacing="4" fill="#2f7353">SECOND BRAIN</text>
+  <text x="96" y="338" font-family="Inter, Arial, sans-serif" font-size="76" font-weight="870" fill="#16221d">Knowledge Inbox</text>
+  <text x="96" y="412" font-family="Inter, Arial, sans-serif" font-size="32" font-weight="520" fill="#66736d">Source-grounded insights from saved X bookmarks,</text>
+  <text x="96" y="458" font-family="Inter, Arial, sans-serif" font-size="32" font-weight="520" fill="#66736d">YouTube videos, transcripts, and daily digests.</text>
+  <rect x="96" y="508" width="236" height="42" rx="21" fill="#e9f1ec"/>
+  <text x="214" y="536" text-anchor="middle" font-family="Inter, Arial, sans-serif" font-size="20" font-weight="760" fill="#214d39">abhijitmohanty.com</text>
+</svg>

@@ -20,8 +20,42 @@ const inter = localFont({
 });
 
 export const metadata: Metadata = {
-  title: "Second Brain",
-  description: "A source-grounded knowledge inbox for saved links, videos, transcripts, and reading decisions."
+  metadataBase: new URL("https://abhijitmohanty.com"),
+  applicationName: "Second Brain",
+  title: "Second Brain | Knowledge Inbox",
+  description: "Source-grounded insights from saved X bookmarks, YouTube videos, transcripts, and daily digests.",
+  alternates: {
+    canonical: "/second-brain/"
+  },
+  icons: {
+    icon: [
+      { url: "/second-brain/favicon.svg", type: "image/svg+xml" },
+      { url: "/second-brain/favicon-32.png", sizes: "32x32", type: "image/png" }
+    ],
+    apple: [{ url: "/second-brain/apple-touch-icon.png", sizes: "180x180", type: "image/png" }]
+  },
+  openGraph: {
+    title: "Second Brain | Knowledge Inbox",
+    description: "Source-grounded insights from saved X bookmarks, YouTube videos, transcripts, and daily digests.",
+    url: "/second-brain/",
+    siteName: "Abhijit Mohanty",
+    images: [
+      {
+        url: "/second-brain/og-image.png",
+        width: 1200,
+        height: 630,
+        alt: "Second Brain Knowledge Inbox"
+      }
+    ],
+    locale: "en_US",
+    type: "website"
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Second Brain | Knowledge Inbox",
+    description: "Source-grounded insights from saved X bookmarks, YouTube videos, transcripts, and daily digests.",
+    images: ["/second-brain/og-image.png"]
+  }
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
