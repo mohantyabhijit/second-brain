@@ -30,6 +30,7 @@ export type SavedYouTubeItem = {
   description?: string;
   channelTitle?: string;
   publishedAt?: string;
+  durationSeconds?: number;
   sourceUrl: string;
   transcriptStatus: "available" | "missing" | "blocked" | "untested";
   transcriptLang?: string;

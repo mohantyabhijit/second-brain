@@ -68,7 +68,7 @@ const pageCopy: Record<
 
 const initialVisibleCount = 25;
 const loadMoreCount = 25;
-const summaryPreviewLength = 300;
+const summaryPreviewLength = 220;
 const quotePreviewLength = 260;
 
 export function SecondBrainConsoleView({ activePage, chatMessages, isAsking, isDigesting, isLoading, model, refreshStatus, onAsk, onDigest, onSendDigest, onFeedback }: SecondBrainConsoleViewProps) {
@@ -76,6 +76,7 @@ export function SecondBrainConsoleView({ activePage, chatMessages, isAsking, isD
   const [copiedItems, setCopiedItems] = useState<Set<string>>(new Set());
   const [digestEmail, setDigestEmail] = useState("");
   const [digestSendMessage, setDigestSendMessage] = useState<string | null>(null);
+  const [openSummaryItem, setOpenSummaryItem] = useState<FeedItem | null>(null);
   const sentinelRef = useRef<HTMLDivElement | null>(null);
   const page = pageCopy[activePage];
   const baseItems = useMemo(() => getFeedItems(model, activePage), [model, activePage]);
@@ -202,6 +203,7 @@ export function SecondBrainConsoleView({ activePage, chatMessages, isAsking, isD
                     item={item}
                     itemKey={itemKey}
                     onCopy={() => toggleCopiedItem(itemKey, shortText(item.quote ?? item.body, quotePreviewLength), item)}
+                    onOpen={() => setOpenSummaryItem(item)}
                   />
                 );
               })
@@ -221,6 +223,7 @@ export function SecondBrainConsoleView({ activePage, chatMessages, isAsking, isD
 
         </div>
       </section>
+      {openSummaryItem ? <SummaryModal item={openSummaryItem} onClose={() => setOpenSummaryItem(null)} /> : null}
       <AskSecondBrainWidget isAsking={isAsking} messages={chatMessages} onAsk={onAsk} />
     </main>
   );
@@ -252,29 +255,52 @@ function FeedCard({
   index,
   item,
   itemKey,
-  onCopy
+  onCopy,
+  onOpen
 }: {
   copied: boolean;
   index: number;
   item: FeedItem;
   itemKey: string;
   onCopy: () => void;
+  onOpen: () => void;
 }) {
   const quote = item.quote ? shortText(item.quote, quotePreviewLength) : null;
+  const meta = feedMeta(item);
+  const identity = feedIdentity(item);
   return (
-    <article aria-labelledby={`${itemKey}-title`} className={`feed-card ${item.source.toLowerCase()}`}>
+    <article
+      aria-label={`Open AI summary for ${item.title}`}
+      aria-labelledby={`${itemKey}-title`}
+      className={`feed-card ${item.source.toLowerCase()}`}
+      onClick={onOpen}
+      onKeyDown={(event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          onOpen();
+        }
+      }}
+      role="button"
+      tabIndex={0}
+    >
       <div className="feed-identity">
         <span className={`feed-avatar ${item.source.toLowerCase()}`}>{sourceMark(item.source)}</span>
-        <span>{item.timestamp}</span>
+        {identity ? <span>{identity}</span> : null}
       </div>
 
       <div className="feed-main">
         <div className="feed-card-topline">
           <div>
-            <h2 id={`${itemKey}-title`}>{item.title}</h2>
-            <p className="feed-meta">
-              {item.author} - {item.timestamp}
-            </p>
+            <h2 id={`${itemKey}-title`}>
+              {item.sourceUrl ? (
+                <a className="feed-title-link" href={item.sourceUrl} onClick={(event) => event.stopPropagation()} rel="noreferrer" target="_blank">
+                  {item.title}
+                </a>
+              ) : (
+                item.title
+              )}
+            </h2>
+            {meta ? <p className="feed-meta">{meta}</p> : null}
           </div>
         </div>
 
@@ -289,7 +315,7 @@ function FeedCard({
         <div className="feed-actions" aria-label={`Actions for item ${index + 1}`}>
           {item.sourceUrl ? (
             <a href={item.sourceUrl} onClick={(event) => event.stopPropagation()} rel="noreferrer" target="_blank">
-              Original
+              Original Post
             </a>
           ) : null}
           {quote ? (
@@ -314,6 +340,49 @@ function FeedCard({
         ) : null}
       </div>
     </article>
+  );
+}
+
+function SummaryModal({ item, onClose }: { item: FeedItem; onClose: () => void }) {
+  return (
+    <div className="summary-modal-backdrop" onClick={onClose} role="presentation">
+      <section
+        aria-labelledby="summary-modal-title"
+        aria-modal="true"
+        className="summary-modal"
+        onClick={(event) => event.stopPropagation()}
+        role="dialog"
+      >
+        <header>
+          <div>
+            <span className={`feed-source ${item.source.toLowerCase()}`}>AI Summary</span>
+            <h2 id="summary-modal-title">
+              {item.sourceUrl ? (
+                <a href={item.sourceUrl} rel="noreferrer" target="_blank">
+                  {item.title}
+                </a>
+              ) : (
+                item.title
+              )}
+            </h2>
+            {feedMeta(item) ? <p className="feed-meta">{feedMeta(item)}</p> : null}
+          </div>
+          <button aria-label="Close AI summary" onClick={onClose} type="button">
+            Close
+          </button>
+        </header>
+        <div className="summary-modal-body">
+          <p>{markdownToPlain(item.body)}</p>
+          {item.quote ? (
+            <blockquote>
+              <span>Quote</span>
+              {shortText(item.quote, quotePreviewLength)}
+            </blockquote>
+          ) : null}
+          {item.timeMarkers?.length ? <TimeMarkerRow markers={item.timeMarkers} sourceUrl={item.sourceUrl} /> : null}
+        </div>
+      </section>
+    </div>
   );
 }
 
@@ -471,37 +540,55 @@ function sourceMark(source: FeedSource) {
   return "S";
 }
 
+function feedIdentity(item: FeedItem) {
+  if (item.timestamp === "Summary") return "";
+  return item.timestamp;
+}
+
+function feedMeta(item: FeedItem) {
+  if (item.timestamp === "Summary") return "";
+  return `${item.author} - ${item.timestamp}`;
+}
+
 function getFeedItems(model: KnowledgeInboxViewModel, activePage: KnowledgeInboxPage): FeedItem[] {
   const summaries = model.summaries.items.map(summaryToFeedItem);
+  const summariesBySourceUrl = new Map(
+    model.summaries.items
+      .filter((item) => item.source === "x" || item.source === "youtube")
+      .map((item) => [item.sourceUrl, item])
+  );
   const insightItems = model.summaries.items
     .filter((item) => item.source === "insight")
     .map(summaryToFeedItem);
   const xPosts = model.intake.items
     .filter((item) => item.source === "X")
-    .map((item): FeedItem => ({
-      id: item.id,
-      source: "X",
-      eyebrow: item.author,
-      title: item.item,
-      body: item.body,
-      quote: item.body.length > 130 ? `${item.body.slice(0, 130).trim()}...` : item.body,
-      author: item.author,
-      timestamp: item.timestamp,
-      sourceUrl: item.sourceUrl,
-      stats: item.stats ?? item.status
-    }));
+    .map((item): FeedItem => {
+      const synthesis = summariesBySourceUrl.get(item.sourceUrl);
+      return {
+        id: item.id,
+        source: "X",
+        eyebrow: item.author,
+        title: synthesis?.title ?? item.item,
+        body: synthesis?.body ?? item.body,
+        quote: synthesis?.quote ?? (item.body.length > 130 ? `${item.body.slice(0, 130).trim()}...` : item.body),
+        author: item.author,
+        timestamp: item.timestamp,
+        sourceUrl: item.sourceUrl,
+        stats: item.stats ?? item.status
+      };
+    });
   const youtubePosts = model.transcripts.items.map((item): FeedItem => ({
     id: item.id,
     source: "YouTube",
     eyebrow: item.statusLabel,
-    title: item.title,
-    body: item.detail,
-    quote: item.detail.length > 150 ? `${item.detail.slice(0, 150).trim()}...` : item.detail,
+    title: summariesBySourceUrl.get(item.sourceUrl)?.title ?? item.title,
+    body: summariesBySourceUrl.get(item.sourceUrl)?.body ?? item.detail,
+    quote: summariesBySourceUrl.get(item.sourceUrl)?.quote ?? (item.detail.length > 150 ? `${item.detail.slice(0, 150).trim()}...` : item.detail),
     author: item.author,
     timestamp: item.timestamp,
     sourceUrl: item.sourceUrl,
     stats: item.statusLabel,
-    timeMarkers: item.timeMarkers
+    timeMarkers: item.timeMarkers?.length ? item.timeMarkers : summariesBySourceUrl.get(item.sourceUrl)?.timeMarkers
   }));
 
   if (activePage === "insights") return insightItems;

@@ -88,6 +88,45 @@ func TestFetchSupadataTranscriptKeepsTimedSegments(t *testing.T) {
 	if !strings.Contains(transcript.TranscriptTimedText, "[0:05] first useful point") || !strings.Contains(transcript.TranscriptTimedText, "[1:15] second useful point") {
 		t.Fatalf("expected timestamped transcript text, got %q", transcript.TranscriptTimedText)
 	}
+	if len(transcript.ImportantTimeMarkers) != 2 {
+		t.Fatalf("expected timestamp markers for every timed segment, got %#v", transcript.ImportantTimeMarkers)
+	}
+	if transcript.ImportantTimeMarkers[0].Seconds != 5 || transcript.ImportantTimeMarkers[1].Seconds != 75 {
+		t.Fatalf("unexpected marker seconds: %#v", transcript.ImportantTimeMarkers)
+	}
+}
+
+func TestParseYouTubeDuration(t *testing.T) {
+	if got := parseYouTubeDuration("PT1H22M25S"); got != 4945 {
+		t.Fatalf("expected 4945 seconds, got %d", got)
+	}
+	if got := parseYouTubeDuration("PT12M4S"); got != 724 {
+		t.Fatalf("expected 724 seconds, got %d", got)
+	}
+}
+
+func TestMergeTranscriptEstimatesMarkersWhenTimedSegmentsAreMissing(t *testing.T) {
+	item := YouTubeItem{
+		VideoID:         "video-1",
+		DurationSeconds: 1200,
+	}
+	transcript := YouTubeItem{
+		TranscriptStatus: "available",
+		TranscriptText: strings.Repeat("Build leveraged products before adding more manual effort. ", 12) +
+			strings.Repeat("Use customer pull to decide which workflows deserve automation. ", 12) +
+			strings.Repeat("Treat distribution as part of the product instead of a launch chore. ", 12),
+	}
+
+	merged := mergeTranscript(item, transcript)
+
+	if len(merged.ImportantTimeMarkers) == 0 {
+		t.Fatal("expected estimated time markers when transcript has no timed segments")
+	}
+	for _, marker := range merged.ImportantTimeMarkers {
+		if marker.Seconds < 0 || marker.Seconds > item.DurationSeconds {
+			t.Fatalf("marker outside video duration: %#v", marker)
+		}
+	}
 }
 
 func jsonResponse(body string) *http.Response {

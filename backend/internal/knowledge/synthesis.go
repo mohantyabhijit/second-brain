@@ -210,7 +210,7 @@ func (s *Service) promptSynthesis(ctx context.Context, candidate sourceCandidate
 			"You are the GPT-5.5 source-grounded synthesis module for a personal second brain.",
 			"Read the source text, improve it into compact reusable knowledge, self-judge the result, and return JSON only.",
 			"Boundary: use only the source text below. Do not add outside facts, implied dates, or unsupported claims.",
-			"Summary: write 1-2 sentences under 55 words. Start with the reusable idea, not source metadata.",
+			"Summary: write 1-2 engaging sentences under 55 words. Start with the reusable idea, not source metadata, and make the first line strong enough to earn a click.",
 			"Quote: keep one short supporting quote or tight source paraphrase under 45 words. Never paste a full post, newsletter, or transcript block.",
 			"Insights: extract 3-8 distinct atomic insights when the source supports them. Omit filler rather than padding.",
 			"Each insight must be useful by itself, grounded in evidence, and non-overlapping with the other insights.",
@@ -640,6 +640,7 @@ func normalizedTimeMarkers(markers []ImportantTimeMarker, limit int) []Important
 }
 
 var timestampPattern = regexp.MustCompile(`[\[(](\d{1,2}:\d{2}(?::\d{2})?)[\])]\s*([^\n]+)`)
+var sentencePattern = regexp.MustCompile(`[^.!?\n]+[.!?]?`)
 
 func extractTimeMarkers(text string, limit int) []ImportantTimeMarker {
 	if limit <= 0 {
@@ -673,6 +674,69 @@ func extractTimeMarkers(text string, limit int) []ImportantTimeMarker {
 	return normalizedTimeMarkers(markers, limit)
 }
 
+func estimatedTranscriptMarkers(text string, durationSeconds int, limit int) []ImportantTimeMarker {
+	clean := strings.Join(strings.Fields(text), " ")
+	if clean == "" || durationSeconds <= 0 || limit <= 0 {
+		return nil
+	}
+	indexes := sentencePattern.FindAllStringIndex(clean, -1)
+	if len(indexes) == 0 {
+		return nil
+	}
+	targets := []float64{0.14, 0.38, 0.62, 0.82}
+	markers := []ImportantTimeMarker{}
+	used := map[int]bool{}
+	for _, target := range targets {
+		if len(markers) >= limit {
+			break
+		}
+		targetIndex := int(float64(len(clean)) * target)
+		bestIndex := -1
+		bestDistance := len(clean) + 1
+		for index, bounds := range indexes {
+			if used[index] {
+				continue
+			}
+			sentence := strings.TrimSpace(clean[bounds[0]:bounds[1]])
+			if len(sentence) < 36 {
+				continue
+			}
+			distance := absInt(bounds[0] - targetIndex)
+			if distance < bestDistance {
+				bestIndex = index
+				bestDistance = distance
+			}
+		}
+		if bestIndex < 0 {
+			continue
+		}
+		used[bestIndex] = true
+		bounds := indexes[bestIndex]
+		sentence := strings.TrimSpace(clean[bounds[0]:bounds[1]])
+		seconds := int((float64(bounds[0]) / float64(len(clean))) * float64(durationSeconds))
+		if seconds > durationSeconds {
+			seconds = durationSeconds
+		}
+		markers = append(markers, ImportantTimeMarker{
+			Label:        markerLabel(sentence),
+			Timestamp:    formatTimeMarkerTimestamp(seconds),
+			Seconds:      seconds,
+			WhyItMatters: truncateSummary(sentence),
+			Quote:        truncateQuote(sentence),
+		})
+	}
+	return normalizedTimeMarkers(markers, limit)
+}
+
+func markerLabel(sentence string) string {
+	words := strings.Fields(strings.Trim(sentence, " .!?"))
+	if len(words) == 0 {
+		return "Transcript moment"
+	}
+	limit := minInt(len(words), 5)
+	return strings.Trim(strings.Join(words[:limit], " "), " ,:;-")
+}
+
 func parseTimestampSeconds(value string) (int, bool) {
 	parts := strings.Split(strings.TrimSpace(value), ":")
 	if len(parts) < 2 || len(parts) > 3 {
@@ -690,6 +754,20 @@ func parseTimestampSeconds(value string) (int, bool) {
 		total = total*60 + number
 	}
 	return total, true
+}
+
+func absInt(value int) int {
+	if value < 0 {
+		return -value
+	}
+	return value
+}
+
+func minInt(left int, right int) int {
+	if left < right {
+		return left
+	}
+	return right
 }
 
 func formatTimeMarkerTimestamp(seconds int) string {

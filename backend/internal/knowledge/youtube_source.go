@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"regexp"
 	"sort"
 	"strings"
 )
@@ -25,6 +26,15 @@ type playlistResponse struct {
 	} `json:"items"`
 }
 
+type videoDetailsResponse struct {
+	Items []struct {
+		ID             string `json:"id"`
+		ContentDetails *struct {
+			Duration string `json:"duration"`
+		} `json:"contentDetails"`
+	} `json:"items"`
+}
+
 type supadataTranscriptResponse struct {
 	Content        any      `json:"content"`
 	Lang           string   `json:"lang"`
@@ -34,6 +44,8 @@ type supadataTranscriptResponse struct {
 	Error          string   `json:"error"`
 	Message        string   `json:"message"`
 }
+
+var youtubeDurationPattern = regexp.MustCompile(`^P(?:\d+Y)?(?:\d+M)?(?:\d+W)?(?:\d+D)?T?(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?$`)
 
 type openAIResponse struct {
 	OutputText string `json:"output_text"`
@@ -138,7 +150,44 @@ func (s *Service) fetchPlaylistItems(ctx context.Context, playlistID string, lim
 			TranscriptStatus: "untested",
 		})
 	}
+	items = s.attachVideoDurations(ctx, items)
 	return items, nil
+}
+
+func (s *Service) attachVideoDurations(ctx context.Context, items []YouTubeItem) []YouTubeItem {
+	if len(items) == 0 {
+		return items
+	}
+	ids := make([]string, 0, len(items))
+	for _, item := range items {
+		ids = append(ids, item.VideoID)
+	}
+	requestURL := "https://www.googleapis.com/youtube/v3/videos"
+	requestURL = appendQueryValue(requestURL, "part", "contentDetails")
+	requestURL = appendQueryValue(requestURL, "id", strings.Join(ids, ","))
+	requestURL = appendQueryValue(requestURL, "key", os.Getenv("YOUTUBE_API_KEY"))
+
+	headers := authHeader("YOUTUBE_ACCESS_TOKEN", "Bearer {value}")
+	var payload videoDetailsResponse
+	if err := s.requestJSON(ctx, http.MethodGet, requestURL, headers, nil, &payload); err != nil {
+		if s.logger != nil {
+			s.logger.Warn("youtube duration fetch skipped", "error", err)
+		}
+		return items
+	}
+	durations := map[string]int{}
+	for _, item := range payload.Items {
+		if item.ContentDetails == nil {
+			continue
+		}
+		if seconds := parseYouTubeDuration(item.ContentDetails.Duration); seconds > 0 {
+			durations[item.ID] = seconds
+		}
+	}
+	for index := range items {
+		items[index].DurationSeconds = durations[items[index].VideoID]
+	}
+	return items
 }
 
 func (s *Service) fetchSupadataTranscript(ctx context.Context, videoID string) YouTubeItem {
@@ -189,6 +238,7 @@ func (s *Service) fetchSupadataTranscriptAttempt(ctx context.Context, videoID st
 		return YouTubeItem{TranscriptStatus: "missing", TranscriptError: fallback(payload.Message, fallback(payload.Error, "Supadata returned no transcript text."))}
 	}
 	timedText := transcriptTimedText(payload.Content)
+	timeMarkers := extractTimeMarkers(timedText, 8)
 
 	if payload.Lang != "" && payload.Lang != "en" {
 		translated, err := s.translateTranscriptPreviewToEnglish(ctx, text, payload.Lang)
@@ -200,6 +250,7 @@ func (s *Service) fetchSupadataTranscriptAttempt(ctx context.Context, videoID st
 				TranscriptText:              text,
 				TranscriptOriginalText:      text,
 				TranscriptTimedText:         timedText,
+				ImportantTimeMarkers:        timeMarkers,
 				TranscriptLang:              payload.Lang,
 				TranscriptSourceLang:        payload.Lang,
 				TranscriptAvailableLangs:    payload.AvailableLangs,
@@ -214,6 +265,7 @@ func (s *Service) fetchSupadataTranscriptAttempt(ctx context.Context, videoID st
 			TranscriptText:              translated,
 			TranscriptOriginalText:      text,
 			TranscriptTimedText:         "",
+			ImportantTimeMarkers:        timeMarkers,
 			TranscriptLang:              "en",
 			TranscriptSourceLang:        payload.Lang,
 			TranscriptAvailableLangs:    payload.AvailableLangs,
@@ -226,6 +278,7 @@ func (s *Service) fetchSupadataTranscriptAttempt(ctx context.Context, videoID st
 		TranscriptPreview:           truncate(text, 1200),
 		TranscriptText:              text,
 		TranscriptTimedText:         timedText,
+		ImportantTimeMarkers:        timeMarkers,
 		TranscriptLang:              payload.Lang,
 		TranscriptSourceLang:        payload.Lang,
 		TranscriptAvailableLangs:    payload.AvailableLangs,
@@ -297,7 +350,34 @@ func mergeTranscript(item YouTubeItem, transcript YouTubeItem) YouTubeItem {
 	item.TranscriptTimedText = transcript.TranscriptTimedText
 	item.ImportantTimeMarkers = transcript.ImportantTimeMarkers
 	item.TranscriptError = transcript.TranscriptError
+	if len(item.ImportantTimeMarkers) == 0 {
+		item.ImportantTimeMarkers = extractTimeMarkers(item.Description, 8)
+	}
+	if len(item.ImportantTimeMarkers) == 0 {
+		text := fallback(item.TranscriptText, item.TranscriptOriginalText)
+		item.ImportantTimeMarkers = estimatedTranscriptMarkers(text, item.DurationSeconds, 3)
+	}
 	return item
+}
+
+func parseYouTubeDuration(value string) int {
+	matches := youtubeDurationPattern.FindStringSubmatch(strings.TrimSpace(value))
+	if len(matches) != 4 {
+		return 0
+	}
+	total := 0
+	multipliers := []int{3600, 60, 1}
+	for index, match := range matches[1:] {
+		if match == "" {
+			continue
+		}
+		var number int
+		if _, err := fmt.Sscanf(match, "%d", &number); err != nil {
+			return 0
+		}
+		total += number * multipliers[index]
+	}
+	return total
 }
 
 func transcriptText(content any) string {

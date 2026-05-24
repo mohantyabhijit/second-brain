@@ -54,6 +54,7 @@ type YouTubeItem struct {
 	Description                 string                `json:"description,omitempty"`
 	ChannelTitle                string                `json:"channelTitle,omitempty"`
 	PublishedAt                 string                `json:"publishedAt,omitempty"`
+	DurationSeconds             int                   `json:"durationSeconds,omitempty"`
 	SourceURL                   string                `json:"sourceUrl"`
 	TranscriptStatus            string                `json:"transcriptStatus"`
 	TranscriptLang              string                `json:"transcriptLang,omitempty"`
