@@ -326,6 +326,46 @@ type AskSecondBrainResponse struct {
 	SearchStatus string                 `json:"searchStatus,omitempty"`
 }
 
+type AppStateManifest struct {
+	SchemaVersion string    `json:"schemaVersion"`
+	RunID         string    `json:"runId"`
+	GeneratedAt   time.Time `json:"generatedAt"`
+	PublishedAt   time.Time `json:"publishedAt"`
+	ETag          string    `json:"etag"`
+	GraphStatus   string    `json:"graphStatus"`
+	DigestStatus  string    `json:"digestStatus"`
+}
+
+type AppStateViews struct {
+	Insights             []Insight     `json:"insights"`
+	DailyNewsletter      *DigestIssue  `json:"dailyNewsletter,omitempty"`
+	OriginalXBookmarks   []XBookmark   `json:"originalXBookmarks"`
+	OriginalYouTubePosts []YouTubeItem `json:"originalYouTubePosts"`
+}
+
+type AppStateGraph struct {
+	Status          string             `json:"status"`
+	Themes          []ThemeCluster     `json:"themes"`
+	InsightClusters []InsightCluster   `json:"insightClusters"`
+	Connections     []SourceConnection `json:"connections"`
+}
+
+type AppStateAskContext struct {
+	RunID     string                 `json:"runId"`
+	Sources   []AskSecondBrainSource `json:"sources"`
+	UpdatedAt time.Time              `json:"updatedAt"`
+}
+
+type AppState struct {
+	Manifest      AppStateManifest   `json:"manifest"`
+	Latest        *Result            `json:"latest"`
+	Views         AppStateViews      `json:"views"`
+	Digests       []DigestIssue      `json:"digests"`
+	RefreshStatus RefreshStatus      `json:"refreshStatus"`
+	Graph         AppStateGraph      `json:"graph"`
+	AskContext    AppStateAskContext `json:"askContext"`
+}
+
 type SynthesisCacheKey struct {
 	SourceType    SourceType
 	ExternalID    string

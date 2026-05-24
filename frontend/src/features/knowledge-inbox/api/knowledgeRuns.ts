@@ -1,4 +1,4 @@
-import type { AskSecondBrainResponse, DigestIssue, FeedbackSignal, KnowledgeRunResult, RefreshStatus } from "../contracts";
+import type { AppState, AskSecondBrainResponse, DigestIssue, FeedbackSignal, InsightGraphResponse, KnowledgeRunResult, RefreshStatus } from "../contracts";
 
 const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8080";
 
@@ -22,6 +22,11 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 export async function readLatestKnowledgeRun() {
   const payload = await request<{ latest: KnowledgeRunResult | null }>("/api/knowledge-runs/latest");
   return payload.latest ? normalizeKnowledgeRun(payload.latest) : null;
+}
+
+export async function readAppState() {
+  const payload = await request<AppState>("/api/app-state");
+  return normalizeAppState(payload);
 }
 
 export async function readDigestIssues() {
@@ -80,6 +85,12 @@ export async function askSecondBrain(input: { question: string; useLatest?: bool
   });
 }
 
+export async function readInsightGraph(limit = 180) {
+  const params = new URLSearchParams({ limit: String(limit) });
+  const payload = await request<InsightGraphResponse>(`/api/knowledge-graph/insights?${params.toString()}`);
+  return normalizeInsightGraph(payload);
+}
+
 function normalizeKnowledgeRun(result: KnowledgeRunResult): KnowledgeRunResult {
   return {
     ...result,
@@ -93,6 +104,47 @@ function normalizeKnowledgeRun(result: KnowledgeRunResult): KnowledgeRunResult {
     connections: result.connections ?? [],
     validation: result.validation ?? [],
     blockers: result.blockers ?? []
+  };
+}
+
+function normalizeAppState(state: AppState): AppState {
+  const latest = state.latest ? normalizeKnowledgeRun(state.latest) : null;
+  return {
+    ...state,
+    latest,
+    digests: state.digests ?? [],
+    views: {
+      insights: state.views?.insights ?? latest?.insights ?? [],
+      dailyNewsletter: state.views?.dailyNewsletter ?? latest?.digest,
+      originalXBookmarks: state.views?.originalXBookmarks ?? latest?.xBookmarks ?? [],
+      originalYouTubePosts: state.views?.originalYouTubePosts ?? latest?.youtubeItems ?? []
+    },
+    graph: {
+      status: state.graph?.status ?? state.manifest?.graphStatus ?? "none",
+      themes: state.graph?.themes ?? latest?.themes ?? [],
+      insightClusters: state.graph?.insightClusters ?? latest?.insightClusters ?? [],
+      connections: state.graph?.connections ?? latest?.connections ?? []
+    },
+    askContext: {
+      runId: state.askContext?.runId ?? state.manifest?.runId ?? "none",
+      sources: state.askContext?.sources ?? [],
+      updatedAt: state.askContext?.updatedAt ?? state.manifest?.publishedAt ?? new Date(0).toISOString()
+    }
+  };
+}
+
+function normalizeInsightGraph(result: InsightGraphResponse): InsightGraphResponse {
+  return {
+    nodes: (result.nodes ?? []).map((node) => ({
+      ...node,
+      topics: node.topics ?? []
+    })),
+    edges: result.edges ?? [],
+    stats: {
+      totalInsights: result.stats?.totalInsights ?? 0,
+      returnedInsights: result.stats?.returnedInsights ?? result.nodes?.length ?? 0,
+      returnedEdges: result.stats?.returnedEdges ?? result.edges?.length ?? 0
+    }
   };
 }
 

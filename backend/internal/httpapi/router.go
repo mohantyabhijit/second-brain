@@ -35,13 +35,29 @@ func NewRouter(cfg config.Config, service *knowledge.Service, logger *slog.Logge
 		httputil.JSON(w, http.StatusOK, map[string]any{"latest": latest})
 	}
 
+	readAppState := func(w http.ResponseWriter, r *http.Request) {
+		state, cacheStatus, err := service.ReadAppState(r.Context())
+		if err != nil {
+			logger.Error("read app state", "error", err)
+			httputil.Error(w, http.StatusInternalServerError, "read app state")
+			return
+		}
+		if cacheStatus != "" {
+			w.Header().Set("X-Second-Brain-Cache", cacheStatus)
+		}
+		if state != nil && state.Manifest.ETag != "" {
+			w.Header().Set("ETag", `"`+state.Manifest.ETag+`"`)
+		}
+		httputil.JSON(w, http.StatusOK, state)
+	}
+
 	runInbox := func(w http.ResponseWriter, r *http.Request) {
 		status := service.StartRefresh()
 		httputil.JSON(w, http.StatusAccepted, status)
 	}
 
 	readRefreshStatus := func(w http.ResponseWriter, r *http.Request) {
-		httputil.JSON(w, http.StatusOK, service.RefreshStatus())
+		httputil.JSON(w, http.StatusOK, service.ReadRefreshStatus(r.Context()))
 	}
 
 	saveFeedback := func(w http.ResponseWriter, r *http.Request) {
@@ -163,6 +179,21 @@ func NewRouter(cfg config.Config, service *knowledge.Service, logger *slog.Logge
 		httputil.JSON(w, http.StatusOK, result)
 	}
 
+	readInsightGraph := func(w http.ResponseWriter, r *http.Request) {
+		limit, err := knowledge.NormalizeInsightGraphLimit(r.URL.Query().Get("limit"))
+		if err != nil {
+			httputil.Error(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		graph, err := service.ReadInsightGraph(r.Context(), limit)
+		if err != nil {
+			logger.Error("read insight graph", "error", err)
+			httputil.Error(w, http.StatusServiceUnavailable, err.Error())
+			return
+		}
+		httputil.JSON(w, http.StatusOK, graph)
+	}
+
 	startXAuth := func(w http.ResponseWriter, r *http.Request) {
 		url, err := service.BeginXOAuth(r.Context())
 		if err != nil {
@@ -200,6 +231,7 @@ func NewRouter(cfg config.Config, service *knowledge.Service, logger *slog.Logge
 	mux.HandleFunc("GET /api/auth/x", startXAuth)
 	mux.HandleFunc("GET /api/auth/x/callback", completeXAuth)
 	mux.HandleFunc("GET /api/auth/x/status", readXAuthStatus)
+	mux.HandleFunc("GET /api/app-state", readAppState)
 	mux.HandleFunc("GET /api/knowledge-runs/latest", readLatest)
 	mux.HandleFunc("GET /api/knowledge-runs/refresh", readRefreshStatus)
 	mux.HandleFunc("POST /api/knowledge-runs/refresh", runInbox)
@@ -210,6 +242,7 @@ func NewRouter(cfg config.Config, service *knowledge.Service, logger *slog.Logge
 	mux.HandleFunc("POST /api/digests/send", sendDigest)
 	mux.HandleFunc("POST /api/share/tweet", shareTweet)
 	mux.HandleFunc("POST /api/ask", askSecondBrain)
+	mux.HandleFunc("GET /api/knowledge-graph/insights", readInsightGraph)
 
 	return requestLogger(logger, cors(cfg.AllowedOrigins, mux))
 }

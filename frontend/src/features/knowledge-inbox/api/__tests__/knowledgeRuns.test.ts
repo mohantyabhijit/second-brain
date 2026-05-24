@@ -64,6 +64,60 @@ describe("knowledge run API client", () => {
     });
   });
 
+  it("reads normalized app state from the Redis-backed boot endpoint", async () => {
+    vi.stubEnv("NEXT_PUBLIC_API_BASE_URL", "https://api.example.test");
+    const fetchMock = vi.fn(async () => {
+      return new Response(
+        JSON.stringify({
+          manifest: {
+            schemaVersion: "redis-read-model-v1",
+            runId: "run-1",
+            generatedAt: "2026-05-24T00:00:00.000Z",
+            publishedAt: "2026-05-24T00:00:01.000Z",
+            etag: "abc",
+            graphStatus: "derived",
+            digestStatus: "generated"
+          },
+          latest: {
+            generatedAt: "2026-05-24T00:00:00.000Z",
+            sourceStatus: { x: "ready", youtube: "ready", onecli: "ready" },
+            xBookmarks: null,
+            youtubeItems: null,
+            summaries: null,
+            insights: null,
+            actionItems: null,
+            processing: null,
+            validation: null,
+            blockers: null
+          },
+          views: null,
+          digests: null,
+          refreshStatus: {
+            id: "idle",
+            status: "idle",
+            startedAt: "2026-05-24T00:00:00.000Z"
+          },
+          graph: null,
+          askContext: null
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } }
+      );
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { readAppState } = await import("../knowledgeRuns");
+    const state = await readAppState();
+
+    expect(fetchMock).toHaveBeenCalledWith("https://api.example.test/api/app-state", {
+      headers: { "Content-Type": "application/json" }
+    });
+    expect(state.latest?.xBookmarks).toEqual([]);
+    expect(state.digests).toEqual([]);
+    expect(state.views.originalXBookmarks).toEqual([]);
+    expect(state.graph.connections).toEqual([]);
+    expect(state.askContext.sources).toEqual([]);
+  });
+
   it("reads persisted newsletter issues", async () => {
     vi.stubEnv("NEXT_PUBLIC_API_BASE_URL", "https://api.example.test");
     const fetchMock = vi.fn(async () => {
@@ -93,6 +147,38 @@ describe("knowledge run API client", () => {
     });
     expect(digests).toHaveLength(1);
     expect(digests[0]?.subject).toBe("Displayed digest");
+  });
+
+  it("normalizes insight graph responses", async () => {
+    vi.stubEnv("NEXT_PUBLIC_API_BASE_URL", "https://api.example.test");
+    const fetchMock = vi.fn(async () => {
+      return new Response(
+        JSON.stringify({
+          nodes: [
+            {
+              id: "insight-1",
+              label: "Coordination cost",
+              topics: null,
+              domain: "organizations"
+            }
+          ],
+          edges: null,
+          stats: null
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } }
+      );
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { readInsightGraph } = await import("../knowledgeRuns");
+    const graph = await readInsightGraph(25);
+
+    expect(fetchMock).toHaveBeenCalledWith("https://api.example.test/api/knowledge-graph/insights?limit=25", {
+      headers: { "Content-Type": "application/json" }
+    });
+    expect(graph.nodes[0]?.topics).toEqual([]);
+    expect(graph.edges).toEqual([]);
+    expect(graph.stats).toEqual({ totalInsights: 0, returnedInsights: 1, returnedEdges: 0 });
   });
 
   it("sends the displayed digest payload for one-off email delivery", async () => {

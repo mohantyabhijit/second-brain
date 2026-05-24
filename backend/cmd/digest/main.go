@@ -6,6 +6,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/abhijitmohanty/second-brain/backend/internal/cache/rediscache"
 	"github.com/abhijitmohanty/second-brain/backend/internal/config"
 	"github.com/abhijitmohanty/second-brain/backend/internal/knowledge"
 	"github.com/abhijitmohanty/second-brain/backend/internal/platform/httpclient"
@@ -37,6 +38,10 @@ func main() {
 	defer closeStore()
 
 	service := knowledge.NewService(cfg, store, httpclient.New())
+	service.SetLogger(logger)
+	readModelCache, closeCache := rediscache.Open(ctx, cfg, logger)
+	defer closeCache()
+	service.SetReadModelCache(readModelCache)
 	digest, err := service.GenerateDigest(ctx)
 	if err != nil {
 		logger.Error("generate digest", "error", err)

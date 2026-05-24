@@ -129,6 +129,7 @@ const decisionLabels: Record<Decision, string> = {
 
 const navItems: NavigationItemViewModel[] = [
   { label: "Insights", href: "/" },
+  { label: "Knowledge Graph", href: "/knowledge-graph" },
   { label: "Daily Newsletter", href: "/daily-newsletter" },
   { label: "Original X Bookmarks", href: "/original-x-bookmarks" },
   { label: "Original YouTube Videos", href: "/original-youtube-videos" }

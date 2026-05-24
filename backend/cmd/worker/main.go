@@ -13,6 +13,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/abhijitmohanty/second-brain/backend/internal/cache/rediscache"
 	"github.com/abhijitmohanty/second-brain/backend/internal/config"
 	"github.com/abhijitmohanty/second-brain/backend/internal/knowledge"
 	"github.com/abhijitmohanty/second-brain/backend/internal/platform/httpclient"
@@ -32,6 +33,9 @@ func main() {
 
 	service := knowledge.NewService(cfg, store, httpclient.New())
 	service.SetLogger(logger)
+	readModelCache, closeCache := rediscache.Open(ctx, cfg, logger)
+	defer closeCache()
+	service.SetReadModelCache(readModelCache)
 
 	refreshEvery := parseDuration(cfg.WorkerRefreshInterval, 2*time.Hour)
 	cronRunner := rcron.New(rcron.WithChain(rcron.Recover(rcron.DefaultLogger)))

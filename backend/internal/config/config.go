@@ -53,6 +53,11 @@ type Config struct {
 	RefreshTimeout               string
 	ProcessWorkerCount           int
 	WorkerRefreshInterval        string
+	RedisURL                     string
+	RedisCacheEnabled            bool
+	RedisCacheTTL                string
+	RedisRefreshStatusTTL        string
+	RedisAskAnswerTTL            string
 	Neo4jURI                     string
 	Neo4jUsername                string
 	Neo4jPassword                string
@@ -107,6 +112,11 @@ func Load() Config {
 		RefreshTimeout:               value("REFRESH_TIMEOUT", "90m"),
 		ProcessWorkerCount:           intValue("PROCESS_WORKER_COUNT", 8),
 		WorkerRefreshInterval:        value("WORKER_REFRESH_INTERVAL", "2h"),
+		RedisURL:                     os.Getenv("REDIS_URL"),
+		RedisCacheEnabled:            value("REDIS_CACHE_ENABLED", "false") == "true",
+		RedisCacheTTL:                value("REDIS_CACHE_TTL", "720h"),
+		RedisRefreshStatusTTL:        value("REDIS_REFRESH_STATUS_TTL", "24h"),
+		RedisAskAnswerTTL:            value("REDIS_ASK_ANSWER_TTL", "1h"),
 		Neo4jURI:                     os.Getenv("NEO4J_URI"),
 		Neo4jUsername:                os.Getenv("NEO4J_USERNAME"),
 		Neo4jPassword:                os.Getenv("NEO4J_PASSWORD"),

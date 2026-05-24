@@ -1,8 +1,8 @@
 "use client";
 
 import { startTransition, useCallback, useEffect, useState } from "react";
-import { askSecondBrain, generateDailyDigest, readDigestIssues, readKnowledgeRefreshStatus, readLatestKnowledgeRun, saveKnowledgeFeedback, sendLatestDigest, shareInsightToX, startKnowledgeInboxRefresh } from "../api/knowledgeRuns";
-import type { AskSecondBrainResponse, DigestIssue, FeedbackSignal, KnowledgeRunResult, RefreshStatus } from "../contracts";
+import { askSecondBrain, generateDailyDigest, readAppState, readDigestIssues, readKnowledgeRefreshStatus, readLatestKnowledgeRun, saveKnowledgeFeedback, sendLatestDigest, shareInsightToX, startKnowledgeInboxRefresh } from "../api/knowledgeRuns";
+import type { AppState, AskSecondBrainResponse, DigestIssue, FeedbackSignal, KnowledgeRunResult, RefreshStatus } from "../contracts";
 import { initialKnowledgeRun } from "./initialKnowledgeRun";
 
 export type ChatMessage = {
@@ -24,15 +24,22 @@ export function useKnowledgeInboxController() {
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [error, setError] = useState<string | null>(null);
 
+  const applyAppState = useCallback((state: AppState) => {
+    const latest = state.latest;
+    if (latest) {
+      startTransition(() => setRun(latest));
+    }
+    startTransition(() => setDigestIssues(state.digests ?? []));
+    setRefreshStatus(state.refreshStatus);
+    setIsRunning(state.refreshStatus?.status === "running");
+  }, []);
+
   useEffect(() => {
     let ignore = false;
-    Promise.all([readLatestKnowledgeRun(), readDigestIssues()])
-      .then(([latest, digests]) => {
-        if (!ignore && latest) {
-          startTransition(() => setRun(latest));
-        }
+    readAppState()
+      .then((state) => {
         if (!ignore) {
-          startTransition(() => setDigestIssues(digests));
+          applyAppState(state);
         }
       })
       .catch(() => undefined)
@@ -45,7 +52,7 @@ export function useKnowledgeInboxController() {
     return () => {
       ignore = true;
     };
-  }, []);
+  }, [applyAppState]);
 
   useEffect(() => {
     let ignore = false;
@@ -61,15 +68,9 @@ export function useKnowledgeInboxController() {
         return;
       }
       if (status.status === "completed") {
-        const [latest, digests] = await Promise.all([
-          readLatestKnowledgeRun().catch(() => null),
-          readDigestIssues().catch(() => [])
-        ]);
-        if (!ignore && latest) {
-          startTransition(() => setRun(latest));
-        }
-        if (!ignore) {
-          startTransition(() => setDigestIssues(digests));
+        const state = await readAppState().catch(() => null);
+        if (!ignore && state) {
+          applyAppState(state);
         }
       }
     }
@@ -81,7 +82,7 @@ export function useKnowledgeInboxController() {
         window.clearTimeout(timer);
       }
     };
-  }, []);
+  }, [applyAppState]);
 
   const runValidation = useCallback(async () => {
     if (isRunning) {
@@ -105,18 +106,23 @@ export function useKnowledgeInboxController() {
       if (status.status === "failed") {
         throw new Error(status.error || "Knowledge inbox validation failed.");
       }
-      const latest = await readLatestKnowledgeRun();
-      if (latest) {
-        startTransition(() => setRun(latest));
+      const state = await readAppState().catch(() => null);
+      if (state) {
+        applyAppState(state);
+      } else {
+        const latest = await readLatestKnowledgeRun();
+        if (latest) {
+          startTransition(() => setRun(latest));
+        }
+        const digests = await readDigestIssues().catch(() => []);
+        startTransition(() => setDigestIssues(digests));
       }
-      const digests = await readDigestIssues().catch(() => []);
-      startTransition(() => setDigestIssues(digests));
     } catch (runError) {
       setError(runError instanceof Error ? runError.message : "Knowledge inbox validation failed.");
     } finally {
       setIsRunning(false);
     }
-  }, [isRunning]);
+  }, [applyAppState, isRunning]);
 
   const saveFeedback = useCallback(async (targetType: string, targetId: string, signal: FeedbackSignal, sourceUrl?: string) => {
     try {

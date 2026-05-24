@@ -2,6 +2,7 @@ package knowledge
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -28,6 +29,7 @@ type Store interface {
 type Service struct {
 	cfg          config.Config
 	store        Store
+	cache        ReadModelCache
 	client       *http.Client
 	logger       *slog.Logger
 	refreshMu    sync.Mutex
@@ -49,7 +51,33 @@ func (s *Service) SetLogger(logger *slog.Logger) {
 	}
 }
 
+func (s *Service) SetReadModelCache(cache ReadModelCache) {
+	s.cache = cache
+}
+
 func (s *Service) ReadLatest(ctx context.Context) (*Result, error) {
+	if s.cache != nil {
+		latest, err := s.cache.ReadLatest(ctx, s.cfg.OwnerID)
+		if err == nil {
+			s.logger.Info("read model cache hit", "surface", "latest")
+			if latest == nil {
+				return nil, nil
+			}
+			normalizeResultInsightEngine(latest)
+			normalizeResultCollections(latest)
+			if latest.Digest != nil {
+				s.annotateDigestIllustration(latest.Digest)
+			}
+			return latest, nil
+		}
+		if !errors.Is(err, ErrReadModelCacheMiss) {
+			s.logger.Warn("read model cache fallback", "surface", "latest", "error", err)
+		}
+	}
+	return s.readLatestCanonical(ctx)
+}
+
+func (s *Service) readLatestCanonical(ctx context.Context) (*Result, error) {
 	latest, err := s.store.ReadLatest(ctx)
 	if err != nil || latest == nil {
 		return latest, err
@@ -59,6 +87,33 @@ func (s *Service) ReadLatest(ctx context.Context) (*Result, error) {
 		s.annotateDigestIllustration(latest.Digest)
 	}
 	return latest, nil
+}
+
+func (s *Service) ReadAppState(ctx context.Context) (*AppState, string, error) {
+	if s.cache != nil {
+		state, err := s.cache.ReadAppState(ctx, s.cfg.OwnerID)
+		if err == nil {
+			s.logger.Info("read model cache hit", "surface", "app-state")
+			s.normalizeAppState(state)
+			return state, "hit", nil
+		}
+		if !errors.Is(err, ErrReadModelCacheMiss) {
+			s.logger.Warn("read model cache fallback", "surface", "app-state", "error", err)
+		}
+	}
+
+	latest, err := s.readLatestCanonical(ctx)
+	if err != nil {
+		return nil, "error", err
+	}
+	digests, err := s.readDigestsCanonical(ctx, 50)
+	if err != nil {
+		return nil, "error", err
+	}
+	state := BuildAppState(s.cfg.OwnerID, latest, digests, s.ReadRefreshStatus(ctx), "")
+	s.normalizeAppState(&state)
+	s.publishAppStateBestEffort(ctx, state, "fallback_warm")
+	return &state, "fallback", nil
 }
 
 func (s *Service) StartRefresh() RefreshStatus {
@@ -77,6 +132,7 @@ func (s *Service) StartRefresh() RefreshStatus {
 	}
 	s.refresh = status
 	s.refreshMu.Unlock()
+	s.writeRefreshStatusBestEffort(status)
 
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), s.refreshTimeout())
@@ -85,22 +141,40 @@ func (s *Service) StartRefresh() RefreshStatus {
 		finishedAt := time.Now().UTC()
 
 		s.refreshMu.Lock()
-		defer s.refreshMu.Unlock()
 		s.refresh.FinishedAt = &finishedAt
 		if err != nil {
 			s.refresh.Status = "failed"
 			s.refresh.Error = err.Error()
 			s.refresh.Phase = "failed"
 			s.refresh.Message = "Refresh failed before the inbox could be updated."
+			status := s.refresh
+			s.refreshMu.Unlock()
+			s.writeRefreshStatusBestEffort(status)
 			return
 		}
 		s.refresh.Status = "completed"
 		s.refresh.Error = ""
 		s.refresh.Phase = "completed"
 		s.refresh.Message = "Refresh completed. The latest source-grounded insights are ready."
+		status := s.refresh
+		s.refreshMu.Unlock()
+		s.writeRefreshStatusBestEffort(status)
 	}()
 
 	return status
+}
+
+func (s *Service) ReadRefreshStatus(ctx context.Context) RefreshStatus {
+	if s.cache != nil {
+		status, err := s.cache.ReadRefreshStatus(ctx, s.cfg.OwnerID)
+		if err == nil && status != nil {
+			return *status
+		}
+		if err != nil && !errors.Is(err, ErrReadModelCacheMiss) {
+			s.logger.Warn("read model cache fallback", "surface", "refresh-status", "error", err)
+		}
+	}
+	return s.RefreshStatus()
 }
 
 func (s *Service) RefreshStatus() RefreshStatus {
@@ -324,6 +398,7 @@ func (s *Service) Run(ctx context.Context) (Result, error) {
 		s.logger.Error("knowledge refresh persist failed", "duration_ms", time.Since(saveStart).Milliseconds(), "error", err)
 		return result, err
 	}
+	s.publishAppStateForResult(ctx, result, "")
 	s.logger.Info(
 		"knowledge refresh completed",
 		"duration_ms", time.Since(start).Milliseconds(),
@@ -351,6 +426,8 @@ func (s *Service) setRefreshStage(phase string, message string) {
 	s.refresh.Phase = phase
 	s.refresh.Message = message
 	s.refresh.ElapsedSeconds = int64(time.Since(s.refresh.StartedAt).Seconds())
+	status := s.refresh
+	go s.writeRefreshStatusBestEffort(status)
 }
 
 func (s *Service) refreshTimeout() time.Duration {
@@ -359,6 +436,86 @@ func (s *Service) refreshTimeout() time.Duration {
 		return 90 * time.Minute
 	}
 	return timeout
+}
+
+func (s *Service) publishAppStateForResult(ctx context.Context, result Result, graphStatus string) {
+	if s.cache == nil {
+		return
+	}
+	digests, err := s.readDigestsCanonical(ctx, 50)
+	if err != nil {
+		s.logger.Warn("read digests for Redis publish failed", "error", err)
+		if result.Digest != nil {
+			digests = []DigestIssue{*result.Digest}
+		}
+	}
+	state := BuildAppState(s.cfg.OwnerID, &result, digests, s.RefreshStatus(), graphStatus)
+	s.normalizeAppState(&state)
+	s.publishAppStateBestEffort(ctx, state, "refresh_publish")
+}
+
+func (s *Service) publishAppStateBestEffort(ctx context.Context, state AppState, reason string) {
+	if s.cache == nil {
+		return
+	}
+	publishCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+	defer cancel()
+	if err := s.cache.PublishAppState(publishCtx, s.cfg.OwnerID, state); err != nil {
+		s.logger.Warn("read model cache publish failed", "reason", reason, "run_id", state.Manifest.RunID, "error", err)
+		return
+	}
+	s.logger.Info("read model cache publish completed", "reason", reason, "run_id", state.Manifest.RunID, "etag", state.Manifest.ETag)
+}
+
+func (s *Service) writeRefreshStatusBestEffort(status RefreshStatus) {
+	if s.cache == nil {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	if err := s.cache.WriteRefreshStatus(ctx, s.cfg.OwnerID, status); err != nil {
+		s.logger.Warn("write refresh status to read model cache failed", "status", status.Status, "error", err)
+	}
+}
+
+func (s *Service) normalizeAppState(state *AppState) {
+	if state == nil {
+		return
+	}
+	if state.Latest != nil {
+		normalizeResultInsightEngine(state.Latest)
+		normalizeResultCollections(state.Latest)
+		if state.Latest.Digest != nil {
+			s.annotateDigestIllustration(state.Latest.Digest)
+		}
+	}
+	if state.Digests == nil {
+		state.Digests = []DigestIssue{}
+	}
+	for index := range state.Digests {
+		s.annotateDigestIllustration(&state.Digests[index])
+	}
+	if state.Views.Insights == nil {
+		state.Views.Insights = []Insight{}
+	}
+	if state.Views.OriginalXBookmarks == nil {
+		state.Views.OriginalXBookmarks = []XBookmark{}
+	}
+	if state.Views.OriginalYouTubePosts == nil {
+		state.Views.OriginalYouTubePosts = []YouTubeItem{}
+	}
+	if state.Graph.Themes == nil {
+		state.Graph.Themes = []ThemeCluster{}
+	}
+	if state.Graph.InsightClusters == nil {
+		state.Graph.InsightClusters = []InsightCluster{}
+	}
+	if state.Graph.Connections == nil {
+		state.Graph.Connections = []SourceConnection{}
+	}
+	if state.AskContext.Sources == nil {
+		state.AskContext.Sources = []AskSecondBrainSource{}
+	}
 }
 
 func (s *Service) SaveFeedback(ctx context.Context, event FeedbackEvent) error {
@@ -399,13 +556,38 @@ func (s *Service) GenerateDigest(ctx context.Context) (*DigestIssue, error) {
 	if len(digest.Deliveries) > 0 {
 		digest.Status = digest.Deliveries[0].Status
 	}
-	return s.store.SaveDigest(ctx, digest)
+	saved, err := s.store.SaveDigest(ctx, digest)
+	if err != nil {
+		return nil, err
+	}
+	if saved != nil {
+		latest.Digest = saved
+		s.publishAppStateForResult(ctx, *latest, "")
+	}
+	return saved, nil
 }
 
 func (s *Service) ReadDigests(ctx context.Context, limit int) ([]DigestIssue, error) {
 	if limit <= 0 || limit > 100 {
 		limit = 50
 	}
+	if s.cache != nil {
+		digests, err := s.cache.ReadDigests(ctx, s.cfg.OwnerID, limit)
+		if err == nil {
+			s.logger.Info("read model cache hit", "surface", "digests")
+			for index := range digests {
+				s.annotateDigestIllustration(&digests[index])
+			}
+			return digests, nil
+		}
+		if !errors.Is(err, ErrReadModelCacheMiss) {
+			s.logger.Warn("read model cache fallback", "surface", "digests", "error", err)
+		}
+	}
+	return s.readDigestsCanonical(ctx, limit)
+}
+
+func (s *Service) readDigestsCanonical(ctx context.Context, limit int) ([]DigestIssue, error) {
 	digests, err := s.store.ReadDigests(ctx, limit)
 	if err != nil {
 		return nil, err
@@ -452,7 +634,15 @@ func (s *Service) SendLatestDigest(ctx context.Context, recipientEmail string) (
 	delivery := s.deliverDigest(ctx, digest, recipient)
 	digest.Deliveries = []DigestDelivery{delivery}
 	digest.Status = delivery.Status
-	return s.store.SaveDigest(ctx, digest)
+	saved, err := s.store.SaveDigest(ctx, digest)
+	if err != nil {
+		return nil, err
+	}
+	if saved != nil {
+		latest.Digest = saved
+		s.publishAppStateForResult(ctx, *latest, "")
+	}
+	return saved, nil
 }
 
 func (s *Service) SendProvidedDigest(ctx context.Context, recipientEmail string, digest DigestIssue) (*DigestIssue, error) {

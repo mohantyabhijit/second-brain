@@ -9,6 +9,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/abhijitmohanty/second-brain/backend/internal/cache/rediscache"
 	"github.com/abhijitmohanty/second-brain/backend/internal/config"
 	"github.com/abhijitmohanty/second-brain/backend/internal/httpapi"
 	"github.com/abhijitmohanty/second-brain/backend/internal/knowledge"
@@ -42,6 +43,9 @@ func main() {
 	defer closeStore()
 
 	service := knowledge.NewService(cfg, store, httpclient.New())
+	readModelCache, closeCache := rediscache.Open(ctx, cfg, logger)
+	defer closeCache()
+	service.SetReadModelCache(readModelCache)
 	server := &http.Server{
 		Addr:              ":" + cfg.Port,
 		Handler:           httpapi.NewRouter(cfg, service, logger),

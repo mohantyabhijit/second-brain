@@ -5,7 +5,7 @@ import { useKnowledgeInboxController } from "./model/useKnowledgeInboxController
 import { toKnowledgeInboxViewModel } from "./presentation/viewModel";
 import { SecondBrainConsoleView } from "./ui/SecondBrainConsoleView";
 
-export type KnowledgeInboxPage = "insights" | "daily-newsletter" | "original-x-posts" | "original-youtube-posts";
+export type KnowledgeInboxPage = "insights" | "daily-newsletter" | "original-x-posts" | "original-youtube-posts" | "knowledge-graph";
 
 type KnowledgeInboxContainerProps = {
   initialPage?: KnowledgeInboxPage;

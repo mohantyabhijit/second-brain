@@ -6,6 +6,7 @@ import type { KnowledgeInboxPage } from "../KnowledgeInboxContainer";
 import type { ChatMessage } from "../model/useKnowledgeInboxController";
 import type { KnowledgeInboxViewModel, NavigationItemViewModel, SummaryCardViewModel } from "../presentation/viewModel";
 import type { DigestIssue, FeedbackSignal, ImportantTimeMarker, RefreshStatus } from "../contracts";
+import { KnowledgeGraphView } from "./KnowledgeGraphView";
 type SecondBrainConsoleViewProps = {
   activePage: KnowledgeInboxPage;
   chatMessages: ChatMessage[];
@@ -67,6 +68,11 @@ const pageCopy: Record<
     title: "Original YouTube Videos",
     kicker: "YouTube",
     emptyTitle: "No YouTube videos yet"
+  },
+  "knowledge-graph": {
+    title: "Knowledge Graph",
+    kicker: "Neo4j",
+    emptyTitle: "No graph insights yet"
   }
 };
 
@@ -183,11 +189,11 @@ export function SecondBrainConsoleView({ activePage, chatMessages, digestIssues,
           ) : null}
         </header>
 
-        {model.error ? <div className="error-banner">{model.error}</div> : null}
+        {model.error && activePage !== "knowledge-graph" ? <div className="error-banner">{model.error}</div> : null}
         {model.header.isRunning || refreshStatus?.status === "running" ? (
           <RefreshProgress status={refreshStatus} />
         ) : null}
-        {isLoading ? (
+        {isLoading && activePage !== "knowledge-graph" ? (
           <div className="loading-strip" role="status">
             <span className="loading-spinner" aria-hidden="true" />
             Loading latest knowledge run
@@ -195,35 +201,39 @@ export function SecondBrainConsoleView({ activePage, chatMessages, digestIssues,
         ) : null}
 
         <div className="wall-layout">
-          <section className="feed-column" aria-label={`${page.title} feed`}>
-            {feedItems.length ? (
-              feedItems.map((item, index) => {
-                const itemKey = `${item.id}-${index}`;
-                return (
-                  <FeedCard
-                    key={itemKey}
-                    copied={copiedItems.has(itemKey)}
-                    index={index}
-                    item={item}
-                    itemKey={itemKey}
-                    onCopy={() => toggleCopiedItem(itemKey, shortText(item.quote ?? item.body, quotePreviewLength), item)}
-                    onOpen={() => setOpenSummaryItem(item)}
-                  />
-                );
-              })
-            ) : (
-              <div className="feed-card empty-feed">
-                <span className="feed-source">Source required</span>
-                <h2>{page.emptyTitle}</h2>
-                <p>No sourced items are available for this view yet. Refresh the inbox after X or YouTube credentials are connected.</p>
-              </div>
-            )}
-            {baseItems.length ? (
-              <div ref={sentinelRef} className="feed-sentinel" aria-hidden="true">
-                {feedItems.length < baseItems.length ? "Loading more sourced items" : "End of sourced items"}
-              </div>
-            ) : null}
-          </section>
+          {activePage === "knowledge-graph" ? (
+            <KnowledgeGraphView />
+          ) : (
+            <section className="feed-column" aria-label={`${page.title} feed`}>
+              {feedItems.length ? (
+                feedItems.map((item, index) => {
+                  const itemKey = `${item.id}-${index}`;
+                  return (
+                    <FeedCard
+                      key={itemKey}
+                      copied={copiedItems.has(itemKey)}
+                      index={index}
+                      item={item}
+                      itemKey={itemKey}
+                      onCopy={() => toggleCopiedItem(itemKey, shortText(item.quote ?? item.body, quotePreviewLength), item)}
+                      onOpen={() => setOpenSummaryItem(item)}
+                    />
+                  );
+                })
+              ) : (
+                <div className="feed-card empty-feed">
+                  <span className="feed-source">Source required</span>
+                  <h2>{page.emptyTitle}</h2>
+                  <p>No sourced items are available for this view yet. Refresh the inbox after X or YouTube credentials are connected.</p>
+                </div>
+              )}
+              {baseItems.length ? (
+                <div ref={sentinelRef} className="feed-sentinel" aria-hidden="true">
+                  {feedItems.length < baseItems.length ? "Loading more sourced items" : "End of sourced items"}
+                </div>
+              ) : null}
+            </section>
+          )}
 
         </div>
       </section>
@@ -637,6 +647,7 @@ function getFeedItems(model: KnowledgeInboxViewModel, activePage: KnowledgeInbox
   }));
 
   if (activePage === "insights") return insightItems;
+  if (activePage === "knowledge-graph") return [];
   if (activePage === "original-x-posts") return xPosts;
   if (activePage === "original-youtube-posts") return youtubePosts;
 
@@ -722,6 +733,7 @@ function sliceItems(items: FeedItem[], visibleCount: number) {
 function isActiveNav(item: NavigationItemViewModel, activePage: KnowledgeInboxPage) {
   return (
     (activePage === "insights" && (item.href === "/" || item.href === "/insights")) ||
+    (activePage === "knowledge-graph" && item.href === "/knowledge-graph") ||
     (activePage === "daily-newsletter" && item.href === "/daily-newsletter") ||
     (activePage === "original-x-posts" && (item.href === "/original-x-posts" || item.href === "/original-x-bookmarks")) ||
     (activePage === "original-youtube-posts" && (item.href === "/original-youtube-posts" || item.href === "/original-youtube-videos"))

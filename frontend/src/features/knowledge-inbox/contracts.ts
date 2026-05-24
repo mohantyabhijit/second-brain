@@ -233,6 +233,40 @@ export type AskSecondBrainResponse = {
   searchStatus?: string;
 };
 
+export type InsightGraphNode = {
+  id: string;
+  label: string;
+  canonicalInsight?: string;
+  mechanism?: string;
+  domain?: string;
+  type?: string;
+  topics: string[];
+  confidence?: string;
+  sourceUrl?: string;
+  score?: number;
+};
+
+export type InsightGraphEdgeReason = "same_capture" | "shared_topic" | "shared_domain" | "shared_type";
+
+export type InsightGraphEdge = {
+  id: string;
+  source: string;
+  target: string;
+  reason: InsightGraphEdgeReason;
+  label: string;
+  weight: number;
+};
+
+export type InsightGraphResponse = {
+  nodes: InsightGraphNode[];
+  edges: InsightGraphEdge[];
+  stats: {
+    totalInsights: number;
+    returnedInsights: number;
+    returnedEdges: number;
+  };
+};
+
 export type KnowledgeRunResult = {
   generatedAt: string;
   sourceStatus: {
@@ -252,4 +286,44 @@ export type KnowledgeRunResult = {
   digest?: DigestIssue;
   validation: ValidationItem[];
   blockers: string[];
+};
+
+export type AppStateManifest = {
+  schemaVersion: string;
+  runId: string;
+  generatedAt: string;
+  publishedAt: string;
+  etag: string;
+  graphStatus: string;
+  digestStatus: string;
+};
+
+export type AppStateViews = {
+  insights: KnowledgeInsight[];
+  dailyNewsletter?: DigestIssue;
+  originalXBookmarks: SavedXItem[];
+  originalYouTubePosts: SavedYouTubeItem[];
+};
+
+export type AppStateGraph = {
+  status: string;
+  themes: ThemeCluster[];
+  insightClusters: InsightCluster[];
+  connections: SourceConnection[];
+};
+
+export type AppStateAskContext = {
+  runId: string;
+  sources: AskSecondBrainSource[];
+  updatedAt: string;
+};
+
+export type AppState = {
+  manifest: AppStateManifest;
+  latest: KnowledgeRunResult | null;
+  views: AppStateViews;
+  digests: DigestIssue[];
+  refreshStatus: RefreshStatus;
+  graph: AppStateGraph;
+  askContext: AppStateAskContext;
 };

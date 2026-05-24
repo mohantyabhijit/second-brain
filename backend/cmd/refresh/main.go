@@ -6,6 +6,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/abhijitmohanty/second-brain/backend/internal/cache/rediscache"
 	"github.com/abhijitmohanty/second-brain/backend/internal/config"
 	"github.com/abhijitmohanty/second-brain/backend/internal/knowledge"
 	"github.com/abhijitmohanty/second-brain/backend/internal/platform/httpclient"
@@ -38,6 +39,9 @@ func main() {
 
 	service := knowledge.NewService(cfg, store, httpclient.New())
 	service.SetLogger(logger)
+	readModelCache, closeCache := rediscache.Open(ctx, cfg, logger)
+	defer closeCache()
+	service.SetReadModelCache(readModelCache)
 	result, err := service.Run(ctx)
 	if err != nil {
 		logger.Error("knowledge refresh failed", "error", err)

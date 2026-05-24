@@ -28,14 +28,15 @@ The frontend never uses the Supabase database connection directly. It calls the 
 
 ## Storage Architecture
 
-The app uses four storage surfaces with separate responsibilities:
+The app uses five storage surfaces with separate responsibilities:
 
 - Supabase Postgres is the relational system of record for users, source items, runs, chunk metadata, validation state, summaries, and ingestion audit logs.
 - Supabase Storage stores raw and derived objects such as fetched documents, transcript files, webpage snapshots, PDFs, images, and export artifacts.
 - `pgvector` in Supabase Postgres stores embeddings for chunks, summaries, entities, and other retrieval units that need semantic search.
 - Neo4j stores the knowledge graph: entities, concepts, source references, claims, and typed relationships used for multi-hop reasoning.
+- Redis stores precomputed read models for fast frontend rendering. It is a derived cache, not canonical storage.
 
-Supabase remains the canonical source of truth. Neo4j is a derived graph index that can be rebuilt from Postgres records and source artifacts when needed.
+Supabase remains the canonical source of truth. Neo4j is a derived graph index that can be rebuilt from Postgres records and source artifacts when needed. Redis read models can be rebuilt after each refresh from Supabase, Supabase Storage, pgvector, and Neo4j-derived state. The detailed Redis plan lives in `docs/redis-read-model-plan.md`.
 
 ## Relational Database
 

@@ -114,6 +114,32 @@ func TestRouterReadsAndRefreshesKnowledgeRunsWithoutProviderSecrets(t *testing.T
 	}
 }
 
+func TestRouterServesAppStateFallback(t *testing.T) {
+	router := testRouter(t)
+
+	appState := httptest.NewRecorder()
+	router.ServeHTTP(appState, httptest.NewRequest(http.MethodGet, "/api/app-state", nil))
+	if appState.Code != http.StatusOK {
+		t.Fatalf("expected app-state status 200, got %d: %s", appState.Code, appState.Body.String())
+	}
+	if got := appState.Header().Get("X-Second-Brain-Cache"); got != "fallback" {
+		t.Fatalf("expected app-state cache fallback header, got %q", got)
+	}
+	var payload knowledge.AppState
+	if err := json.Unmarshal(appState.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("decode app-state response: %v", err)
+	}
+	if payload.Manifest.SchemaVersion != knowledge.AppStateSchemaVersion {
+		t.Fatalf("expected schema version %q, got %q", knowledge.AppStateSchemaVersion, payload.Manifest.SchemaVersion)
+	}
+	if payload.Latest != nil {
+		t.Fatalf("expected no latest run in empty app-state, got %#v", payload.Latest)
+	}
+	if payload.Digests == nil {
+		t.Fatal("expected normalized digest list")
+	}
+}
+
 func waitForLatestRun(t *testing.T, router http.Handler) knowledge.Result {
 	t.Helper()
 	deadline := time.Now().Add(2 * time.Second)
