@@ -268,9 +268,14 @@ func (s *Service) Run(ctx context.Context) (Result, error) {
 	result.InsightClusters = buildInsightClusters(processed)
 	result.Insights = rankInsights(result.Insights, result.InsightClusters)
 	result.Connections = buildSourceConnections(processed)
-	digest := s.composeDigestIssue(ctx, result.GeneratedAt, result.Summaries, result.Insights, result.Themes, result.InsightClusters, result.Connections)
-	digest.OwnerID = s.cfg.OwnerID
-	result.Digest = &digest
+	if hasDigestInputs(result.Summaries, result.Insights) {
+		digest, err := s.composeDigestIssue(ctx, result.GeneratedAt, result.Summaries, result.Insights, result.Themes, result.InsightClusters, result.Connections)
+		if err != nil {
+			return result, err
+		}
+		digest.OwnerID = s.cfg.OwnerID
+		result.Digest = &digest
+	}
 
 	switch {
 	case len(xBookmarks) > 0:
@@ -378,7 +383,13 @@ func (s *Service) GenerateDigest(ctx context.Context) (*DigestIssue, error) {
 	if latest == nil {
 		return nil, fmt.Errorf("no knowledge run is available for digest generation")
 	}
-	digest := s.composeDigestIssue(ctx, time.Now().UTC(), latest.Summaries, latest.Insights, latest.Themes, latest.InsightClusters, latest.Connections)
+	if !hasDigestInputs(latest.Summaries, latest.Insights) {
+		return nil, fmt.Errorf("no source-grounded digest inputs are available")
+	}
+	digest, err := s.composeDigestIssue(ctx, time.Now().UTC(), latest.Summaries, latest.Insights, latest.Themes, latest.InsightClusters, latest.Connections)
+	if err != nil {
+		return nil, err
+	}
 	digest.OwnerID = s.cfg.OwnerID
 	if err := ensureDigestID(&digest); err != nil {
 		return nil, err
@@ -425,7 +436,13 @@ func (s *Service) SendLatestDigest(ctx context.Context, recipientEmail string) (
 	if latest.Digest != nil && strings.TrimSpace(latest.Digest.BodyMarkdown) != "" {
 		digest = *latest.Digest
 	} else {
-		digest = s.composeDigestIssue(ctx, time.Now().UTC(), latest.Summaries, latest.Insights, latest.Themes, latest.InsightClusters, latest.Connections)
+		if !hasDigestInputs(latest.Summaries, latest.Insights) {
+			return nil, fmt.Errorf("no source-grounded digest inputs are available")
+		}
+		digest, err = s.composeDigestIssue(ctx, time.Now().UTC(), latest.Summaries, latest.Insights, latest.Themes, latest.InsightClusters, latest.Connections)
+		if err != nil {
+			return nil, err
+		}
 	}
 	digest.OwnerID = s.cfg.OwnerID
 	if err := ensureDigestID(&digest); err != nil {

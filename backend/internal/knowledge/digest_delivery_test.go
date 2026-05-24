@@ -157,41 +157,30 @@ func TestSendProvidedDigestDoesNotRequireStoreRead(t *testing.T) {
 	}
 }
 
-func TestBuildDigestIssueKeepsEmailReadable(t *testing.T) {
-	longEvidence := strings.Repeat("very long transcript evidence ", 40)
+func TestBuildDigestIssueCreatesEnvelopeOnly(t *testing.T) {
 	digest := buildDigestIssue(
 		"Asia/Singapore",
 		"18:00",
 		time.Date(2026, 5, 23, 9, 0, 0, 0, time.UTC),
-		[]Summary{{
-			Title:     "Long source",
-			SourceURL: "https://example.com/source",
-			Summary:   strings.Repeat("summary sentence ", 40),
-			Quote:     longEvidence,
-		}},
 		nil,
-		[]ThemeCluster{{
-			Label:    "Money",
-			Score:    2,
-			Evidence: longEvidence,
-		}},
+		nil,
+		nil,
 		nil,
 		nil,
 	)
 
-	if strings.Contains(digest.BodyMarkdown, strings.Repeat("very long transcript evidence ", 10)) {
-		t.Fatalf("digest contains unbounded evidence: %s", digest.BodyMarkdown)
+	if digest.DigestDate != "2026-05-23" {
+		t.Fatalf("expected digest date, got %#v", digest)
 	}
-	if !strings.Contains(digest.BodyMarkdown, "...") {
-		t.Fatalf("expected truncated digest copy, got %s", digest.BodyMarkdown)
+	if digest.Subject != "Abhijit's Second Brain" || digest.Status != "generated" {
+		t.Fatalf("expected generated envelope, got %#v", digest)
 	}
-	htmlBody := digestHTML(digest)
-	if !strings.Contains(htmlBody, `<a href="https://example.com/source"`) {
-		t.Fatalf("expected rendered source link, got %s", htmlBody)
+	if digest.BodyMarkdown != "" {
+		t.Fatalf("expected no deterministic fallback body, got %s", digest.BodyMarkdown)
 	}
 }
 
-func TestBuildDigestIssueUsesFiveInsights(t *testing.T) {
+func TestBuildDigestIssueDoesNotFallbackToInsights(t *testing.T) {
 	insights := make([]Insight, 0, 8)
 	for index := 0; index < 8; index++ {
 		insights = append(insights, Insight{
@@ -215,14 +204,30 @@ func TestBuildDigestIssueUsesFiveInsights(t *testing.T) {
 		nil,
 	)
 
-	if got := strings.Count(digest.BodyMarkdown, "[Insight title](https://example.com/source)"); got != 5 {
-		t.Fatalf("expected five linked insights, got %d in %s", got, digest.BodyMarkdown)
+	if digest.BodyMarkdown != "" {
+		t.Fatalf("expected OpenAI-only digest body generation, got %s", digest.BodyMarkdown)
 	}
-	if strings.Contains(digest.BodyMarkdown, "In This Issue") {
-		t.Fatalf("expected fallback newsletter without teaser agenda, got %s", digest.BodyMarkdown)
+}
+
+func TestEnsureDigestSourceLinksKeepsNarrativeFormat(t *testing.T) {
+	body := "# Abhijit's Second Brain - 2026-05-24\n\n## The Lead\n\n- A useful point about systems."
+	result := ensureDigestSourceLinks(body, []Insight{{
+		Title:     "Original idea",
+		SourceURL: "https://example.com/original",
+	}})
+
+	for _, banned := range []string{"##", "The Lead", "Sources"} {
+		if strings.Contains(result, banned) {
+			t.Fatalf("expected narrative-only digest body without %q, got %s", banned, result)
+		}
 	}
-	if strings.Contains(digest.BodyMarkdown, "What To Read") {
-		t.Fatalf("expected insight-only digest when insights exist, got %s", digest.BodyMarkdown)
+	for _, line := range strings.Split(result, "\n") {
+		if strings.HasPrefix(strings.TrimSpace(line), "- ") {
+			t.Fatalf("expected narrative-only digest body without bullet lines, got %s", result)
+		}
+	}
+	if !strings.Contains(result, "[Original idea](https://example.com/original)") {
+		t.Fatalf("expected missing source to be linked naturally, got %s", result)
 	}
 }
 

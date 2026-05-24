@@ -662,62 +662,11 @@ func buildDigestIssue(cfgDigestTimezone string, cfgDigestTime string, generatedA
 	hour, minute := parseDigestClock(cfgDigestTime)
 	scheduledFor := time.Date(localDate.Year(), localDate.Month(), localDate.Day(), hour, minute, 0, 0, location)
 	digestDate := scheduledFor.Format("2006-01-02")
-	insights = selectDigestInsights(generatedAt, insights, digestMaxInsightCount)
-	subject := "Five signals worth rereading"
-	lines := []string{"# " + subject, ""}
-	lines = append(lines, "Welcome back. This issue is about the saved ideas that still create useful context after the feed has moved on.", "")
-	if len(insights) > 0 {
-		lines = append(lines, "The useful pattern in this run is not volume; it is the small set of source-backed ideas that can change what you read, build, or ignore next.", "")
-		lines = append(lines, "## The Lead")
-		for index, insight := range insights {
-			title := fallback(insight.Title, "Source-backed insight")
-			if index == 1 {
-				lines = append(lines, "## The Rest Of The Brief")
-			}
-			lines = append(lines, fmt.Sprintf("### %s", title))
-			lines = append(lines, truncateDigestText(insight.Insight, digestSummaryLimit))
-			if insight.Evidence != "" {
-				lines = append(lines, "The source-backed detail: "+truncateDigestText(insight.Evidence, digestSourceEvidenceLimit))
-			}
-			if insight.SourceURL != "" {
-				lines = append(lines, fmt.Sprintf("Read the original: [%s](%s)", title, insight.SourceURL))
-			}
-			lines = append(lines, "")
-		}
-		lines = append(lines, "")
-	}
-	if len(insights) == 0 && len(themes) > 0 {
-		lines = append(lines, "## The Lead")
-		for _, theme := range themes {
-			lines = append(lines, fmt.Sprintf("- **%s** showed up across %.0f source(s). %s", theme.Label, theme.Score, truncateDigestText(theme.Evidence, digestThemeEvidenceLimit)))
-		}
-		lines = append(lines, "")
-	}
-	if len(insights) == 0 && len(summaries) > 0 {
-		lines = append(lines, "## What To Read")
-		for index, summary := range summaries {
-			if index >= digestMaxSourceNoteCount {
-				lines = append(lines, fmt.Sprintf("- %d more source note(s) kept in the app.", len(summaries)-index))
-				break
-			}
-			lines = append(lines, fmt.Sprintf("- **[%s](%s)**: %s", summary.Title, summary.SourceURL, truncateDigestText(summary.Summary, digestSummaryLimit)))
-			if summary.Quote != "" {
-				lines = append(lines, "  Evidence: "+truncateDigestText(summary.Quote, digestSourceEvidenceLimit))
-			}
-		}
-		lines = append(lines, "")
-	}
-	if len(insights) > 0 {
-		lines = append(lines, "## One Thing To Do Next")
-		lines = append(lines, "Pick the one signal that still feels unresolved, open the source, and turn it into a short note before the next refresh.")
-	}
-	bodyMarkdown := strings.Join(lines, "\n")
 	return DigestIssue{
 		DigestDate:     digestDate,
 		ScheduledFor:   scheduledFor.UTC(),
-		IdempotencyKey: "daily:" + digestDate + ":" + digestBodyFingerprint(bodyMarkdown),
-		Subject:        subject,
-		BodyMarkdown:   bodyMarkdown,
+		IdempotencyKey: "daily:" + digestDate,
+		Subject:        "Abhijit's Second Brain",
 		Status:         "generated",
 	}
 }

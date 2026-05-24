@@ -25,23 +25,23 @@ type openAIImageResponse struct {
 	} `json:"error"`
 }
 
-func (s *Service) addDigestIllustration(ctx context.Context, digest *DigestIssue, insights []Insight, themes []ThemeCluster, connections []SourceConnection) {
+func (s *Service) addDigestIllustration(ctx context.Context, digest *DigestIssue, insights []Insight, themes []ThemeCluster, connections []SourceConnection) error {
 	if digest == nil || strings.TrimSpace(digest.IllustrationBase64) != "" {
-		return
+		return nil
 	}
 	if strings.TrimSpace(os.Getenv("OPENAI_API_KEY")) == "" && !s.cfg.OneCLIGateway {
-		return
+		return fmt.Errorf("OPENAI_API_KEY is required for digest illustration generation")
 	}
 	illustration, err := s.generateDigestIllustration(ctx, *digest, insights, themes, connections)
 	if err != nil {
-		s.logger.Warn("digest illustration generation failed; keeping text-only newsletter", "error", err)
-		return
+		return fmt.Errorf("digest illustration generation failed: %w", err)
 	}
 	digest.IllustrationPrompt = illustration.prompt
 	digest.IllustrationAlt = illustration.alt
 	digest.IllustrationMimeType = illustration.mimeType
 	digest.IllustrationModel = illustration.model
 	digest.IllustrationBase64 = illustration.base64
+	return nil
 }
 
 func (s *Service) annotateDigestIllustration(digest *DigestIssue) {

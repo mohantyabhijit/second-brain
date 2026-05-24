@@ -101,7 +101,7 @@ func TestRouterReadsAndRefreshesKnowledgeRunsWithoutProviderSecrets(t *testing.T
 	}
 
 	digestSend := httptest.NewRecorder()
-	router.ServeHTTP(digestSend, httptest.NewRequest(http.MethodPost, "/api/digests/send", strings.NewReader(`{"recipientEmail":"reader@example.com"}`)))
+	router.ServeHTTP(digestSend, httptest.NewRequest(http.MethodPost, "/api/digests/send", strings.NewReader(`{"recipientEmail":"reader@example.com","digest":{"digestDate":"2026-05-24","subject":"Displayed digest","bodyMarkdown":"# Displayed digest\n\nA source-grounded newsletter body."}}`)))
 	if digestSend.Code != http.StatusOK {
 		t.Fatalf("expected digest send status 200, got %d: %s", digestSend.Code, digestSend.Body.String())
 	}
