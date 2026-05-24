@@ -66,6 +66,16 @@ func NewRouter(cfg config.Config, service *knowledge.Service, logger *slog.Logge
 		httputil.JSON(w, http.StatusOK, digest)
 	}
 
+	listDigests := func(w http.ResponseWriter, r *http.Request) {
+		digests, err := service.ReadDigests(r.Context(), 50)
+		if err != nil {
+			logger.Error("list digests", "error", err)
+			httputil.Error(w, http.StatusInternalServerError, "list digests")
+			return
+		}
+		httputil.JSON(w, http.StatusOK, map[string]any{"digests": digests})
+	}
+
 	sendDigest := func(w http.ResponseWriter, r *http.Request) {
 		var input knowledge.DigestSendRequest
 		if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
@@ -158,6 +168,7 @@ func NewRouter(cfg config.Config, service *knowledge.Service, logger *slog.Logge
 	mux.HandleFunc("GET /api/knowledge-runs/refresh", readRefreshStatus)
 	mux.HandleFunc("POST /api/knowledge-runs/refresh", runInbox)
 	mux.HandleFunc("POST /api/feedback", saveFeedback)
+	mux.HandleFunc("GET /api/digests", listDigests)
 	mux.HandleFunc("POST /api/digests/generate", generateDigest)
 	mux.HandleFunc("POST /api/digests/send", sendDigest)
 	mux.HandleFunc("POST /api/share/tweet", shareTweet)

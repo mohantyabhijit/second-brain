@@ -19,6 +19,7 @@ export default function KnowledgeInboxContainer({ initialPage = "insights" }: Kn
     isDigesting,
     isAsking,
     refreshStatus,
+    digestIssues,
     chatMessages,
     error,
     saveFeedback,
@@ -35,6 +36,7 @@ export default function KnowledgeInboxContainer({ initialPage = "insights" }: Kn
       isAsking={isAsking}
       isLoading={isLoading}
       refreshStatus={refreshStatus}
+      digestIssues={digestIssues}
       model={model}
       chatMessages={chatMessages}
       onAsk={askBrain}

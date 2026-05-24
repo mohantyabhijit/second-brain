@@ -21,6 +21,8 @@ type resendResponse struct {
 	} `json:"error"`
 }
 
+const customRecipientNewsletterIntro = "This is a newsletter from Abhijit's Second Brain. The full issue is below."
+
 func (s *Service) deliverDigest(ctx context.Context, digest DigestIssue, recipientOverride string) DigestDelivery {
 	now := time.Now().UTC()
 	manualRecipient := strings.TrimSpace(recipientOverride) != ""
@@ -43,12 +45,13 @@ func (s *Service) deliverDigest(ctx context.Context, digest DigestIssue, recipie
 		return delivery
 	}
 
+	emailDigest := digestWithCustomRecipientIntro(digest, manualRecipient)
 	body := map[string]any{
 		"from":    s.cfg.DigestEmailFrom,
 		"to":      []string{recipient},
 		"subject": digest.Subject,
-		"html":    digestHTML(digest),
-		"text":    digestText(digest),
+		"html":    digestHTML(emailDigest),
+		"text":    digestText(emailDigest),
 	}
 	raw, err := json.Marshal(body)
 	if err != nil {
@@ -72,6 +75,29 @@ func (s *Service) deliverDigest(ctx context.Context, digest DigestIssue, recipie
 	delivery.Status = "sent"
 	delivery.ProviderMessageID = response.ID
 	return delivery
+}
+
+func digestWithCustomRecipientIntro(digest DigestIssue, customRecipient bool) DigestIssue {
+	if !customRecipient || strings.Contains(digest.BodyMarkdown, customRecipientNewsletterIntro) {
+		return digest
+	}
+	body := strings.TrimSpace(digest.BodyMarkdown)
+	if body == "" {
+		digest.BodyMarkdown = customRecipientNewsletterIntro
+		return digest
+	}
+	lines := strings.Split(body, "\n")
+	if len(lines) > 0 && strings.HasPrefix(strings.TrimSpace(lines[0]), "# ") {
+		rest := strings.TrimSpace(strings.Join(lines[1:], "\n"))
+		if rest == "" {
+			digest.BodyMarkdown = strings.TrimSpace(lines[0]) + "\n\n" + customRecipientNewsletterIntro
+			return digest
+		}
+		digest.BodyMarkdown = strings.TrimSpace(lines[0]) + "\n\n" + customRecipientNewsletterIntro + "\n\n" + rest
+		return digest
+	}
+	digest.BodyMarkdown = customRecipientNewsletterIntro + "\n\n" + body
+	return digest
 }
 
 func normalizeDigestRecipient(value string) (string, error) {
@@ -138,11 +164,15 @@ func digestHTML(digest DigestIssue) string {
 			builder.WriteString(`<h2 style="margin:22px 0 10px 0;font-size:19px;line-height:25px;color:#111827;font-weight:800;">`)
 			builder.WriteString(renderInlineMarkdown(strings.TrimPrefix(trimmed, "## ")))
 			builder.WriteString(`</h2>`)
+		case strings.HasPrefix(trimmed, "### "):
+			builder.WriteString(`<h3 style="margin:18px 0 8px 0;font-size:17px;line-height:23px;color:#111827;font-weight:800;">`)
+			builder.WriteString(renderInlineMarkdown(strings.TrimPrefix(trimmed, "### ")))
+			builder.WriteString(`</h3>`)
 		case strings.HasPrefix(trimmed, "- "):
 			builder.WriteString(`<div style="margin:10px 0;padding:13px 14px;border-left:4px solid #285c8f;background:#f8fafc;border-radius:8px;font-size:16px;line-height:24px;color:#344054;">`)
 			builder.WriteString(renderInlineMarkdown(strings.TrimPrefix(trimmed, "- ")))
 			builder.WriteString(`</div>`)
-		case strings.HasPrefix(trimmed, "Evidence:"):
+		case strings.HasPrefix(trimmed, "Evidence:"), strings.HasPrefix(trimmed, "Source note:"):
 			builder.WriteString(`<div style="margin:-2px 0 14px 16px;font-size:14px;line-height:20px;color:#667085;">`)
 			builder.WriteString(renderInlineMarkdown(trimmed))
 			builder.WriteString(`</div>`)
@@ -182,6 +212,8 @@ func digestText(digest DigestIssue) string {
 			lines[index] = strings.TrimPrefix(trimmed, "# ")
 		case strings.HasPrefix(trimmed, "## "):
 			lines[index] = strings.TrimPrefix(trimmed, "## ")
+		case strings.HasPrefix(trimmed, "### "):
+			lines[index] = strings.TrimPrefix(trimmed, "### ")
 		case strings.HasPrefix(trimmed, "- "):
 			lines[index] = "- " + renderPlainMarkdownLinks(strings.TrimPrefix(trimmed, "- "))
 		default:

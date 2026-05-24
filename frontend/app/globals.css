@@ -819,6 +819,48 @@ blockquote {
   margin-top: 18px;
 }
 
+.newsletter-reader {
+  display: grid;
+  gap: 12px;
+  max-width: 66ch;
+}
+
+.newsletter-reader .newsletter-title {
+  margin-top: 0;
+}
+
+.newsletter-reader h3,
+.newsletter-reader h4 {
+  margin: 12px 0 0;
+  color: var(--ink);
+  line-height: 1.24;
+}
+
+.newsletter-reader h3 {
+  font-size: 1.08rem;
+}
+
+.newsletter-reader h4 {
+  font-size: 0.98rem;
+}
+
+.newsletter-reader p {
+  margin: 0;
+}
+
+.newsletter-reader a {
+  color: var(--blue-dark);
+  font-weight: 760;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.newsletter-bullet {
+  border-left: 3px solid var(--blue);
+  padding: 9px 11px;
+  background: #f8fafc;
+}
+
 .ask-brain {
   position: fixed;
   right: 22px;

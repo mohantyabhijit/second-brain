@@ -149,6 +149,14 @@ func (s *Store) SaveFeedback(ctx context.Context, event knowledge.FeedbackEvent)
 	return nil
 }
 
+func (s *Store) ReadDigests(ctx context.Context, limit int) ([]knowledge.DigestIssue, error) {
+	latest, err := s.ReadLatest(ctx)
+	if err != nil || latest == nil || latest.Digest == nil {
+		return []knowledge.DigestIssue{}, err
+	}
+	return []knowledge.DigestIssue{*latest.Digest}, nil
+}
+
 func (s *Store) SaveDigest(ctx context.Context, digest knowledge.DigestIssue) (*knowledge.DigestIssue, error) {
 	latest, err := s.ReadLatest(ctx)
 	if err != nil {

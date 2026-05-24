@@ -1,8 +1,8 @@
 "use client";
 
 import { startTransition, useCallback, useEffect, useState } from "react";
-import { askSecondBrain, generateDailyDigest, readKnowledgeRefreshStatus, readLatestKnowledgeRun, saveKnowledgeFeedback, sendLatestDigest, shareInsightToX, startKnowledgeInboxRefresh } from "../api/knowledgeRuns";
-import type { AskSecondBrainResponse, FeedbackSignal, KnowledgeRunResult, RefreshStatus } from "../contracts";
+import { askSecondBrain, generateDailyDigest, readDigestIssues, readKnowledgeRefreshStatus, readLatestKnowledgeRun, saveKnowledgeFeedback, sendLatestDigest, shareInsightToX, startKnowledgeInboxRefresh } from "../api/knowledgeRuns";
+import type { AskSecondBrainResponse, DigestIssue, FeedbackSignal, KnowledgeRunResult, RefreshStatus } from "../contracts";
 import { initialKnowledgeRun } from "./initialKnowledgeRun";
 
 export type ChatMessage = {
@@ -20,15 +20,19 @@ export function useKnowledgeInboxController() {
   const [isDigesting, setIsDigesting] = useState(false);
   const [isAsking, setIsAsking] = useState(false);
   const [refreshStatus, setRefreshStatus] = useState<RefreshStatus | null>(null);
+  const [digestIssues, setDigestIssues] = useState<DigestIssue[]>([]);
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let ignore = false;
-    readLatestKnowledgeRun()
-      .then((latest) => {
+    Promise.all([readLatestKnowledgeRun(), readDigestIssues()])
+      .then(([latest, digests]) => {
         if (!ignore && latest) {
           startTransition(() => setRun(latest));
+        }
+        if (!ignore) {
+          startTransition(() => setDigestIssues(digests));
         }
       })
       .catch(() => undefined)
@@ -57,9 +61,15 @@ export function useKnowledgeInboxController() {
         return;
       }
       if (status.status === "completed") {
-        const latest = await readLatestKnowledgeRun().catch(() => null);
+        const [latest, digests] = await Promise.all([
+          readLatestKnowledgeRun().catch(() => null),
+          readDigestIssues().catch(() => [])
+        ]);
         if (!ignore && latest) {
           startTransition(() => setRun(latest));
+        }
+        if (!ignore) {
+          startTransition(() => setDigestIssues(digests));
         }
       }
     }
@@ -99,6 +109,8 @@ export function useKnowledgeInboxController() {
       if (latest) {
         startTransition(() => setRun(latest));
       }
+      const digests = await readDigestIssues().catch(() => []);
+      startTransition(() => setDigestIssues(digests));
     } catch (runError) {
       setError(runError instanceof Error ? runError.message : "Knowledge inbox validation failed.");
     } finally {
@@ -120,6 +132,7 @@ export function useKnowledgeInboxController() {
     try {
       const digest = await generateDailyDigest();
       startTransition(() => setRun((current) => ({ ...current, digest })));
+      startTransition(() => setDigestIssues((current) => upsertDigestIssue(current, digest)));
     } catch (digestError) {
       setError(digestError instanceof Error ? digestError.message : "Digest generation failed.");
     } finally {
@@ -134,6 +147,7 @@ export function useKnowledgeInboxController() {
       const currentDigest = run.digest;
       const digest = await sendLatestDigest({ recipientEmail, digest: currentDigest });
       startTransition(() => setRun((current) => ({ ...current, digest })));
+      startTransition(() => setDigestIssues((current) => upsertDigestIssue(current, digest)));
       return digest;
     } catch (digestError) {
       const message = digestError instanceof Error ? digestError.message : "Digest delivery failed.";
@@ -200,6 +214,7 @@ export function useKnowledgeInboxController() {
     isDigesting,
     isAsking,
     refreshStatus,
+    digestIssues,
     chatMessages,
     error,
     runValidation,
@@ -209,6 +224,12 @@ export function useKnowledgeInboxController() {
     shareTweet,
     askBrain
   };
+}
+
+function upsertDigestIssue(current: DigestIssue[], digest: DigestIssue) {
+  const key = digest.id || digest.idempotencyKey || digest.digestDate;
+  const withoutDigest = current.filter((item) => (item.id || item.idempotencyKey || item.digestDate) !== key);
+  return [digest, ...withoutDigest];
 }
 
 function delay(ms: number) {

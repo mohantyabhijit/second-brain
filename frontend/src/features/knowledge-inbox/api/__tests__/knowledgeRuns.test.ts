@@ -64,6 +64,37 @@ describe("knowledge run API client", () => {
     });
   });
 
+  it("reads persisted newsletter issues", async () => {
+    vi.stubEnv("NEXT_PUBLIC_API_BASE_URL", "https://api.example.test");
+    const fetchMock = vi.fn(async () => {
+      return new Response(
+        JSON.stringify({
+          digests: [
+            {
+              digestDate: "2026-05-24",
+              scheduledFor: "2026-05-24T10:00:00Z",
+              idempotencyKey: "daily:2026-05-24",
+              subject: "Displayed digest",
+              bodyMarkdown: "# Displayed digest",
+              status: "generated"
+            }
+          ]
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } }
+      );
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { readDigestIssues } = await import("../knowledgeRuns");
+    const digests = await readDigestIssues();
+
+    expect(fetchMock).toHaveBeenCalledWith("https://api.example.test/api/digests", {
+      headers: { "Content-Type": "application/json" }
+    });
+    expect(digests).toHaveLength(1);
+    expect(digests[0]?.subject).toBe("Displayed digest");
+  });
+
   it("sends the displayed digest payload for one-off email delivery", async () => {
     vi.stubEnv("NEXT_PUBLIC_API_BASE_URL", "https://api.example.test");
     const fetchMock = vi.fn(async () => {

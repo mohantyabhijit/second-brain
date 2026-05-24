@@ -18,6 +18,7 @@ type Store interface {
 	ReadCachedSyntheses(ctx context.Context, keys []SynthesisCacheKey) (map[string]SynthesisRecord, error)
 	SaveRun(ctx context.Context, result Result, sources []ProcessedSource) error
 	SaveFeedback(ctx context.Context, event FeedbackEvent) error
+	ReadDigests(ctx context.Context, limit int) ([]DigestIssue, error)
 	SaveDigest(ctx context.Context, digest DigestIssue) (*DigestIssue, error)
 	ReadXTokens(ctx context.Context, ownerID string) (*EncryptedXTokens, error)
 	SaveXTokens(ctx context.Context, tokens EncryptedXTokens) error
@@ -380,6 +381,13 @@ func (s *Service) GenerateDigest(ctx context.Context) (*DigestIssue, error) {
 		digest.Status = digest.Deliveries[0].Status
 	}
 	return s.store.SaveDigest(ctx, digest)
+}
+
+func (s *Service) ReadDigests(ctx context.Context, limit int) ([]DigestIssue, error) {
+	if limit <= 0 || limit > 100 {
+		limit = 50
+	}
+	return s.store.ReadDigests(ctx, limit)
 }
 
 func (s *Service) SendLatestDigest(ctx context.Context, recipientEmail string) (*DigestIssue, error) {

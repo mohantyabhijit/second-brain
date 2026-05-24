@@ -24,6 +24,11 @@ export async function readLatestKnowledgeRun() {
   return payload.latest ? normalizeKnowledgeRun(payload.latest) : null;
 }
 
+export async function readDigestIssues() {
+  const payload = await request<{ digests?: DigestIssue[] }>("/api/digests");
+  return payload.digests ?? [];
+}
+
 export async function startKnowledgeInboxRefresh() {
   return request<RefreshStatus>("/api/knowledge-runs/refresh", { method: "POST" });
 }

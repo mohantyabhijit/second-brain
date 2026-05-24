@@ -663,22 +663,34 @@ func buildDigestIssue(cfgDigestTimezone string, cfgDigestTime string, generatedA
 	scheduledFor := time.Date(localDate.Year(), localDate.Month(), localDate.Day(), hour, minute, 0, 0, location)
 	digestDate := scheduledFor.Format("2006-01-02")
 	insights = selectDigestInsights(generatedAt, insights, digestMaxInsightCount)
-	subject := "Five Second Brain signals for " + digestDate
+	subject := "Five signals worth rereading"
 	lines := []string{"# " + subject, ""}
-	lines = append(lines, "A short brief from five saved insights that are worth rereading before the next refresh.", "")
+	lines = append(lines, "A source-linked newsletter from Abhijit's Second Brain, built from the saved ideas most worth turning into a note or decision.", "")
 	if len(insights) > 0 {
-		lines = append(lines, "## Five Signals")
-		for index, insight := range insights {
+		lines = append(lines, "## Editor's Note")
+		lines = append(lines, "The useful pattern in this run is not volume; it is the handful of saved ideas that still have enough signal to change what you read, build, or ignore next.", "")
+		lines = append(lines, "## In This Issue")
+		for _, insight := range insights {
 			link := insight.SourceURL
 			title := fallback(insight.Title, "Source-backed insight")
 			if link == "" {
-				lines = append(lines, fmt.Sprintf("%d. **%s**: %s", index+1, title, truncateDigestText(insight.Insight, digestSummaryLimit)))
+				lines = append(lines, fmt.Sprintf("- **%s**: %s", title, truncateDigestText(insight.Insight, digestSummaryLimit)))
 			} else {
-				lines = append(lines, fmt.Sprintf("%d. **[%s](%s)**: %s", index+1, title, link, truncateDigestText(insight.Insight, digestSummaryLimit)))
+				lines = append(lines, fmt.Sprintf("- **[%s](%s)**: %s", title, link, truncateDigestText(insight.Insight, digestSummaryLimit)))
 			}
+		}
+		lines = append(lines, "", "## The Newsletter")
+		for index, insight := range insights {
+			title := fallback(insight.Title, "Source-backed insight")
+			lines = append(lines, fmt.Sprintf("### %d. %s", index+1, title))
+			lines = append(lines, "Why it matters: "+truncateDigestText(insight.Insight, digestSummaryLimit))
 			if insight.Evidence != "" {
-				lines = append(lines, "  Evidence: "+truncateDigestText(insight.Evidence, digestSourceEvidenceLimit))
+				lines = append(lines, "Source note: "+truncateDigestText(insight.Evidence, digestSourceEvidenceLimit))
 			}
+			if insight.SourceURL != "" {
+				lines = append(lines, fmt.Sprintf("Read the original: [%s](%s)", title, insight.SourceURL))
+			}
+			lines = append(lines, "")
 		}
 		lines = append(lines, "")
 	}
@@ -704,8 +716,8 @@ func buildDigestIssue(cfgDigestTimezone string, cfgDigestTime string, generatedA
 		lines = append(lines, "")
 	}
 	if len(insights) > 0 {
-		lines = append(lines, "## Next Move")
-		lines = append(lines, "Pick one signal, open the source, and turn it into a small note or action before the next two-hour cycle.")
+		lines = append(lines, "## One Thing To Do Next")
+		lines = append(lines, "Pick the one signal that still feels unresolved, open the source, and turn it into a short note before the next refresh.")
 	}
 	bodyMarkdown := strings.Join(lines, "\n")
 	return DigestIssue{

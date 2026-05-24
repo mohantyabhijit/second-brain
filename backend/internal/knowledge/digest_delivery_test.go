@@ -86,13 +86,21 @@ func TestDeliverDigestUsesRecipientOverride(t *testing.T) {
 			t.Fatalf("read request body: %v", err)
 		}
 		var payload struct {
-			To []string `json:"to"`
+			To   []string `json:"to"`
+			HTML string   `json:"html"`
+			Text string   `json:"text"`
 		}
 		if err := json.Unmarshal(raw, &payload); err != nil {
 			t.Fatalf("decode request body: %v", err)
 		}
 		if !slices.Equal(payload.To, []string{"reader@example.com"}) {
 			t.Fatalf("expected override recipient, got %#v", payload.To)
+		}
+		if !strings.Contains(payload.HTML, "This is a newsletter from Abhijit&#39;s Second Brain") {
+			t.Fatalf("expected custom-recipient newsletter intro in HTML, got %s", payload.HTML)
+		}
+		if !strings.Contains(payload.Text, "This is a newsletter from Abhijit's Second Brain") {
+			t.Fatalf("expected custom-recipient newsletter intro in text, got %s", payload.Text)
 		}
 		return jsonResponse(`{"id":"email-2"}`), nil
 	})}

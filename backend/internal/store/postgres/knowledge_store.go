@@ -108,6 +108,43 @@ func (s *Store) readLatestDigest(ctx context.Context) (*knowledge.DigestIssue, e
 	return &digest, nil
 }
 
+func (s *Store) ReadDigests(ctx context.Context, limit int) ([]knowledge.DigestIssue, error) {
+	if limit <= 0 || limit > 100 {
+		limit = 50
+	}
+	rows, err := s.pool.Query(ctx, `
+		select
+			id::text,
+			owner_id::text,
+			digest_date,
+			scheduled_for,
+			idempotency_key,
+			subject,
+			body_markdown,
+			status
+		from digest_issues
+		order by scheduled_for desc, updated_at desc, created_at desc
+		limit $1
+	`, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	digests := []knowledge.DigestIssue{}
+	for rows.Next() {
+		var digest knowledge.DigestIssue
+		if err := rows.Scan(&digest.ID, &digest.OwnerID, &digest.DigestDate, &digest.ScheduledFor, &digest.IdempotencyKey, &digest.Subject, &digest.BodyMarkdown, &digest.Status); err != nil {
+			return nil, err
+		}
+		digests = append(digests, digest)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return digests, nil
+}
+
 func (s *Store) SaveLatest(ctx context.Context, result knowledge.Result) error {
 	return s.SaveRun(ctx, result, nil)
 }

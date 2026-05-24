@@ -11,7 +11,7 @@ import (
 	"time"
 )
 
-const digestPromptVersion = "five-insight-brief-v1"
+const digestPromptVersion = "newsletter-editorial-v2"
 
 type promptDigestResponse struct {
 	Subject      string   `json:"subject"`
@@ -48,17 +48,19 @@ func (s *Service) promptDigest(ctx context.Context, base DigestIssue, summaries 
 	requestBody := map[string]any{
 		"model": s.cfg.OpenAISynthesisModel,
 		"input": strings.Join([]string{
-			"You are the editor of a personal Second Brain newsletter.",
-			"Write a short, crisp personal newsletter from exactly five saved insights when five are provided.",
-			"Use a simple format: one sharp subject, one brief opener, five numbered insight bullets, and one concrete next move.",
-			"Keep the full body under 320 words. Paragraphs are one sentence. Bullets are short enough for a phone screen.",
-			"Write like a thoughtful human editor: direct, specific, lightly conversational, never cheesy.",
-			"Make it interesting through clear contrast and useful framing, not hype, emojis, memes, or unsupported jokes.",
-			"Subject should be 30-50 characters and preview-friendly. The first paragraph should be one crisp sentence about the pattern in the five insights.",
+			"You are the editor of Abhijit's Second Brain, a personal research newsletter built from saved X bookmarks and YouTube videos.",
+			"Write a complete newsletter issue, not a summary dump and not a status report.",
+			"Use the editorial lessons from high-retention newsletters sampled from Gmail: a clear masthead, a warm but brief opener, curiosity-driven section heads, plain-language explainers, tight source-grounding, and a useful reader action at the end.",
+			"Blend these patterns: The Ken's narrative lead and named sections, Finshots' simple question-to-explanation flow, and Morning Brew-style scannability without copying their wording, jokes, branding, or structure wholesale.",
+			"Use this format: one sharp subject; '# Abhijit's Second Brain - <date>'; one opener that names the pattern; '## In This Issue' with five linked one-line teasers; '## The Newsletter' with five numbered sections; and '## One Thing To Do Next'.",
+			"Each section should have a '### <number>. <specific title>' heading, a short why-it-matters paragraph, and a source-linked note.",
+			"Keep the full body between 550 and 850 words when five insights are available. Paragraphs stay short enough for a phone screen.",
+			"Write like a thoughtful human editor: direct, specific, curious, and useful. Avoid hype, emojis, memes, generic life advice, and unsupported jokes.",
+			"Subject should be 35-65 characters and preview-friendly. The first paragraph should be one crisp sentence about the pattern connecting the five insights.",
 			"Stay source-grounded. Do not add facts, claims, quotes, links, or named entities that are not present in the input.",
-			"Every insight bullet must link the insight title directly to the original X bookmark or YouTube video sourceUrl. Do not include an insight bullet without a markdown source link.",
-			"End with one concrete next move, not a motivational sign-off.",
-			"Return JSON only with this shape: {\"subject\":\"short inbox-ready subject\",\"body_lines\":[\"# title\",\"\",\"short opener\",\"\",\"## Five Signals\",\"1. ...\"]}",
+			"Every teaser and every newsletter section must include or end with a markdown link to the original X bookmark or YouTube video sourceUrl. Do not include an insight without a source link.",
+			"End with one concrete next move that helps Abhijit turn one idea into a note, decision, or experiment.",
+			"Return JSON only with this shape: {\"subject\":\"inbox-ready subject\",\"body_lines\":[\"# Abhijit's Second Brain - 2026-05-24\",\"\",\"short opener\",\"\",\"## In This Issue\",\"- ...\"]}",
 			"Put each markdown line in body_lines as a separate JSON string. Do not return a multiline body_markdown string.",
 			"Use markdown links for sources exactly as provided.",
 			"Prompt version: " + digestPromptVersion,
@@ -67,7 +69,7 @@ func (s *Service) promptDigest(ctx context.Context, base DigestIssue, summaries 
 			"INPUT JSON:",
 			truncate(digestPromptInput(summaries, insights, themes, insightClusters, connections), 16000),
 		}, "\n"),
-		"max_output_tokens": 1200,
+		"max_output_tokens": 3000,
 	}
 	raw, err := json.Marshal(requestBody)
 	if err != nil {
@@ -109,7 +111,14 @@ func digestPromptInput(summaries []Summary, insights []Insight, themes []ThemeCl
 		"themes":           themes[:min(len(themes), 6)],
 		"insight_clusters": insightClusters[:min(len(insightClusters), digestMaxInsightClusterCount)],
 		"connections":      connections[:min(len(connections), digestMaxConnectionCount)],
-		"requirements":     []string{"exactly five insights when five are provided", "short and crisp", "simple newsletter format", "source grounded", "human newsletter voice", "phone first", "every insight has markdown source link", "keep links intact", "no unsupported facts"},
+		"newsletter_style_notes": []string{
+			"Open with a human editorial frame before listing items.",
+			"Give every item a reason to care, not just a compressed summary.",
+			"Use question-led or tension-led section titles when the source material supports it.",
+			"Keep paragraphs short, concrete, and source-linked.",
+			"Close with one practical next move rather than a generic sign-off.",
+		},
+		"requirements": []string{"exactly five insights when five are provided", "complete newsletter issue", "source grounded", "human editorial voice", "phone first", "every insight has markdown source link", "keep links intact", "no unsupported facts"},
 	}
 	raw, err := json.Marshal(payload)
 	if err != nil {

@@ -1,6 +1,6 @@
 "use client";
 
-import { type FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { type FormEvent, type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import type { KnowledgeInboxPage } from "../KnowledgeInboxContainer";
 import type { ChatMessage } from "../model/useKnowledgeInboxController";
@@ -9,6 +9,7 @@ import type { DigestIssue, FeedbackSignal, ImportantTimeMarker, RefreshStatus } 
 type SecondBrainConsoleViewProps = {
   activePage: KnowledgeInboxPage;
   chatMessages: ChatMessage[];
+  digestIssues: DigestIssue[];
   isAsking: boolean;
   isDigesting: boolean;
   isLoading: boolean;
@@ -34,6 +35,7 @@ type FeedItem = {
   sourceUrl?: string;
   stats?: string;
   timeMarkers?: ImportantTimeMarker[];
+  fullBody?: string;
 };
 
 const pageCopy: Record<
@@ -71,7 +73,7 @@ const loadMoreCount = 25;
 const summaryPreviewLength = 220;
 const quotePreviewLength = 260;
 
-export function SecondBrainConsoleView({ activePage, chatMessages, isAsking, isDigesting, isLoading, model, refreshStatus, onAsk, onDigest, onSendDigest, onFeedback }: SecondBrainConsoleViewProps) {
+export function SecondBrainConsoleView({ activePage, chatMessages, digestIssues, isAsking, isDigesting, isLoading, model, refreshStatus, onAsk, onDigest, onSendDigest, onFeedback }: SecondBrainConsoleViewProps) {
   const [visibleCount, setVisibleCount] = useState(initialVisibleCount);
   const [copiedItems, setCopiedItems] = useState<Set<string>>(new Set());
   const [digestEmail, setDigestEmail] = useState("");
@@ -79,7 +81,7 @@ export function SecondBrainConsoleView({ activePage, chatMessages, isAsking, isD
   const [openSummaryItem, setOpenSummaryItem] = useState<FeedItem | null>(null);
   const sentinelRef = useRef<HTMLDivElement | null>(null);
   const page = pageCopy[activePage];
-  const baseItems = useMemo(() => getFeedItems(model, activePage), [model, activePage]);
+  const baseItems = useMemo(() => getFeedItems(model, activePage, digestIssues), [model, activePage, digestIssues]);
   const feedItems = useMemo(() => sliceItems(baseItems, visibleCount), [baseItems, visibleCount]);
 
   useEffect(() => {
@@ -372,7 +374,7 @@ function SummaryModal({ item, onClose }: { item: FeedItem; onClose: () => void }
           </button>
         </header>
         <div className="summary-modal-body">
-          <p>{markdownToPlain(item.body)}</p>
+          {item.source === "Newsletter" && item.fullBody ? <NewsletterBody markdown={item.fullBody} /> : <p>{markdownToPlain(item.body)}</p>}
           {item.quote ? (
             <blockquote>
               <span>Quote</span>
@@ -384,6 +386,64 @@ function SummaryModal({ item, onClose }: { item: FeedItem; onClose: () => void }
       </section>
     </div>
   );
+}
+
+function NewsletterBody({ markdown }: { markdown: string }) {
+  const blocks = markdown
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  return (
+    <div className="newsletter-reader">
+      {blocks.map((line, index) => {
+        const key = `${index}-${line.slice(0, 24)}`;
+        if (line.startsWith("# ")) {
+          return (
+            <h3 key={key} className="newsletter-title">
+              {renderInlineMarkdown(line.slice(2))}
+            </h3>
+          );
+        }
+        if (line.startsWith("## ")) {
+          return <h3 key={key}>{renderInlineMarkdown(line.slice(3))}</h3>;
+        }
+        if (line.startsWith("### ")) {
+          return <h4 key={key}>{renderInlineMarkdown(line.slice(4))}</h4>;
+        }
+        if (line.startsWith("- ")) {
+          return (
+            <p key={key} className="newsletter-bullet">
+              {renderInlineMarkdown(line.slice(2))}
+            </p>
+          );
+        }
+        return <p key={key}>{renderInlineMarkdown(line)}</p>;
+      })}
+    </div>
+  );
+}
+
+function renderInlineMarkdown(value: string) {
+  const parts: ReactNode[] = [];
+  const linkPattern = /\[([^\]]+)\]\(([^)]+)\)/g;
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+  while ((match = linkPattern.exec(value)) !== null) {
+    if (match.index > lastIndex) {
+      parts.push(stripInlineMarks(value.slice(lastIndex, match.index)));
+    }
+    parts.push(
+      <a key={`${match[2]}-${match.index}`} href={match[2]} rel="noreferrer" target="_blank">
+        {stripInlineMarks(match[1])}
+      </a>
+    );
+    lastIndex = match.index + match[0].length;
+  }
+  if (lastIndex < value.length) {
+    parts.push(stripInlineMarks(value.slice(lastIndex)));
+  }
+  return parts;
 }
 
 function TimeMarkerRow({ markers, sourceUrl }: { markers: ImportantTimeMarker[]; sourceUrl?: string }) {
@@ -533,7 +593,7 @@ function feedMeta(item: FeedItem) {
   return `${item.author} - ${item.timestamp}`;
 }
 
-function getFeedItems(model: KnowledgeInboxViewModel, activePage: KnowledgeInboxPage): FeedItem[] {
+function getFeedItems(model: KnowledgeInboxViewModel, activePage: KnowledgeInboxPage, digestIssues: DigestIssue[]): FeedItem[] {
   const summaries = model.summaries.items.map(summaryToFeedItem);
   const summariesBySourceUrl = new Map(
     model.summaries.items
@@ -578,7 +638,7 @@ function getFeedItems(model: KnowledgeInboxViewModel, activePage: KnowledgeInbox
   if (activePage === "original-x-posts") return xPosts;
   if (activePage === "original-youtube-posts") return youtubePosts;
 
-  return buildNewsletterItems(model.digest, summaries);
+  return buildNewsletterItems(model.digest, digestIssues, summaries);
 }
 
 function summaryToFeedItem(summary: SummaryCardViewModel): FeedItem {
@@ -599,7 +659,7 @@ function summaryToFeedItem(summary: SummaryCardViewModel): FeedItem {
   };
 }
 
-function buildNewsletterItems(digest: KnowledgeInboxViewModel["digest"], items: FeedItem[]): FeedItem[] {
+function buildNewsletterItems(digest: KnowledgeInboxViewModel["digest"], digestIssues: DigestIssue[], items: FeedItem[]): FeedItem[] {
   const supportingItems = items.slice(0, 8).map((item, index) => ({
     ...item,
     id: `newsletter-${item.id}`,
@@ -609,21 +669,22 @@ function buildNewsletterItems(digest: KnowledgeInboxViewModel["digest"], items: 
     body: item.body,
     stats: "linked source note"
   }));
-  if (!digest) return supportingItems;
-  const lines = digest.bodyMarkdown.split("\n");
-  return [
-    {
-      id: `digest-${digest.digestDate}`,
+  const issues = digestIssues.length ? digestIssues : digest ? [digest] : [];
+  const issueItems = issues.map((issue) => {
+    const lines = issue.bodyMarkdown.split("\n");
+    return {
+      id: `digest-${issue.id ?? issue.idempotencyKey ?? issue.digestDate}`,
       source: "Newsletter" as const,
-      eyebrow: digest.status,
-      title: digest.subject,
+      eyebrow: issue.status,
+      title: issue.subject,
       body: firstNewsletterParagraph(lines),
-      author: "Second Brain",
-      timestamp: digest.digestDate,
-      stats: `${digest.status} - ${digest.scheduledFor}`
-    },
-    ...supportingItems
-  ];
+      author: "Abhijit's Second Brain",
+      timestamp: issue.digestDate,
+      stats: `${issue.status} - ${issue.scheduledFor}`,
+      fullBody: issue.bodyMarkdown
+    };
+  });
+  return [...issueItems, ...supportingItems];
 }
 
 function firstNewsletterParagraph(lines: string[]) {
@@ -638,6 +699,10 @@ function markdownToPlain(value: string) {
     .replace(/\[([^\]]+)\]\(([^)]+)\)/g, "$1")
     .replace(/\*\*/g, "")
     .trim();
+}
+
+function stripInlineMarks(value: string) {
+  return value.replace(/\*\*/g, "");
 }
 
 function shortText(value: string, maxLength: number) {
