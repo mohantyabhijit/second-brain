@@ -102,14 +102,24 @@ func (s *Service) fetchYouTubeInboxItems(ctx context.Context, playlistID string,
 			continue
 		}
 		if record, ok := cachedVideos[item.VideoID]; ok {
-			items[index] = mergeTranscript(item, YouTubeItem{
+			cachedTranscript := YouTubeItem{
 				TranscriptStatus:            "available",
 				TranscriptPreview:           fallback(record.Summary.Quote, record.Summary.Summary),
 				TranscriptLang:              "cached",
 				TranscriptSourceLang:        "cached",
 				TranscriptTranslationStatus: "none",
+				ImportantTimeMarkers:        record.Summary.ImportantTimeMarkers,
 				CachedCaptureHash:           record.CaptureHash,
-			})
+			}
+			if len(cachedTranscript.ImportantTimeMarkers) == 0 {
+				transcript := s.fetchSupadataTranscript(ctx, item.VideoID)
+				cachedTranscript.ImportantTimeMarkers = transcript.ImportantTimeMarkers
+				cachedTranscript.TranscriptText = transcript.TranscriptText
+				cachedTranscript.TranscriptOriginalText = transcript.TranscriptOriginalText
+				cachedTranscript.TranscriptTimedText = transcript.TranscriptTimedText
+				cachedTranscript.TranscriptError = transcript.TranscriptError
+			}
+			items[index] = mergeTranscript(item, cachedTranscript)
 			continue
 		}
 		transcript := s.fetchSupadataTranscript(ctx, item.VideoID)
