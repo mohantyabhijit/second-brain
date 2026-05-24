@@ -13,7 +13,7 @@ import (
 	"time"
 )
 
-const synthesisPromptVersion = "source-grounded-insights-v4-judge"
+const synthesisPromptVersion = "source-grounded-insights-v5-json-markers"
 const extractiveSynthesisModel = "extractive-fallback-v1"
 
 type promptSynthesisResponse struct {
@@ -82,6 +82,11 @@ func (s *Service) synthesizeCandidate(ctx context.Context, candidate sourceCandi
 		payload = fallbackSynthesis(candidate)
 	}
 
+	timeMarkers := normalizedTimeMarkers(payload.TimeMarkers, 8)
+	if len(timeMarkers) == 0 && candidate.sourceType == SourceTypeYouTube {
+		timeMarkers = extractTimeMarkers(candidate.body, 8)
+	}
+
 	summary := Summary{
 		ID:                   candidate.externalID,
 		Source:               string(candidate.sourceType),
@@ -93,7 +98,7 @@ func (s *Service) synthesizeCandidate(ctx context.Context, candidate sourceCandi
 		Confidence:           normalizedConfidence(payload.Confidence),
 		Notes:                []string{"Prompt synthesis version: " + synthesisPromptVersion + "."},
 		Quality:              normalizedQualityScore(payload.Quality, 0.72),
-		ImportantTimeMarkers: normalizedTimeMarkers(payload.TimeMarkers, 8),
+		ImportantTimeMarkers: timeMarkers,
 		CacheStatus:          cacheStatus,
 		CaptureHash:          captureHash,
 		PromptVersion:        synthesisPromptVersion,
@@ -200,6 +205,7 @@ func (s *Service) promptSynthesis(ctx context.Context, candidate sourceCandidate
 	}
 	requestBody := map[string]any{
 		"model": model,
+		"text":  map[string]any{"format": map[string]any{"type": "json_object"}},
 		"input": strings.Join([]string{
 			"You are the GPT-5.5 source-grounded synthesis module for a personal second brain.",
 			"Read the source text, improve it into compact reusable knowledge, self-judge the result, and return JSON only.",
@@ -270,6 +276,7 @@ func (s *Service) judgeSynthesis(ctx context.Context, candidate sourceCandidate,
 	}
 	requestBody := map[string]any{
 		"model": model,
+		"text":  map[string]any{"format": map[string]any{"type": "json_object"}},
 		"input": strings.Join([]string{
 			"You are the LLM-as-judge and prompt improver for Second Brain synthesis.",
 			"Judge the generated JSON against the source text only. Grade conciseness, efficacy, grounding, novelty, quote length, insight uniqueness, and YouTube timestamp usefulness.",
@@ -575,7 +582,7 @@ func normalizedTimeMarkers(markers []ImportantTimeMarker, limit int) []Important
 	return normalized
 }
 
-var timestampPattern = regexp.MustCompile(`\[(\d{1,2}:\d{2}(?::\d{2})?)\]\s*([^\n]+)`)
+var timestampPattern = regexp.MustCompile(`[\[(](\d{1,2}:\d{2}(?::\d{2})?)[\])]\s*([^\n]+)`)
 
 func extractTimeMarkers(text string, limit int) []ImportantTimeMarker {
 	if limit <= 0 {
