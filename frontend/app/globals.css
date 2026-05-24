@@ -1065,15 +1065,17 @@ blockquote {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 14px;
+  gap: 10px;
+  min-width: 0;
 }
 
 .graph-stats,
-.graph-controls {
+.graph-controls,
+.graph-toolset {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
 }
 
 .graph-stats span {
@@ -1089,16 +1091,78 @@ blockquote {
   font-weight: 800;
 }
 
-.graph-controls button {
-  min-height: 34px;
+.graph-toolset {
+  justify-content: center;
   border: 1px solid var(--line);
   border-radius: 8px;
-  padding: 0 12px;
+  padding: 4px;
+  background: #fff;
+  box-shadow: var(--soft-shadow);
+}
+
+.graph-toolset button,
+.graph-controls button {
+  width: 34px;
+  height: 34px;
+  display: inline-grid;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 0;
   background: #fff;
   color: var(--ink);
-  font-size: 0.82rem;
   font-weight: 820;
   cursor: pointer;
+  transition: background 160ms ease, color 160ms ease, border-color 160ms ease;
+}
+
+.graph-toolset button {
+  border-color: transparent;
+}
+
+.graph-toolset button:hover,
+.graph-controls button:hover,
+.graph-toolset button.active {
+  border-color: #b6c7e4;
+  background: #edf3ff;
+  color: #113a75;
+}
+
+.graph-controls button:disabled {
+  cursor: default;
+  opacity: 0.42;
+}
+
+.graph-toolset svg,
+.graph-controls svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.9;
+}
+
+.graph-zoom-readout {
+  min-width: 54px;
+  min-height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fff;
+  color: var(--ink-soft);
+  font-size: 0.78rem;
+  font-weight: 850;
+}
+
+.graph-controls button:nth-last-child(-n + 2) {
+  width: auto;
+  min-width: 48px;
+  padding: 0 10px;
+  font-size: 0.8rem;
 }
 
 .graph-stage {
@@ -1111,43 +1175,64 @@ blockquote {
 .graph-viewport {
   min-width: 0;
   min-height: 560px;
-  overflow: auto;
+  position: relative;
+  overflow: hidden;
   border: 1px solid var(--line);
   border-radius: 8px;
-  background:
-    linear-gradient(rgba(23, 32, 28, 0.035) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(23, 32, 28, 0.035) 1px, transparent 1px),
-    #fbfcfd;
-  background-size: 36px 36px;
+  background: #fbfcfd;
   box-shadow: var(--soft-shadow);
-  cursor: grab;
+  outline: none;
+  overscroll-behavior: contain;
+  user-select: none;
 }
 
+.graph-viewport-hand,
 .graph-viewport:active {
   cursor: grabbing;
 }
 
+.graph-viewport-select {
+  cursor: default;
+}
+
 .graph-svg {
+  width: 100%;
+  height: 100%;
   display: block;
   touch-action: none;
 }
 
-.graph-canvas-bg {
+.graph-screen-bg {
   fill: transparent;
+}
+
+.graph-svg pattern path {
+  fill: none;
+  stroke: rgba(23, 32, 28, 0.052);
+  stroke-width: 1;
+}
+
+.graph-svg marker path {
+  fill: var(--ink);
+}
+
+.graph-canvas-grid {
+  fill: url(#graph-grid);
 }
 
 .graph-edge {
   opacity: 0.36;
   stroke-linecap: round;
+  pointer-events: none;
 }
 
 .graph-node {
-  cursor: grab;
+  cursor: move;
   outline: none;
 }
 
 .graph-node:active {
-  cursor: grabbing;
+  cursor: move;
 }
 
 .graph-node rect {
@@ -1170,6 +1255,75 @@ blockquote {
   line-height: 1.25;
   pointer-events: none;
   user-select: none;
+}
+
+.canvas-shape {
+  cursor: move;
+}
+
+.canvas-shape rect,
+.canvas-shape ellipse {
+  fill: rgba(255, 255, 255, 0.72);
+  stroke: var(--ink);
+  stroke-width: 2;
+}
+
+.canvas-shape line,
+.canvas-shape polyline {
+  fill: none;
+  stroke: var(--ink);
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 2.4;
+}
+
+.canvas-shape text {
+  fill: var(--ink);
+  font-size: 18px;
+  font-weight: 720;
+  user-select: none;
+}
+
+.canvas-shape.preview {
+  opacity: 0.72;
+  pointer-events: none;
+}
+
+.canvas-shape.selected rect,
+.canvas-shape.selected ellipse,
+.canvas-shape.selected line,
+.canvas-shape.selected polyline {
+  stroke: #174e87;
+}
+
+.canvas-text-editor {
+  width: 100%;
+  height: 100%;
+  resize: none;
+  border: 1px solid #174e87;
+  border-radius: 6px;
+  padding: 8px 10px;
+  background: rgba(255, 255, 255, 0.9);
+  color: var(--ink);
+  font: 720 18px/1.25 var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  outline: none;
+}
+
+.canvas-selection-outline rect {
+  fill: transparent;
+  stroke: #174e87;
+}
+
+.canvas-selection-outline rect:not(:first-child) {
+  fill: #fff;
+}
+
+.canvas-selection-marquee {
+  fill: rgba(40, 92, 143, 0.1);
+  stroke: #285c8f;
+  stroke-dasharray: 6 5;
+  stroke-width: 1.2;
+  pointer-events: none;
 }
 
 .graph-details {
