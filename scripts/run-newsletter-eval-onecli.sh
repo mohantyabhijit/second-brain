@@ -13,6 +13,14 @@ if [[ -f "$BACKEND_DIR/.env" ]]; then
   set +a
 fi
 
+if [[ -z "${SUPABASE_DB_URL:-}" ]]; then
+  if SUPABASE_DB_URL="$(security find-generic-password -a "$USER" -s "second-brain/SUPABASE_DB_URL" -w 2>/dev/null)"; then
+    export SUPABASE_DB_URL
+  else
+    unset SUPABASE_DB_URL
+  fi
+fi
+
 export ONECLI_GATEWAY=true
 export OPENAI_SYNTHESIS_MODEL="${OPENAI_SYNTHESIS_MODEL:-gpt-5.5}"
 export OPENAI_CHAT_MODEL="${OPENAI_CHAT_MODEL:-$OPENAI_SYNTHESIS_MODEL}"

@@ -29,6 +29,7 @@ func main() {
 	judgeModel := flag.String("judge-model", valueEnv("NEWSLETTER_EVAL_JUDGE_MODEL", "gpt-4o-mini"), "smaller judge model")
 	improverModel := flag.String("improver-model", valueEnv("NEWSLETTER_EVAL_IMPROVER_MODEL", *generatorModel), "prompt improver model")
 	timeout := flag.Duration("timeout", durationEnv("NEWSLETTER_EVAL_TIMEOUT", 20*time.Minute), "experiment timeout")
+	inspectInputs := flag.Bool("inspect-inputs", false, "print latest digest input counts without model calls")
 	flag.Parse()
 
 	ctx, cancel := context.WithTimeout(context.Background(), *timeout)
@@ -53,6 +54,14 @@ func main() {
 
 	service := knowledge.NewService(cfg, store, httpclient.New())
 	service.SetLogger(logger)
+	if *inspectInputs {
+		if err := printLatestInputCounts(ctx, service); err != nil {
+			logger.Error("inspect newsletter inputs", "error", err)
+			os.Exit(1)
+		}
+		return
+	}
+
 	report, err := service.RunNewsletterPromptExperiment(ctx, knowledge.NewsletterExperimentOptions{
 		Iterations:     *iterations,
 		GeneratorModel: *generatorModel,
@@ -75,6 +84,26 @@ func main() {
 		logger.Error("newsletter experiment failed", "error", err)
 		os.Exit(1)
 	}
+}
+
+func printLatestInputCounts(ctx context.Context, service *knowledge.Service) error {
+	latest, err := service.ReadLatest(ctx)
+	if err != nil {
+		return err
+	}
+	if latest == nil {
+		return fmt.Errorf("no knowledge run is available")
+	}
+	fmt.Printf("generated_at=%s\n", latest.GeneratedAt.Format(time.RFC3339))
+	fmt.Printf("x_bookmarks=%d\n", len(latest.XBookmarks))
+	fmt.Printf("youtube_items=%d\n", len(latest.YouTubeItems))
+	fmt.Printf("summaries=%d\n", len(latest.Summaries))
+	fmt.Printf("insights=%d\n", len(latest.Insights))
+	fmt.Printf("themes=%d\n", len(latest.Themes))
+	fmt.Printf("insight_clusters=%d\n", len(latest.InsightClusters))
+	fmt.Printf("connections=%d\n", len(latest.Connections))
+	fmt.Printf("blockers=%d\n", len(latest.Blockers))
+	return nil
 }
 
 func writeExperimentReport(outputDir string, report *knowledge.NewsletterExperimentReport) (string, string, error) {
