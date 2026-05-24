@@ -364,7 +364,10 @@ func mergeTranscript(item YouTubeItem, transcript YouTubeItem) YouTubeItem {
 		item.ImportantTimeMarkers = extractTimeMarkers(item.Description, 8)
 	}
 	if len(item.ImportantTimeMarkers) == 0 {
-		text := fallback(item.TranscriptText, item.TranscriptOriginalText)
+		text := fallback(
+			fallback(item.TranscriptText, item.TranscriptOriginalText),
+			fallback(fallback(item.TranscriptPreview, item.TranscriptOriginalPreview), item.Description),
+		)
 		item.ImportantTimeMarkers = estimatedTranscriptMarkers(text, item.DurationSeconds, 3)
 	}
 	return item
