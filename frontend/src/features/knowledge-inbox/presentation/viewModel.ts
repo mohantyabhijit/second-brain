@@ -49,6 +49,7 @@ export type SummaryCardViewModel = {
   title: string;
   body: string;
   quote?: string;
+  author: string;
   sourceUrl: string;
   decision: Decision;
   decisionLabel: string;
@@ -236,6 +237,7 @@ export function toKnowledgeInboxViewModel(run: KnowledgeRunResult, isRunning: bo
           title: summary.title,
           body: summary.summary,
           quote: summary.quote,
+          author: sourceName(summary.source),
           sourceUrl: summary.sourceUrl,
           decision: summary.decision,
           decisionLabel: decisionLabels[summary.decision],
@@ -250,6 +252,7 @@ export function toKnowledgeInboxViewModel(run: KnowledgeRunResult, isRunning: bo
           title: insight.title,
           body: insight.insight,
           quote: insight.evidence,
+          author: sourceName(insight.source),
           sourceUrl: insight.sourceUrl,
           decision: "read_now" as Decision,
           decisionLabel: "Insight",
@@ -263,6 +266,7 @@ export function toKnowledgeInboxViewModel(run: KnowledgeRunResult, isRunning: bo
           title: action.title,
           body: action.action,
           quote: action.rationale,
+          author: sourceName(action.source),
           sourceUrl: action.sourceUrl,
           decision: action.priority === "low" ? ("later" as Decision) : ("read_now" as Decision),
           decisionLabel: `${action.priority} priority`,
@@ -314,6 +318,10 @@ function sourceCard(label: string, detail: string, status: SourceStatus, icon: I
     statusLabel: statusLabels[status],
     icon
   };
+}
+
+function sourceName(source: "x" | "youtube") {
+  return source === "x" ? "X" : "YouTube";
 }
 
 function hasDisplayQuality(item: { quality?: QualityScore }) {

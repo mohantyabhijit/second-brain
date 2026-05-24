@@ -524,9 +524,8 @@ function getFeedItems(model: KnowledgeInboxViewModel, activePage: KnowledgeInbox
 }
 
 function summaryToFeedItem(summary: SummaryCardViewModel): FeedItem {
-  const isX = summary.id.startsWith("x-");
   const source = summary.source === "insight" ? "Insight" : summary.source === "action" ? "Action" : summary.quote ? "Quote" : "Summary";
-  const eyebrow = summary.source === "insight" ? "Insight" : summary.source === "action" ? "Action item" : isX ? "X" : "YouTube";
+  const eyebrow = summary.source === "insight" ? "Insight" : summary.source === "action" ? "Action item" : summary.author;
   return {
     id: summary.id,
     source,
@@ -534,7 +533,7 @@ function summaryToFeedItem(summary: SummaryCardViewModel): FeedItem {
     title: summary.title,
     body: summary.body,
     quote: summary.quote,
-    author: isX ? "X" : "YouTube",
+    author: summary.author,
     timestamp: "Summary",
     sourceUrl: summary.sourceUrl,
     stats: `${summary.decisionLabel} - ${summary.confidenceLabel}${summary.cacheStatus ? ` - ${summary.cacheStatus}` : ""}`,
