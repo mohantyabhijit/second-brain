@@ -71,8 +71,11 @@ const pageCopy: Record<
   }
 };
 
+const initialVisibleCount = 25;
+const loadMoreCount = 25;
+
 export function SecondBrainConsoleView({ activePage, chatMessages, isAsking, isDigesting, isLoading, model, refreshStatus, onAsk, onDigest, onSendDigest, onFeedback }: SecondBrainConsoleViewProps) {
-  const [visibleCount, setVisibleCount] = useState(10);
+  const [visibleCount, setVisibleCount] = useState(initialVisibleCount);
   const [expandedItems, setExpandedItems] = useState<Set<string>>(new Set());
   const [copiedItems, setCopiedItems] = useState<Set<string>>(new Set());
   const [digestEmail, setDigestEmail] = useState("");
@@ -89,7 +92,7 @@ export function SecondBrainConsoleView({ activePage, chatMessages, isAsking, isD
     const observer = new IntersectionObserver(
       (entries) => {
         if (entries[0]?.isIntersecting) {
-          setVisibleCount((count) => count + 8);
+          setVisibleCount((count) => count + loadMoreCount);
         }
       },
       { rootMargin: "720px 0px" }
