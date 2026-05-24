@@ -115,6 +115,60 @@ func TestProcessSourceCandidatesUsesCachedSynthesis(t *testing.T) {
 	}
 }
 
+func TestProcessSourceCandidateDoesNotUseSourceCacheForYouTubeTranscript(t *testing.T) {
+	t.Setenv("OPENAI_API_KEY", "")
+	candidate := sourceCandidate{
+		sourceType:   SourceTypeYouTube,
+		externalID:   "video-1",
+		sourceURL:    "https://www.youtube.com/watch?v=video-1",
+		title:        "Transcript-backed video",
+		body:         "Full transcript text from Supadata should be synthesized instead of reusing metadata-only cache.",
+		artifactKind: "transcript",
+		contentType:  "text/plain; charset=utf-8",
+	}
+	captureHash := candidate.captureHash()
+	sourceKey := SynthesisCacheKey{
+		SourceType:    SourceTypeYouTube,
+		ExternalID:    candidate.externalID,
+		PromptVersion: synthesisPromptVersion,
+		Model:         extractiveSynthesisModel,
+	}
+	sourceCached := map[string]SynthesisRecord{
+		sourceKey.String(): {
+			SourceType:    SourceTypeYouTube,
+			ExternalID:    candidate.externalID,
+			CaptureHash:   "metadata-only-hash",
+			PromptVersion: synthesisPromptVersion,
+			Model:         extractiveSynthesisModel,
+			Summary: Summary{
+				ID:            candidate.externalID,
+				Source:        string(SourceTypeYouTube),
+				Title:         candidate.title,
+				SourceURL:     candidate.sourceURL,
+				Decision:      DecisionLater,
+				Summary:       "Transcript is unavailable; only chapter markers support this synthesis.",
+				Confidence:    "low",
+				CaptureHash:   "metadata-only-hash",
+				PromptVersion: synthesisPromptVersion,
+				Model:         extractiveSynthesisModel,
+			},
+		},
+	}
+	service := NewService(config.Config{SupabaseStorageBucket: "sources"}, cacheStore{}, http.DefaultClient)
+
+	processed := service.processSourceCandidate(context.Background(), candidate, captureHash, map[string]SynthesisRecord{}, sourceCached)
+
+	if processed.Cached {
+		t.Fatal("expected YouTube transcript candidate to bypass source-level metadata cache")
+	}
+	if processed.CaptureHash != captureHash {
+		t.Fatalf("expected current transcript capture hash %q, got %q", captureHash, processed.CaptureHash)
+	}
+	if strings.Contains(processed.Synthesis.Summary.Summary, "Transcript is unavailable") {
+		t.Fatalf("expected fresh transcript-backed synthesis, got %#v", processed.Synthesis.Summary)
+	}
+}
+
 func TestFallbackSynthesisBuildsFirstClassInsightFields(t *testing.T) {
 	t.Setenv("OPENAI_API_KEY", "")
 	candidate := sourceCandidate{

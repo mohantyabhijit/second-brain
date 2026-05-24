@@ -750,7 +750,9 @@ func (s *Service) processSourceCandidate(ctx context.Context, candidate sourceCa
 	if !ok {
 		sourceKey := key
 		sourceKey.CaptureHash = ""
-		record, ok = sourceCached[sourceKey.String()]
+		if candidate.sourceType != SourceTypeYouTube {
+			record, ok = sourceCached[sourceKey.String()]
+		}
 		if ok {
 			captureHash = record.CaptureHash
 		}

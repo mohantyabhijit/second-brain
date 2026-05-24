@@ -1,9 +1,6 @@
 package knowledge
 
-import (
-	"strings"
-	"testing"
-)
+import "testing"
 
 func TestCandidatesFromBookmarksNormalizeSourceMetadata(t *testing.T) {
 	bookmarks := []XBookmark{
@@ -68,7 +65,7 @@ func TestCandidatesFromBookmarksNormalizeSourceMetadata(t *testing.T) {
 	}
 }
 
-func TestCandidatesFromVideosUseTranscriptOrMetadata(t *testing.T) {
+func TestCandidatesFromVideosRequireTranscriptText(t *testing.T) {
 	items := []YouTubeItem{
 		{
 			VideoID:           "video-1",
@@ -104,8 +101,8 @@ func TestCandidatesFromVideosUseTranscriptOrMetadata(t *testing.T) {
 
 	candidates := candidatesFromVideos(items)
 
-	if len(candidates) != 4 {
-		t.Fatalf("expected 4 video candidates, got %d", len(candidates))
+	if len(candidates) != 2 {
+		t.Fatalf("expected 2 transcript-backed video candidates, got %d", len(candidates))
 	}
 	if candidates[0].title != "Untitled YouTube video" || candidates[0].body != "translated transcript text" {
 		t.Fatalf("unexpected first video candidate: %#v", candidates[0])
@@ -118,11 +115,5 @@ func TestCandidatesFromVideosUseTranscriptOrMetadata(t *testing.T) {
 	}
 	if candidates[1].title != "Original only" || candidates[1].body != "original transcript text" {
 		t.Fatalf("unexpected second video candidate: %#v", candidates[1])
-	}
-	if candidates[2].artifactKind != "metadata" || !strings.Contains(candidates[2].body, "A source-grounded description") {
-		t.Fatalf("expected metadata fallback candidate, got %#v", candidates[2])
-	}
-	if candidates[3].artifactKind != "metadata" || !strings.Contains(candidates[3].body, "Title: No text") {
-		t.Fatalf("expected title metadata fallback candidate, got %#v", candidates[3])
 	}
 }

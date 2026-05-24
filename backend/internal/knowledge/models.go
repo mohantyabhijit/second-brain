@@ -68,7 +68,6 @@ type YouTubeItem struct {
 	TranscriptText              string                `json:"-"`
 	TranscriptOriginalText      string                `json:"-"`
 	TranscriptTimedText         string                `json:"-"`
-	CachedCaptureHash           string                `json:"-"`
 }
 
 type Summary struct {

@@ -17,7 +17,6 @@ type sourceCandidate struct {
 	body         string
 	artifactKind string
 	contentType  string
-	cachedHash   string
 }
 
 func candidatesFromBookmarks(bookmarks []XBookmark) []sourceCandidate {
@@ -55,16 +54,11 @@ func candidatesFromVideos(items []YouTubeItem) []sourceCandidate {
 	candidates := []sourceCandidate{}
 	for _, item := range items {
 		body := fallback(fallback(item.TranscriptTimedText, item.TranscriptText), fallback(item.TranscriptPreview, item.TranscriptOriginalPreview))
-		artifactKind := "transcript"
-		contentType := "text/plain; charset=utf-8"
-		if body == "" {
-			body = youtubeMetadataBody(item)
-			artifactKind = "metadata"
-			contentType = "text/markdown; charset=utf-8"
-		}
-		if body == "" {
+		if strings.TrimSpace(body) == "" {
 			continue
 		}
+		artifactKind := "transcript"
+		contentType := "text/plain; charset=utf-8"
 		candidates = append(candidates, sourceCandidate{
 			sourceType:   SourceTypeYouTube,
 			externalID:   item.VideoID,
@@ -75,7 +69,6 @@ func candidatesFromVideos(items []YouTubeItem) []sourceCandidate {
 			body:         body,
 			artifactKind: artifactKind,
 			contentType:  contentType,
-			cachedHash:   item.CachedCaptureHash,
 		})
 	}
 	return candidates
@@ -99,9 +92,6 @@ func youtubeMetadataBody(item YouTubeItem) string {
 }
 
 func (candidate sourceCandidate) captureHash() string {
-	if candidate.cachedHash != "" {
-		return candidate.cachedHash
-	}
 	hash := sha256.Sum256([]byte(strings.Join([]string{
 		string(candidate.sourceType),
 		candidate.externalID,
