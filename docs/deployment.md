@@ -18,6 +18,7 @@ GitHub Actions stores only deploy/runtime secrets needed outside OneCLI:
 - `DO_HOST`, `DO_PORT`, `DO_USER`, `DO_SSH_KEY`: SSH deployment to the VPS.
 - `SUPABASE_DB_URL`: required by the API and migration binary for Postgres.
 - `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_STORAGE_BUCKET`: backend-only Supabase Storage access.
+- `REDIS_URL`: optional backend-only Redis read-model cache. When present, deploy enables `REDIS_CACHE_ENABLED=true`.
 - `ONECLI_API_KEY`: logs the VPS deploy user into OneCLI so the API can run behind the OneCLI gateway.
 
 Provider API credentials stay in OneCLI instead of GitHub Secrets where possible:
@@ -27,4 +28,4 @@ Provider API credentials stay in OneCLI instead of GitHub Secrets where possible
 - Supadata API key.
 - OpenAI API key.
 
-The frontend does not receive provider secrets or Supabase service credentials.
+The frontend does not receive provider secrets, Redis credentials, or Supabase service credentials.

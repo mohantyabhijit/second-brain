@@ -102,6 +102,11 @@ jobs:
       SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
       APP_USER_ID: ${{ secrets.APP_USER_ID }}
       SUPABASE_STORAGE_BUCKET: ${{ secrets.SUPABASE_STORAGE_BUCKET }}
+      REDIS_URL: ${{ secrets.REDIS_URL }}
+      REDIS_CACHE_ENABLED: ${{ secrets.REDIS_CACHE_ENABLED }}
+      REDIS_CACHE_TTL: ${{ secrets.REDIS_CACHE_TTL }}
+      REDIS_REFRESH_STATUS_TTL: ${{ secrets.REDIS_REFRESH_STATUS_TTL }}
+      REDIS_ASK_ANSWER_TTL: ${{ secrets.REDIS_ASK_ANSWER_TTL }}
       YOUTUBE_PLAYLIST_ID: ${{ secrets.YOUTUBE_PLAYLIST_ID }}
       YOUTUBE_TRANSCRIPT_TEST_VIDEO_ID: ${{ secrets.YOUTUBE_TRANSCRIPT_TEST_VIDEO_ID }}
       DIGEST_EMAIL_TO: ${{ secrets.DIGEST_EMAIL_TO }}
@@ -149,6 +154,15 @@ jobs:
           write_var SUPABASE_URL "$SUPABASE_URL"
           write_var SUPABASE_SERVICE_ROLE_KEY "$SUPABASE_SERVICE_ROLE_KEY"
           write_var SUPABASE_STORAGE_BUCKET "${SUPABASE_STORAGE_BUCKET:-sources}"
+          if [[ -n "$REDIS_URL" ]]; then
+            write_var REDIS_URL "$REDIS_URL"
+            write_var REDIS_CACHE_ENABLED "${REDIS_CACHE_ENABLED:-true}"
+          else
+            write_var REDIS_CACHE_ENABLED "${REDIS_CACHE_ENABLED:-false}"
+          fi
+          write_var REDIS_CACHE_TTL "${REDIS_CACHE_TTL:-720h}"
+          write_var REDIS_REFRESH_STATUS_TTL "${REDIS_REFRESH_STATUS_TTL:-24h}"
+          write_var REDIS_ASK_ANSWER_TTL "${REDIS_ASK_ANSWER_TTL:-1h}"
           write_var ONECLI_BIN /home/deploy/.local/bin/onecli
           write_var ONECLI_GATEWAY true
           write_var ONECLI_PROJECT second-brain

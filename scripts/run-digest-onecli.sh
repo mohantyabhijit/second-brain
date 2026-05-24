@@ -45,6 +45,14 @@ if [[ -z "${SUPABASE_STORAGE_BUCKET:-}" ]]; then
   fi
 fi
 
+if [[ -z "${REDIS_URL:-}" ]]; then
+  if REDIS_URL="$(security find-generic-password -a "$USER" -s "second-brain/REDIS_URL" -w 2>/dev/null)"; then
+    export REDIS_URL
+  else
+    unset REDIS_URL
+  fi
+fi
+
 if [[ -z "${X_CLIENT_ID:-}" ]]; then
   if X_CLIENT_ID_PROD="$(security find-generic-password -a "$USER" -s "second-brain/X_CLIENT_ID_PROD" -w 2>/dev/null)"; then
     export X_CLIENT_ID_PROD
@@ -144,6 +152,14 @@ export X_TOKEN_REFRESH_DIRECT="${X_TOKEN_REFRESH_DIRECT:-true}"
 export X_REAUTHORIZE_COMMAND="${X_REAUTHORIZE_COMMAND:-npm run x:oauth:prod}"
 export X_KEYCHAIN_TOKEN_SUFFIX="${X_KEYCHAIN_TOKEN_SUFFIX:-_PROD}"
 export KNOWLEDGE_RUN_PATH="${KNOWLEDGE_RUN_PATH:-$ROOT_DIR/data/runtime/latest-knowledge-run.json}"
+if [[ -n "${REDIS_URL:-}" ]]; then
+  export REDIS_CACHE_ENABLED="${REDIS_CACHE_ENABLED:-true}"
+else
+  export REDIS_CACHE_ENABLED="${REDIS_CACHE_ENABLED:-false}"
+fi
+export REDIS_CACHE_TTL="${REDIS_CACHE_TTL:-720h}"
+export REDIS_REFRESH_STATUS_TTL="${REDIS_REFRESH_STATUS_TTL:-24h}"
+export REDIS_ASK_ANSWER_TTL="${REDIS_ASK_ANSWER_TTL:-1h}"
 
 cd "$BACKEND_DIR"
 exec "$ONECLI" run --project "$PROJECT" -- go run ./cmd/digest

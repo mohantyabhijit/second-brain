@@ -32,7 +32,7 @@ scripts/    Local setup helpers
 
 ## Local Setup
 
-Apply the Supabase migrations in `supabase/migrations`, enable `pgvector`, create private Supabase Storage buckets, then set `SUPABASE_DB_URL` to the pooled Postgres connection string. The backend writes source text assets to Supabase Storage when `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` are available, and records artifact metadata either way. Neo4j credentials are server-side settings for the graph outbox worker.
+Apply the Supabase migrations in `supabase/migrations`, enable `pgvector`, create private Supabase Storage buckets, then set `SUPABASE_DB_URL` to the pooled Postgres connection string. The backend writes source text assets to Supabase Storage when `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` are available, and records artifact metadata either way. Neo4j credentials are server-side settings for the graph outbox worker. Redis is optional but recommended for fast app-state reads; keep `REDIS_URL` server-side only.
 
 ```bash
 cp backend/.env.example backend/.env
@@ -56,7 +56,13 @@ npm run frontend:dev
 
 Open `http://localhost:3000`. The frontend calls the Go API at `NEXT_PUBLIC_API_BASE_URL`, defaulting to `http://localhost:8080`.
 
-`npm run backend:dev` reads `SUPABASE_DB_URL` from Keychain when it is not already exported, then runs the Go API through `onecli run` so outbound provider requests use OneCLI gateway injection.
+`npm run backend:dev` reads `SUPABASE_DB_URL` and `REDIS_URL` from Keychain when they are not already exported, then runs the Go API through `onecli run` so outbound provider requests use OneCLI gateway injection. If `REDIS_URL` is present, local scripts enable `REDIS_CACHE_ENABLED=true`; otherwise Redis is disabled and the API falls back to canonical storage.
+
+To save a Redis URL for local Keychain-backed runs and GitHub Actions deploys:
+
+```bash
+REDIS_URL='redis://...' npm run redis:save-secret
+```
 
 For local demos without Supabase configured, the Go API falls back to `data/runtime/latest-knowledge-run.json` and still serves the same knowledge-run contract to the frontend.
 
