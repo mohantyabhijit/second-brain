@@ -372,26 +372,22 @@ h1 {
 
 .feed-card {
   width: 100%;
-  min-height: 132px;
+  height: 168px;
   display: grid;
   grid-template-columns: 64px minmax(0, 1fr) minmax(220px, 30%);
   align-items: start;
   gap: 18px;
+  overflow: hidden;
   border-bottom: 1px solid var(--line);
   padding: 16px 0;
   background: transparent;
-  cursor: pointer;
+  cursor: default;
   transition: background 160ms ease, border-color 160ms ease;
 }
 
-.feed-card:hover,
-.feed-card.expanded {
+.feed-card:hover {
   border-color: var(--line-strong);
   background: rgba(255, 255, 255, 0.58);
-}
-
-.feed-card.expanded {
-  padding-inline: 0;
 }
 
 .feed-card.newsletter {
@@ -427,7 +423,7 @@ h1 {
   border: 0;
   padding: 0;
   background: transparent;
-  cursor: pointer;
+  cursor: default;
 }
 
 .feed-avatar {
@@ -485,6 +481,7 @@ h1 {
   min-width: 0;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
 }
 
 .feed-card-topline {
@@ -493,7 +490,7 @@ h1 {
   align-items: flex-start;
   justify-content: space-between;
   gap: 14px;
-  margin-bottom: 12px;
+  margin-bottom: 8px;
   color: var(--muted);
   font-size: 0.82rem;
   font-weight: 740;
@@ -505,6 +502,10 @@ h1 {
   font-size: clamp(1.05rem, 1.25vw, 1.22rem);
   line-height: 1.18;
   letter-spacing: 0;
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
 }
 
 .feed-meta {
@@ -519,6 +520,7 @@ h1 {
   flex: 1 1 auto;
   min-height: 0;
   max-width: 620px;
+  overflow: hidden;
   padding-right: 10px;
 }
 
@@ -557,41 +559,6 @@ h1 {
   line-height: 1.58;
 }
 
-.newsletter-body {
-  display: grid;
-  gap: 10px;
-  max-width: 62ch;
-}
-
-.newsletter-body h3 {
-  margin: 14px 0 0;
-  color: var(--ink);
-  font-size: 1rem;
-  line-height: 1.3;
-}
-
-.newsletter-body p {
-  margin: 0;
-}
-
-.newsletter-body a {
-  color: var(--blue-dark);
-  font-weight: 750;
-  text-decoration: underline;
-  text-decoration-thickness: 1px;
-  text-underline-offset: 3px;
-}
-
-.newsletter-bullet {
-  border-left: 4px solid var(--blue);
-  border-radius: 8px;
-  padding: 10px 12px;
-  background: #f5f8fb;
-  color: var(--ink-soft);
-  font-size: 0.98rem;
-  line-height: 1.52;
-}
-
 .feed-card.newsletter .feed-actions a,
 .feed-card.newsletter .feed-actions button {
   min-height: 38px;
@@ -617,6 +584,8 @@ h1 {
 
 .quote-column {
   min-width: 0;
+  height: 100%;
+  overflow: hidden;
   padding-right: 8px;
 }
 
@@ -637,19 +606,19 @@ blockquote span {
   font-weight: 850;
 }
 
-.feed-card:not(.newsletter):not(.expanded) .summary-column p,
-.feed-card:not(.newsletter):not(.expanded) blockquote {
+.summary-column p,
+blockquote {
   display: -webkit-box;
   overflow: hidden;
   -webkit-box-orient: vertical;
 }
 
-.feed-card:not(.newsletter):not(.expanded) .summary-column p {
+.summary-column p {
   -webkit-line-clamp: 2;
 }
 
-.feed-card:not(.newsletter):not(.expanded) blockquote {
-  -webkit-line-clamp: 3;
+blockquote {
+  -webkit-line-clamp: 4;
 }
 
 .feed-actions {
@@ -664,6 +633,8 @@ blockquote span {
 .feed-actions a,
 .feed-actions button {
   min-height: 24px;
+  display: inline-flex;
+  align-items: center;
   border: 0;
   border-radius: 0;
   padding: 0;
@@ -733,25 +704,6 @@ blockquote span {
   color: var(--muted);
   font-size: 0.8rem;
   font-weight: 700;
-}
-
-.feed-expanded {
-  margin-top: 14px;
-  border-top: 1px solid var(--line);
-  padding-top: 12px;
-}
-
-.feed-expanded span {
-  display: block;
-  margin-bottom: 5px;
-  color: var(--green);
-  font-size: 0.74rem;
-  font-weight: 850;
-}
-
-.feed-expanded p {
-  margin-bottom: 0;
-  color: var(--muted);
 }
 
 .ask-brain {
@@ -1029,6 +981,7 @@ blockquote span {
   }
 
   .feed-card {
+    height: 240px;
     grid-template-columns: 42px minmax(0, 1fr);
     grid-template-rows: auto auto;
     gap: 12px;
@@ -1053,19 +1006,6 @@ blockquote span {
 
   .feed-card.newsletter::before {
     width: 4px;
-  }
-
-  .newsletter-body {
-    gap: 12px;
-  }
-
-  .newsletter-body h3 {
-    font-size: 1.02rem;
-  }
-
-  .newsletter-bullet {
-    padding: 12px;
-    font-size: 1rem;
   }
 
   .feed-card.newsletter .feed-identity {
@@ -1138,21 +1078,6 @@ blockquote span {
   .feed-card.newsletter .feed-main h2 {
     font-size: 1.16rem;
     line-height: 1.2;
-  }
-
-  .newsletter-body {
-    max-width: 100%;
-  }
-
-  .newsletter-body h3 {
-    margin-top: 12px;
-    font-size: 1rem;
-  }
-
-  .newsletter-body p,
-  .newsletter-bullet {
-    font-size: 1rem;
-    line-height: 1.55;
   }
 
   .feed-card.newsletter .feed-actions {

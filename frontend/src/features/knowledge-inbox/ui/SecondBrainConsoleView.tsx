@@ -1,6 +1,6 @@
 "use client";
 
-import { type FormEvent, type ReactNode, useEffect, useMemo, useRef, useState } from "react";
+import { type FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import type { KnowledgeInboxPage } from "../KnowledgeInboxContainer";
 import type { ChatMessage } from "../model/useKnowledgeInboxController";
@@ -28,7 +28,6 @@ type FeedItem = {
   eyebrow: string;
   title: string;
   body: string;
-  newsletterLines?: string[];
   quote?: string;
   author: string;
   timestamp: string;
@@ -40,32 +39,27 @@ const pageCopy: Record<
   KnowledgeInboxPage,
   {
     title: string;
-    description: string;
     kicker: string;
     emptyTitle: string;
   }
 > = {
   insights: {
     title: "Insights",
-    description: "Only the reusable ideas extracted from your saved X bookmarks and source evidence.",
     kicker: "Knowledge",
     emptyTitle: "No insights yet"
   },
   "daily-newsletter": {
     title: "Daily Newsletter",
-    description: "A scrollable digest of the ideas worth revisiting, grouped like a daily briefing.",
     kicker: "Digest",
     emptyTitle: "No newsletter issues yet"
   },
   "original-x-posts": {
     title: "Original X Bookmarks",
-    description: "The raw X bookmarks behind the summaries, kept intact for attribution and rereading.",
     kicker: "X",
     emptyTitle: "No X bookmarks yet"
   },
   "original-youtube-posts": {
     title: "Original YouTube Videos",
-    description: "The source videos and transcript evidence behind the reading queue.",
     kicker: "YouTube",
     emptyTitle: "No YouTube videos yet"
   }
@@ -73,10 +67,11 @@ const pageCopy: Record<
 
 const initialVisibleCount = 25;
 const loadMoreCount = 25;
+const summaryPreviewLength = 300;
+const quotePreviewLength = 260;
 
 export function SecondBrainConsoleView({ activePage, chatMessages, isAsking, isDigesting, isLoading, model, refreshStatus, onAsk, onDigest, onSendDigest, onFeedback }: SecondBrainConsoleViewProps) {
   const [visibleCount, setVisibleCount] = useState(initialVisibleCount);
-  const [expandedItems, setExpandedItems] = useState<Set<string>>(new Set());
   const [copiedItems, setCopiedItems] = useState<Set<string>>(new Set());
   const [digestEmail, setDigestEmail] = useState("");
   const [digestSendMessage, setDigestSendMessage] = useState<string | null>(null);
@@ -101,10 +96,6 @@ export function SecondBrainConsoleView({ activePage, chatMessages, isAsking, isD
     observer.observe(sentinel);
     return () => observer.disconnect();
   }, [activePage]);
-
-  function toggleExpandedItem(key: string) {
-    setExpandedItems((items) => toggleSetItem(items, key));
-  }
 
   function toggleCopiedItem(key: string, quote: string, item: FeedItem) {
     setCopiedItems((items) => toggleSetItem(items, key));
@@ -160,7 +151,6 @@ export function SecondBrainConsoleView({ activePage, chatMessages, isAsking, isD
           <div>
             <span className="section-label">{page.kicker}</span>
             <h1>{page.title}</h1>
-            <p>{page.description}</p>
           </div>
           {activePage === "daily-newsletter" ? (
             <div className="digest-email-tools">
@@ -207,12 +197,10 @@ export function SecondBrainConsoleView({ activePage, chatMessages, isAsking, isD
                   <FeedCard
                     key={itemKey}
                     copied={copiedItems.has(itemKey)}
-                    expanded={expandedItems.has(itemKey)}
                     index={index}
                     item={item}
                     itemKey={itemKey}
-                    onCopy={() => toggleCopiedItem(itemKey, item.quote ?? item.body, item)}
-                    onExpand={() => toggleExpandedItem(itemKey)}
+                    onCopy={() => toggleCopiedItem(itemKey, shortText(item.quote ?? item.body, quotePreviewLength), item)}
                   />
                 );
               })
@@ -260,41 +248,25 @@ function NavLink({ active, item }: { active: boolean; item: NavigationItemViewMo
 
 function FeedCard({
   copied,
-  expanded,
   index,
   item,
   itemKey,
-  onCopy,
-  onExpand
+  onCopy
 }: {
   copied: boolean;
-  expanded: boolean;
   index: number;
   item: FeedItem;
   itemKey: string;
   onCopy: () => void;
-  onExpand: () => void;
 }) {
+  const quote = item.quote ? shortText(item.quote, quotePreviewLength) : null;
   return (
-    <article
-      aria-labelledby={`${itemKey}-title`}
-      className={`feed-card ${item.source.toLowerCase()} ${expanded ? "expanded" : ""}`}
-      onClick={onExpand}
-    >
-      <button
-        aria-expanded={expanded}
-        aria-label={`${expanded ? "Collapse" : "Expand"} ${item.title}`}
-        className="feed-identity"
-        onClick={(event) => {
-          event.stopPropagation();
-          onExpand();
-        }}
-        type="button"
-      >
+    <article aria-labelledby={`${itemKey}-title`} className={`feed-card ${item.source.toLowerCase()}`}>
+      <div className="feed-identity">
         <span className={`feed-avatar ${item.source.toLowerCase()}`}>{sourceMark(item.source)}</span>
         <span>{item.timestamp}</span>
         {item.source === "Newsletter" ? <span className="newsletter-chip">{item.eyebrow}</span> : null}
-      </button>
+      </div>
 
       <div className="feed-main">
         <div className="feed-card-topline">
@@ -307,99 +279,41 @@ function FeedCard({
         </div>
 
         <div className="summary-column">
-          <span className={`feed-source ${item.source.toLowerCase()}`}>{item.source === "Newsletter" ? "Summary" : item.source}</span>
-          {item.source === "Newsletter" && item.newsletterLines?.length ? (
-            <NewsletterBody lines={item.newsletterLines} />
-          ) : (
-            <p>{item.body}</p>
-          )}
+          <span className={`feed-source ${item.source.toLowerCase()}`}>AI Summary</span>
+          <p>{shortText(item.body, summaryPreviewLength)}</p>
         </div>
       </div>
 
       <div className="quote-column">
         <div className="feed-actions" aria-label={`Actions for item ${index + 1}`}>
-          <button
-            aria-label="Copy insight"
-            className={copied ? "active" : undefined}
-            onClick={(event) => {
-              event.stopPropagation();
-              onCopy();
-            }}
-            type="button"
-          >
-            {copied ? "Copied" : "Copy Insight"}
-          </button>
+          {item.sourceUrl ? (
+            <a href={item.sourceUrl} onClick={(event) => event.stopPropagation()} rel="noreferrer" target="_blank">
+              Original
+            </a>
+          ) : null}
+          {quote ? (
+            <button
+              aria-label="Copy quote"
+              className={copied ? "active" : undefined}
+              onClick={(event) => {
+                event.stopPropagation();
+                onCopy();
+              }}
+              type="button"
+            >
+              {copied ? "Copied" : "Copy Quote"}
+            </button>
+          ) : null}
         </div>
-        {item.quote ? (
+        {quote ? (
           <blockquote>
             <span>Quote</span>
-            {item.quote}
+            {quote}
           </blockquote>
-        ) : null}
-        {expanded ? (
-          <div className="feed-expanded">
-            <span>{item.eyebrow}</span>
-            <p>{expandedDetail(item)}</p>
-          </div>
         ) : null}
       </div>
     </article>
   );
-}
-
-function NewsletterBody({ lines }: { lines: string[] }) {
-  return (
-    <div className="newsletter-body">
-      {lines
-        .map((line) => line.trim())
-        .filter(Boolean)
-        .filter((line) => !line.startsWith("# "))
-        .map((line, index) => {
-          if (line.startsWith("## ")) {
-            return <h3 key={`${line}-${index}`}>{renderInlineMarkdownParts(line.slice(3))}</h3>;
-          }
-          if (line.startsWith("- ")) {
-            return (
-              <div className="newsletter-bullet" key={`${line}-${index}`}>
-                {renderInlineMarkdownParts(line.slice(2))}
-              </div>
-            );
-          }
-          return <p key={`${line}-${index}`}>{renderInlineMarkdownParts(line)}</p>;
-        })}
-    </div>
-  );
-}
-
-function renderInlineMarkdownParts(value: string): ReactNode[] {
-  const parts: ReactNode[] = [];
-  const linkPattern = /\[([^\]]+)\]\(([^)]+)\)/g;
-  let lastIndex = 0;
-  let match: RegExpExecArray | null;
-  while ((match = linkPattern.exec(value)) !== null) {
-    if (match.index > lastIndex) {
-      parts.push(renderBoldText(value.slice(lastIndex, match.index), `text-${lastIndex}`));
-    }
-    parts.push(
-      <a href={match[2]} key={`link-${match.index}`} onClick={(event) => event.stopPropagation()} rel="noreferrer" target="_blank">
-        {match[1]}
-      </a>
-    );
-    lastIndex = match.index + match[0].length;
-  }
-  if (lastIndex < value.length) {
-    parts.push(renderBoldText(value.slice(lastIndex), `text-${lastIndex}`));
-  }
-  return parts.flat();
-}
-
-function renderBoldText(value: string, keyPrefix: string): ReactNode[] {
-  return value.split(/(\*\*[^*]+\*\*)/g).filter(Boolean).map((part, index) => {
-    if (part.startsWith("**") && part.endsWith("**")) {
-      return <strong key={`${keyPrefix}-bold-${index}`}>{part.slice(2, -2)}</strong>;
-    }
-    return <span key={`${keyPrefix}-${index}`}>{part}</span>;
-  });
 }
 
 function AskSecondBrainWidget({
@@ -536,15 +450,6 @@ function sourceMark(source: FeedSource) {
   return "S";
 }
 
-function expandedDetail(item: FeedItem) {
-  if (item.source === "X") return "Original bookmark view preserves author, source text, quote, and engagement context for attribution.";
-  if (item.source === "YouTube") return "Video view preserves transcript status, channel context, and the quote that supports the summary.";
-  if (item.source === "Newsletter") return "Newsletter view groups related summary and quote material into a digest-ready issue.";
-  if (item.source === "Insight") return "Insight view keeps the synthesized claim attached to the source evidence that supports it.";
-  if (item.source === "Action") return "Action view keeps the recommended next step attached to the source rationale.";
-  return "Expanded view keeps the short summary, quote, source context, and source decision together.";
-}
-
 function getFeedItems(model: KnowledgeInboxViewModel, activePage: KnowledgeInboxPage): FeedItem[] {
   const summaries = model.summaries.items.map(summaryToFeedItem);
   const insightItems = model.summaries.items
@@ -621,7 +526,6 @@ function buildNewsletterItems(digest: KnowledgeInboxViewModel["digest"], items: 
       eyebrow: digest.status,
       title: digest.subject,
       body: firstNewsletterParagraph(lines),
-      newsletterLines: lines,
       author: "Second Brain",
       timestamp: digest.digestDate,
       stats: `${digest.status} - ${digest.scheduledFor}`
@@ -642,6 +546,12 @@ function markdownToPlain(value: string) {
     .replace(/\[([^\]]+)\]\(([^)]+)\)/g, "$1")
     .replace(/\*\*/g, "")
     .trim();
+}
+
+function shortText(value: string, maxLength: number) {
+  const plain = markdownToPlain(value).replace(/\s+/g, " ").trim();
+  if (plain.length <= maxLength) return plain;
+  return `${plain.slice(0, maxLength).trim()}...`;
 }
 
 function sliceItems(items: FeedItem[], visibleCount: number) {
