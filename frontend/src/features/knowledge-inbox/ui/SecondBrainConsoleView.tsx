@@ -89,6 +89,7 @@ export function SecondBrainConsoleView({ activePage, chatMessages, digestIssues,
   const [openSummaryItem, setOpenSummaryItem] = useState<FeedItem | null>(null);
   const sentinelRef = useRef<HTMLDivElement | null>(null);
   const page = pageCopy[activePage];
+  const isSourceLoadingPage = isExternalSourcePage(activePage);
   const baseItems = useMemo(() => getFeedItems(model, activePage, digestIssues), [model, activePage, digestIssues]);
   const feedItems = useMemo(() => sliceItems(baseItems, visibleCount), [baseItems, visibleCount]);
 
@@ -193,7 +194,7 @@ export function SecondBrainConsoleView({ activePage, chatMessages, digestIssues,
         {model.header.isRunning || refreshStatus?.status === "running" ? (
           <RefreshProgress status={refreshStatus} />
         ) : null}
-        {isLoading && activePage !== "knowledge-graph" ? (
+        {isLoading && activePage !== "knowledge-graph" && !isSourceLoadingPage ? (
           <div className="loading-strip" role="status">
             <span className="loading-spinner" aria-hidden="true" />
             Loading latest knowledge run
@@ -240,7 +241,7 @@ export function SecondBrainConsoleView({ activePage, chatMessages, digestIssues,
 }
 
 function EmptyFeedState({ activePage, emptyTitle }: { activePage: KnowledgeInboxPage; emptyTitle: string }) {
-  if (activePage === "original-youtube-posts" || activePage === "original-x-posts") {
+  if (isExternalSourcePage(activePage)) {
     const message = activePage === "original-youtube-posts" ? "Loading your YouTube saved videos" : "Loading your X saved posts";
     return (
       <div aria-busy="true" className="feed-card empty-feed source-loading-feed" role="status">
@@ -260,6 +261,10 @@ function EmptyFeedState({ activePage, emptyTitle }: { activePage: KnowledgeInbox
       <p>No sourced items are available for this view yet. Refresh the inbox after X or YouTube credentials are connected.</p>
     </div>
   );
+}
+
+function isExternalSourcePage(activePage: KnowledgeInboxPage) {
+  return activePage === "original-youtube-posts" || activePage === "original-x-posts";
 }
 
 function RefreshProgress({ status }: { status: RefreshStatus | null }) {
