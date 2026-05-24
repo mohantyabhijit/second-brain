@@ -445,23 +445,6 @@ function AskSecondBrainWidget({
               messages.map((message) => (
                 <div key={message.id} className={`ask-message ${message.role}`}>
                   <p>{formatChatContent(message.content)}</p>
-                  {message.sources?.length ? (
-                    <ul>
-                      {message.sources.map((source) => (
-                        <li key={`${message.id}-${source.id}`}>
-                          {source.sourceUrl ? (
-                            <a href={source.sourceUrl} rel="noreferrer" target="_blank">
-                              {source.id}: {source.title}
-                            </a>
-                          ) : (
-                            <span>
-                              {source.id}: {source.title}
-                            </span>
-                          )}
-                        </li>
-                      ))}
-                    </ul>
-                  ) : null}
                 </div>
               ))
             ) : (

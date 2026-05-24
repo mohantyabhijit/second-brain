@@ -930,18 +930,6 @@ blockquote {
   white-space: pre-wrap;
 }
 
-.ask-message ul {
-  display: grid;
-  gap: 5px;
-  margin: 10px 0 0;
-  padding-left: 16px;
-}
-
-.ask-message a {
-  color: var(--blue-dark);
-  text-decoration: underline;
-}
-
 .ask-panel form {
   display: grid;
   gap: 10px;
