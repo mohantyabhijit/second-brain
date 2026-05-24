@@ -18,8 +18,10 @@ type ReadModelCache interface {
 	ReadAppState(ctx context.Context, ownerID string) (*AppState, error)
 	ReadLatest(ctx context.Context, ownerID string) (*Result, error)
 	ReadDigests(ctx context.Context, ownerID string, limit int) ([]DigestIssue, error)
+	ReadSourceMaterialStates(ctx context.Context, ownerID string, keys []SourceMaterialKey) (map[string]SourceMaterialState, error)
 	ReadRefreshStatus(ctx context.Context, ownerID string) (*RefreshStatus, error)
 	WriteRefreshStatus(ctx context.Context, ownerID string, status RefreshStatus) error
+	PublishSourceMaterialStates(ctx context.Context, ownerID string, states []SourceMaterialState) error
 	PublishAppState(ctx context.Context, ownerID string, state AppState) error
 	Close() error
 }

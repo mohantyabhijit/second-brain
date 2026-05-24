@@ -71,14 +71,30 @@ func (s *Service) fetchYouTubeInboxItems(ctx context.Context, playlistID string,
 		return nil, err
 	}
 
+	return s.fetchYouTubeTranscriptsForNewMaterials(ctx, items, transcriptVideoID, nil), nil
+}
+
+func (s *Service) fetchYouTubeTranscriptsForNewMaterials(ctx context.Context, items []YouTubeItem, transcriptVideoID string, sourceMaterials map[string]SourceMaterialState) []YouTubeItem {
+	model := s.synthesisModel()
 	for index, item := range items {
 		if transcriptVideoID != "" && item.VideoID != transcriptVideoID {
+			continue
+		}
+		key := SourceMaterialKey{
+			SourceType:    SourceTypeYouTube,
+			ExternalID:    item.VideoID,
+			PromptVersion: synthesisPromptVersion,
+			Model:         model,
+		}
+		if state, ok := sourceMaterials[key.String()]; ok && state.HasProcessedTranscript() {
+			items[index].TranscriptStatus = "cached"
+			items[index].TranscriptError = "Transcript already ingested and processed; skipped provider refetch."
 			continue
 		}
 		transcript := s.fetchSupadataTranscript(ctx, item.VideoID)
 		items[index] = mergeTranscript(item, transcript)
 	}
-	return items, nil
+	return items
 }
 
 func (s *Service) fetchPlaylistItems(ctx context.Context, playlistID string, limit int) ([]YouTubeItem, error) {

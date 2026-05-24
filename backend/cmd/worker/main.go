@@ -45,8 +45,11 @@ func main() {
 		runLock.Lock()
 		defer runLock.Unlock()
 		logger.Info("worker cycle started", "reason", reason)
-		if runOnce(ctx, cfg, service, logger) {
+		outcome := runOnce(ctx, cfg, service, logger)
+		if outcome.ok && outcome.newContent {
 			runGraphSync(ctx, cfg, logger)
+		} else if outcome.ok {
+			logger.Info("worker graph sync skipped", "reason", outcome.skippedReason)
 		}
 	}
 	runDigest := func(reason string) {
@@ -78,16 +81,23 @@ func main() {
 	logger.Info("self organizing worker stopped")
 }
 
-func runOnce(ctx context.Context, cfg config.Config, service *knowledge.Service, logger *slog.Logger) bool {
+type refreshOutcome struct {
+	ok            bool
+	newContent    bool
+	skippedReason string
+}
+
+func runOnce(ctx context.Context, cfg config.Config, service *knowledge.Service, logger *slog.Logger) refreshOutcome {
 	runCtx, cancel := context.WithTimeout(ctx, parseDuration(cfg.RefreshTimeout, 90*time.Minute))
 	defer cancel()
-	result, err := service.Run(runCtx)
+	outcome, err := service.RunCycle(runCtx)
 	if err != nil {
 		logger.Error("worker refresh failed", "error", err)
-		return false
+		return refreshOutcome{ok: false, skippedReason: "refresh_failed"}
 	}
+	result := outcome.Result
 	logger.Info("worker refresh completed", "x_bookmarks", len(result.XBookmarks), "youtube_items", len(result.YouTubeItems), "insights", len(result.Insights), "blockers", len(result.Blockers))
-	return true
+	return refreshOutcome{ok: true, newContent: outcome.NewContent, skippedReason: fallbackReason(outcome.SkippedReason, "no_new_source_materials")}
 }
 
 func generateDigest(ctx context.Context, service *knowledge.Service, logger *slog.Logger, reason string) {
@@ -152,6 +162,13 @@ func parseDuration(value string, fallbackValue time.Duration) time.Duration {
 		return fallbackValue
 	}
 	return parsed
+}
+
+func fallbackReason(value string, fallbackValue string) string {
+	if strings.TrimSpace(value) == "" {
+		return fallbackValue
+	}
+	return value
 }
 
 func digestCronSpec(cfg config.Config) string {

@@ -62,6 +62,8 @@ The recompute rule is: if the same source capture has the same prompt version an
 
 Daily digest selection uses the canonical ledger instead of the latest run payload alone: the 6 PM digest reads source items first seen after the previous digest and records the exact source item, capture, synthesis, URL, title, and timestamps in `digest_source_items`. Once a source item has appeared in a digest, it is excluded from later digest selection.
 
+Refreshes first read a source-material index keyed by source type, external ID, prompt version, and model. Supabase is canonical through `source_items`, `source_captures`, `source_objects`, and `knowledge_syntheses`; Redis can serve the same source-material state as a derived fast path. If every fetched source is already present with the same capture hash, the refresh skips synthesis, embeddings, storage rewrites, and graph sync. Digest generation still runs from the latest saved knowledge run.
+
 ## Object Storage
 
 Supabase Storage is the object store for source material and generated artifacts. Store object metadata in Postgres, including bucket, path, checksum, content type, byte size, source item ID, and capture timestamp.

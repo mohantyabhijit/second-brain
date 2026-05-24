@@ -125,6 +125,47 @@ func (c *Cache) ReadDigests(ctx context.Context, ownerID string, limit int) ([]k
 	return digests, nil
 }
 
+func (c *Cache) ReadSourceMaterialStates(ctx context.Context, ownerID string, keys []knowledge.SourceMaterialKey) (map[string]knowledge.SourceMaterialState, error) {
+	states := map[string]knowledge.SourceMaterialState{}
+	if len(keys) == 0 {
+		return states, nil
+	}
+	fields := make([]string, 0, len(keys))
+	for _, key := range keys {
+		fields = append(fields, key.String())
+	}
+	values, err := c.client.HMGet(ctx, sourceMaterialsKey(ownerID), fields...).Result()
+	if err != nil {
+		return states, err
+	}
+	for index, value := range values {
+		if value == nil {
+			continue
+		}
+		raw := ""
+		switch typed := value.(type) {
+		case string:
+			raw = typed
+		case []byte:
+			raw = string(typed)
+		default:
+			continue
+		}
+		if strings.TrimSpace(raw) == "" {
+			continue
+		}
+		var state knowledge.SourceMaterialState
+		if err := json.Unmarshal([]byte(raw), &state); err != nil {
+			return states, err
+		}
+		states[fields[index]] = state
+	}
+	if len(states) == 0 {
+		return states, knowledge.ErrReadModelCacheMiss
+	}
+	return states, nil
+}
+
 func (c *Cache) ReadRefreshStatus(ctx context.Context, ownerID string) (*knowledge.RefreshStatus, error) {
 	raw, err := c.client.Get(ctx, refreshStatusKey(ownerID)).Bytes()
 	if err != nil {
@@ -143,6 +184,31 @@ func (c *Cache) WriteRefreshStatus(ctx context.Context, ownerID string, status k
 		return err
 	}
 	return c.client.Set(ctx, refreshStatusKey(ownerID), raw, c.refreshTTL).Err()
+}
+
+func (c *Cache) PublishSourceMaterialStates(ctx context.Context, ownerID string, states []knowledge.SourceMaterialState) error {
+	if len(states) == 0 {
+		return nil
+	}
+	values := map[string]any{}
+	for _, state := range states {
+		if strings.TrimSpace(state.ExternalID) == "" || strings.TrimSpace(state.PromptVersion) == "" || strings.TrimSpace(state.Model) == "" {
+			continue
+		}
+		raw, err := json.Marshal(state)
+		if err != nil {
+			return err
+		}
+		values[state.Key().String()] = raw
+	}
+	if len(values) == 0 {
+		return nil
+	}
+	pipe := c.client.Pipeline()
+	pipe.HSet(ctx, sourceMaterialsKey(ownerID), values)
+	pipe.Expire(ctx, sourceMaterialsKey(ownerID), c.ttl)
+	_, err := pipe.Exec(ctx)
+	return err
 }
 
 func (c *Cache) PublishAppState(ctx context.Context, ownerID string, state knowledge.AppState) error {
@@ -200,6 +266,12 @@ func (c *Cache) PublishAppState(ctx context.Context, ownerID string, state knowl
 	pipe.Set(ctx, viewKey(ownerID, runID, "original-youtube-posts"), youtubeRaw, c.ttl)
 	if _, err := pipe.Exec(ctx); err != nil {
 		return err
+	}
+
+	if state.Latest != nil {
+		if err := c.PublishSourceMaterialStates(ctx, ownerID, knowledge.SourceMaterialStatesFromResult(state.Latest)); err != nil {
+			return err
+		}
 	}
 
 	return c.client.HSet(ctx, manifestKey(ownerID), map[string]any{
@@ -278,6 +350,10 @@ func digestsKey(ownerID string, runID string) string {
 
 func refreshStatusKey(ownerID string) string {
 	return key(ownerID, "refresh:status")
+}
+
+func sourceMaterialsKey(ownerID string) string {
+	return key(ownerID, "source-materials")
 }
 
 func graphKey(ownerID string, runID string) string {

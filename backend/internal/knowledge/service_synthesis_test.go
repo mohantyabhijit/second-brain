@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/abhijitmohanty/second-brain/backend/internal/config"
 )
@@ -20,6 +21,10 @@ func (s cacheStore) ReadLatest(ctx context.Context) (*Result, error) {
 
 func (s cacheStore) ReadCachedSyntheses(ctx context.Context, keys []SynthesisCacheKey) (map[string]SynthesisRecord, error) {
 	return s.cached, nil
+}
+
+func (s cacheStore) ReadSourceMaterialStates(ctx context.Context, ownerID string, keys []SourceMaterialKey) (map[string]SourceMaterialState, error) {
+	return map[string]SourceMaterialState{}, nil
 }
 
 func (s cacheStore) SaveRun(ctx context.Context, result Result, sources []ProcessedSource) error {
@@ -166,6 +171,84 @@ func TestProcessSourceCandidateDoesNotUseSourceCacheForYouTubeTranscript(t *test
 	}
 	if strings.Contains(processed.Synthesis.Summary.Summary, "Transcript is unavailable") {
 		t.Fatalf("expected fresh transcript-backed synthesis, got %#v", processed.Synthesis.Summary)
+	}
+}
+
+func TestFilterNewSourceCandidatesSkipsKnownCaptureAndKeepsChangedCapture(t *testing.T) {
+	t.Setenv("OPENAI_API_KEY", "")
+	known := sourceCandidate{
+		sourceType:   SourceTypeX,
+		externalID:   "tweet-known",
+		sourceURL:    "https://x.com/example/status/tweet-known",
+		title:        "Known",
+		body:         "Same source content",
+		artifactKind: "tweet",
+	}
+	changed := sourceCandidate{
+		sourceType:   SourceTypeX,
+		externalID:   "tweet-changed",
+		sourceURL:    "https://x.com/example/status/tweet-changed",
+		title:        "Changed",
+		body:         "Updated source content",
+		artifactKind: "tweet",
+	}
+	model := extractiveSynthesisModel
+	states := map[string]SourceMaterialState{
+		sourceMaterialKeyForCandidate(known, synthesisPromptVersion, model).String(): {
+			SourceType:        SourceTypeX,
+			ExternalID:        known.externalID,
+			LatestCaptureHash: known.captureHash(),
+			PromptVersion:     synthesisPromptVersion,
+			Model:             model,
+			Processed:         true,
+		},
+		sourceMaterialKeyForCandidate(changed, synthesisPromptVersion, model).String(): {
+			SourceType:        SourceTypeX,
+			ExternalID:        changed.externalID,
+			LatestCaptureHash: "old-hash",
+			PromptVersion:     synthesisPromptVersion,
+			Model:             model,
+			Processed:         true,
+		},
+	}
+
+	newCandidates, skipped := filterNewSourceCandidates([]sourceCandidate{known, changed}, states, model)
+
+	if len(skipped) != 1 || skipped[0].externalID != known.externalID {
+		t.Fatalf("expected known capture to be skipped, got %#v", skipped)
+	}
+	if len(newCandidates) != 1 || newCandidates[0].externalID != changed.externalID {
+		t.Fatalf("expected changed capture to remain new, got %#v", newCandidates)
+	}
+}
+
+func TestSourceMaterialStatesFromResultMarksTranscriptBackedYouTube(t *testing.T) {
+	generatedAt := time.Now().UTC()
+	result := Result{
+		GeneratedAt: generatedAt,
+		YouTubeItems: []YouTubeItem{{
+			VideoID:           "video-1",
+			TranscriptStatus:  "available",
+			TranscriptPreview: "source transcript",
+		}},
+		Summaries: []Summary{{
+			ID:            "video-1",
+			Source:        string(SourceTypeYouTube),
+			Title:         "Video",
+			CaptureHash:   "capture-1",
+			PromptVersion: synthesisPromptVersion,
+			Model:         extractiveSynthesisModel,
+			GeneratedAt:   &generatedAt,
+		}},
+	}
+
+	states := SourceMaterialStatesFromResult(&result)
+
+	if len(states) != 1 {
+		t.Fatalf("expected one state, got %#v", states)
+	}
+	if !states[0].HasProcessedTranscript() {
+		t.Fatalf("expected transcript-backed material state, got %#v", states[0])
 	}
 }
 
