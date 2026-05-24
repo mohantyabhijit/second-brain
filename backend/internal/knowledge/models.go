@@ -219,15 +219,28 @@ type DigestDelivery struct {
 }
 
 type DigestIssue struct {
-	OwnerID        string           `json:"-"`
-	ID             string           `json:"id,omitempty"`
-	DigestDate     string           `json:"digestDate"`
-	ScheduledFor   time.Time        `json:"scheduledFor"`
-	IdempotencyKey string           `json:"idempotencyKey"`
-	Subject        string           `json:"subject"`
-	BodyMarkdown   string           `json:"bodyMarkdown"`
-	Status         string           `json:"status"`
-	Deliveries     []DigestDelivery `json:"deliveries,omitempty"`
+	OwnerID              string           `json:"-"`
+	ID                   string           `json:"id,omitempty"`
+	DigestDate           string           `json:"digestDate"`
+	ScheduledFor         time.Time        `json:"scheduledFor"`
+	IdempotencyKey       string           `json:"idempotencyKey"`
+	Subject              string           `json:"subject"`
+	BodyMarkdown         string           `json:"bodyMarkdown"`
+	Status               string           `json:"status"`
+	IllustrationPrompt   string           `json:"illustrationPrompt,omitempty"`
+	IllustrationAlt      string           `json:"illustrationAlt,omitempty"`
+	IllustrationMimeType string           `json:"illustrationMimeType,omitempty"`
+	IllustrationModel    string           `json:"illustrationModel,omitempty"`
+	IllustrationBase64   string           `json:"-"`
+	IllustrationURL      string           `json:"illustrationUrl,omitempty"`
+	Deliveries           []DigestDelivery `json:"deliveries,omitempty"`
+}
+
+type DigestIllustration struct {
+	ID       string
+	Alt      string
+	MimeType string
+	Base64   string
 }
 
 type DigestSendRequest struct {

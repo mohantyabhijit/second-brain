@@ -157,6 +157,23 @@ func (s *Store) ReadDigests(ctx context.Context, limit int) ([]knowledge.DigestI
 	return []knowledge.DigestIssue{*latest.Digest}, nil
 }
 
+func (s *Store) ReadDigestIllustration(ctx context.Context, ownerID string, digestID string) (*knowledge.DigestIllustration, error) {
+	latest, err := s.ReadLatest(ctx)
+	if err != nil || latest == nil || latest.Digest == nil {
+		return nil, err
+	}
+	digest := latest.Digest
+	if digest.ID != digestID || digest.IllustrationBase64 == "" {
+		return nil, nil
+	}
+	return &knowledge.DigestIllustration{
+		ID:       digest.ID,
+		Alt:      digest.IllustrationAlt,
+		MimeType: digest.IllustrationMimeType,
+		Base64:   digest.IllustrationBase64,
+	}, nil
+}
+
 func (s *Store) SaveDigest(ctx context.Context, digest knowledge.DigestIssue) (*knowledge.DigestIssue, error) {
 	latest, err := s.ReadLatest(ctx)
 	if err != nil {

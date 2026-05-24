@@ -43,6 +43,8 @@ type Config struct {
 	OpenAISynthesisModel         string
 	OpenAIChatModel              string
 	OpenAIEmbeddingModel         string
+	OpenAIImageModel             string
+	PublicBaseURL                string
 	DigestEmailTo                string
 	DigestEmailFrom              string
 	ResendAPIKey                 string
@@ -95,6 +97,8 @@ func Load() Config {
 		OpenAISynthesisModel:         value("OPENAI_SYNTHESIS_MODEL", "gpt-5.5"),
 		OpenAIChatModel:              value("OPENAI_CHAT_MODEL", value("OPENAI_SYNTHESIS_MODEL", "gpt-5.5")),
 		OpenAIEmbeddingModel:         value("OPENAI_EMBEDDING_MODEL", "text-embedding-3-small"),
+		OpenAIImageModel:             value("OPENAI_IMAGE_MODEL", "gpt-image-1"),
+		PublicBaseURL:                value("PUBLIC_BASE_URL", defaultPublicBaseURL(value("APP_ENV", "development"))),
 		DigestEmailTo:                os.Getenv("DIGEST_EMAIL_TO"),
 		DigestEmailFrom:              value("DIGEST_EMAIL_FROM", "Second Brain <digest@second-brain.local>"),
 		ResendAPIKey:                 os.Getenv("RESEND_API_KEY"),

@@ -151,6 +151,19 @@ func digestHTML(digest DigestIssue) string {
 		builder.WriteString(html.EscapeString(digest.DigestDate))
 		builder.WriteString(`</div>`)
 	}
+	if strings.TrimSpace(digest.IllustrationURL) != "" {
+		alt := strings.TrimSpace(digest.IllustrationAlt)
+		if alt == "" {
+			alt = "Newsletter illustration"
+		}
+		builder.WriteString(`<div style="margin-top:16px;border:1px solid #d9e0dc;border-radius:8px;overflow:hidden;background:#ffffff;">`)
+		builder.WriteString(`<img src="`)
+		builder.WriteString(html.EscapeString(digest.IllustrationURL))
+		builder.WriteString(`" alt="`)
+		builder.WriteString(html.EscapeString(alt))
+		builder.WriteString(`" width="558" style="display:block;width:100%;max-width:558px;height:auto;border:0;">`)
+		builder.WriteString(`</div>`)
+	}
 	builder.WriteString(`</td></tr><tr><td style="padding:10px 20px 24px 20px;">`)
 
 	lines := strings.Split(digest.BodyMarkdown, "\n")

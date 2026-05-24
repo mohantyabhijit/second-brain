@@ -16,12 +16,14 @@ import (
 func TestDeliverDigestUsesResendIdempotencyHeader(t *testing.T) {
 	t.Setenv("RESEND_API_KEY", "resend-key")
 	digest := DigestIssue{
-		DigestDate:     "2026-05-23",
-		ScheduledFor:   time.Date(2026, 5, 23, 9, 0, 0, 0, time.UTC),
-		IdempotencyKey: "daily:2026-05-23",
-		Subject:        "Second Brain digest",
-		BodyMarkdown:   "# Digest",
-		Status:         "generated",
+		DigestDate:      "2026-05-23",
+		ScheduledFor:    time.Date(2026, 5, 23, 9, 0, 0, 0, time.UTC),
+		IdempotencyKey:  "daily:2026-05-23",
+		Subject:         "Second Brain digest",
+		BodyMarkdown:    "# Digest",
+		Status:          "generated",
+		IllustrationURL: "https://example.com/second-brain/api/digests/digest-1/illustration",
+		IllustrationAlt: "Black-and-white sketch",
 	}
 	client := &http.Client{Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
 		if request.URL.String() != "https://api.resend.com/emails" {
@@ -47,6 +49,9 @@ func TestDeliverDigestUsesResendIdempotencyHeader(t *testing.T) {
 		}
 		if strings.Contains(htmlBody, "# Digest") {
 			t.Fatalf("expected rendered HTML, got raw markdown: %s", htmlBody)
+		}
+		if !strings.Contains(htmlBody, `<img src="https://example.com/second-brain/api/digests/digest-1/illustration"`) {
+			t.Fatalf("expected digest illustration image, got %s", htmlBody)
 		}
 		if textBody, ok := payload["text"].(string); !ok || strings.Contains(textBody, "# Digest") {
 			t.Fatalf("expected cleaned text fallback, got %#v", payload["text"])

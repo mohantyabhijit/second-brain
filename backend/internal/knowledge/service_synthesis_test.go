@@ -34,6 +34,10 @@ func (s cacheStore) ReadDigests(ctx context.Context, limit int) ([]DigestIssue, 
 	return []DigestIssue{}, nil
 }
 
+func (s cacheStore) ReadDigestIllustration(ctx context.Context, ownerID string, digestID string) (*DigestIllustration, error) {
+	return nil, nil
+}
+
 func (s cacheStore) SaveDigest(ctx context.Context, digest DigestIssue) (*DigestIssue, error) {
 	return &digest, nil
 }

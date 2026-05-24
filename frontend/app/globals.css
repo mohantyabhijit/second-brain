@@ -394,6 +394,9 @@ h1 {
 
 .feed-card.newsletter {
   position: relative;
+  height: auto;
+  min-height: 196px;
+  grid-template-columns: 64px minmax(0, 1fr) minmax(150px, 24%);
   overflow: hidden;
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -563,6 +566,16 @@ h1 {
   min-height: 38px;
   display: inline-flex;
   align-items: center;
+}
+
+.newsletter-thumb {
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  display: block;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  object-fit: contain;
 }
 
 .feed-source.insight {
@@ -798,6 +811,18 @@ blockquote {
 .summary-modal-body {
   overflow: auto;
   padding: 22px;
+}
+
+.newsletter-hero-image {
+  width: 100%;
+  max-width: 66ch;
+  aspect-ratio: 16 / 10;
+  display: block;
+  margin: 0 0 18px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  object-fit: contain;
 }
 
 .summary-modal-body p {

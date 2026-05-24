@@ -160,6 +160,8 @@ jobs:
           write_var OPENAI_SYNTHESIS_MODEL gpt-5.5
           write_var OPENAI_CHAT_MODEL gpt-5.5
           write_var OPENAI_EMBEDDING_MODEL text-embedding-3-small
+          write_var OPENAI_IMAGE_MODEL gpt-image-1
+          write_var PUBLIC_BASE_URL "https://abhijitmohanty.com/second-brain"
           write_var EXA_API_KEY "$EXA_API_KEY"
           write_var DIGEST_TIMEZONE Asia/Singapore
           write_var DIGEST_EMAIL_TO "$DIGEST_EMAIL_TO"

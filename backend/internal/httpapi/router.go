@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"html"
@@ -74,6 +75,41 @@ func NewRouter(cfg config.Config, service *knowledge.Service, logger *slog.Logge
 			return
 		}
 		httputil.JSON(w, http.StatusOK, map[string]any{"digests": digests})
+	}
+
+	readDigestIllustration := func(w http.ResponseWriter, r *http.Request) {
+		digestID := strings.TrimSpace(r.PathValue("id"))
+		if digestID == "" {
+			httputil.Error(w, http.StatusNotFound, "digest illustration not found")
+			return
+		}
+		illustration, err := service.ReadDigestIllustration(r.Context(), digestID)
+		if err != nil {
+			logger.Error("read digest illustration", "error", err)
+			httputil.Error(w, http.StatusInternalServerError, "read digest illustration")
+			return
+		}
+		if illustration == nil {
+			httputil.Error(w, http.StatusNotFound, "digest illustration not found")
+			return
+		}
+		raw, err := base64.StdEncoding.DecodeString(illustration.Base64)
+		if err != nil {
+			logger.Error("decode digest illustration", "digest_id", digestID, "error", err)
+			httputil.Error(w, http.StatusInternalServerError, "decode digest illustration")
+			return
+		}
+		mimeType := strings.TrimSpace(illustration.MimeType)
+		if mimeType == "" {
+			mimeType = http.DetectContentType(raw)
+		}
+		w.Header().Set("Content-Type", mimeType)
+		w.Header().Set("Cache-Control", "public, max-age=3600")
+		if illustration.Alt != "" {
+			w.Header().Set("X-Image-Alt", illustration.Alt)
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(raw)
 	}
 
 	sendDigest := func(w http.ResponseWriter, r *http.Request) {
@@ -169,6 +205,7 @@ func NewRouter(cfg config.Config, service *knowledge.Service, logger *slog.Logge
 	mux.HandleFunc("POST /api/knowledge-runs/refresh", runInbox)
 	mux.HandleFunc("POST /api/feedback", saveFeedback)
 	mux.HandleFunc("GET /api/digests", listDigests)
+	mux.HandleFunc("GET /api/digests/{id}/illustration", readDigestIllustration)
 	mux.HandleFunc("POST /api/digests/generate", generateDigest)
 	mux.HandleFunc("POST /api/digests/send", sendDigest)
 	mux.HandleFunc("POST /api/share/tweet", shareTweet)

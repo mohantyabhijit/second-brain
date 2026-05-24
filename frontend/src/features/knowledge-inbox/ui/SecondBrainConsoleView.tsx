@@ -36,6 +36,8 @@ type FeedItem = {
   stats?: string;
   timeMarkers?: ImportantTimeMarker[];
   fullBody?: string;
+  imageUrl?: string;
+  imageAlt?: string;
 };
 
 const pageCopy: Record<
@@ -314,6 +316,8 @@ function FeedCard({
       </div>
 
       <div className="quote-column">
+        {/* eslint-disable-next-line @next/next/no-img-element -- Digest images are served by the Go API for static-export newsletters. */}
+        {item.imageUrl ? <img alt={item.imageAlt ?? ""} className="newsletter-thumb" src={item.imageUrl} /> : null}
         <div className="feed-actions" aria-label={`Actions for item ${index + 1}`}>
           {item.sourceUrl ? (
             <a href={item.sourceUrl} onClick={(event) => event.stopPropagation()} rel="noreferrer" target="_blank">
@@ -374,6 +378,8 @@ function SummaryModal({ item, onClose }: { item: FeedItem; onClose: () => void }
           </button>
         </header>
         <div className="summary-modal-body">
+          {/* eslint-disable-next-line @next/next/no-img-element -- Digest images are served by the Go API for static-export newsletters. */}
+          {item.imageUrl ? <img alt={item.imageAlt ?? ""} className="newsletter-hero-image" src={item.imageUrl} /> : null}
           {item.source === "Newsletter" && item.fullBody ? <NewsletterBody markdown={item.fullBody} /> : <p>{markdownToPlain(item.body)}</p>}
           {item.quote ? (
             <blockquote>
@@ -677,7 +683,9 @@ function buildNewsletterItems(digest: KnowledgeInboxViewModel["digest"], digestI
       author: "Abhijit's Second Brain",
       timestamp: issue.digestDate,
       stats: `${issue.status} - ${issue.scheduledFor}`,
-      fullBody: issue.bodyMarkdown
+      fullBody: issue.bodyMarkdown,
+      imageUrl: issue.illustrationUrl,
+      imageAlt: issue.illustrationAlt
     };
   });
   return [...issueItems, ...supportingItems];

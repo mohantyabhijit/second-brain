@@ -94,11 +94,16 @@ func (s *Store) readLatestDigest(ctx context.Context) (*knowledge.DigestIssue, e
 			idempotency_key,
 			subject,
 			body_markdown,
+			coalesce(illustration_prompt, ''),
+			coalesce(illustration_alt, ''),
+			coalesce(illustration_mime_type, ''),
+			coalesce(illustration_base64, ''),
+			coalesce(illustration_model, ''),
 			status
 		from digest_issues
 		order by updated_at desc, created_at desc
 		limit 1
-	`).Scan(&digest.ID, &digest.OwnerID, &digest.DigestDate, &digest.ScheduledFor, &digest.IdempotencyKey, &digest.Subject, &digest.BodyMarkdown, &digest.Status)
+	`).Scan(&digest.ID, &digest.OwnerID, &digest.DigestDate, &digest.ScheduledFor, &digest.IdempotencyKey, &digest.Subject, &digest.BodyMarkdown, &digest.IllustrationPrompt, &digest.IllustrationAlt, &digest.IllustrationMimeType, &digest.IllustrationBase64, &digest.IllustrationModel, &digest.Status)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
 	}
@@ -121,6 +126,11 @@ func (s *Store) ReadDigests(ctx context.Context, limit int) ([]knowledge.DigestI
 			idempotency_key,
 			subject,
 			body_markdown,
+			coalesce(illustration_prompt, ''),
+			coalesce(illustration_alt, ''),
+			coalesce(illustration_mime_type, ''),
+			coalesce(illustration_base64, ''),
+			coalesce(illustration_model, ''),
 			status
 		from digest_issues
 		order by scheduled_for desc, updated_at desc, created_at desc
@@ -134,7 +144,7 @@ func (s *Store) ReadDigests(ctx context.Context, limit int) ([]knowledge.DigestI
 	digests := []knowledge.DigestIssue{}
 	for rows.Next() {
 		var digest knowledge.DigestIssue
-		if err := rows.Scan(&digest.ID, &digest.OwnerID, &digest.DigestDate, &digest.ScheduledFor, &digest.IdempotencyKey, &digest.Subject, &digest.BodyMarkdown, &digest.Status); err != nil {
+		if err := rows.Scan(&digest.ID, &digest.OwnerID, &digest.DigestDate, &digest.ScheduledFor, &digest.IdempotencyKey, &digest.Subject, &digest.BodyMarkdown, &digest.IllustrationPrompt, &digest.IllustrationAlt, &digest.IllustrationMimeType, &digest.IllustrationBase64, &digest.IllustrationModel, &digest.Status); err != nil {
 			return nil, err
 		}
 		digests = append(digests, digest)
@@ -143,6 +153,32 @@ func (s *Store) ReadDigests(ctx context.Context, limit int) ([]knowledge.DigestI
 		return nil, err
 	}
 	return digests, nil
+}
+
+func (s *Store) ReadDigestIllustration(ctx context.Context, ownerID string, digestID string) (*knowledge.DigestIllustration, error) {
+	if ownerID == "" {
+		ownerID = "00000000-0000-0000-0000-000000000001"
+	}
+	var illustration knowledge.DigestIllustration
+	err := s.pool.QueryRow(ctx, `
+		select
+			id::text,
+			coalesce(illustration_alt, ''),
+			coalesce(illustration_mime_type, ''),
+			coalesce(illustration_base64, '')
+		from digest_issues
+		where owner_id = $1
+		  and id = $2
+		  and coalesce(illustration_base64, '') <> ''
+		limit 1
+	`, ownerID, digestID).Scan(&illustration.ID, &illustration.Alt, &illustration.MimeType, &illustration.Base64)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &illustration, nil
 }
 
 func (s *Store) SaveLatest(ctx context.Context, result knowledge.Result) error {
@@ -848,24 +884,35 @@ func saveDigestTx(ctx context.Context, tx pgx.Tx, ownerID string, runID string, 
 	var digestID string
 	err := tx.QueryRow(ctx, `
 		insert into digest_issues (
+			id,
 			owner_id,
 			digest_date,
 			scheduled_for,
 			idempotency_key,
 			subject,
 			body_markdown,
+			illustration_prompt,
+			illustration_alt,
+			illustration_mime_type,
+			illustration_base64,
+			illustration_model,
 			status,
 			generated_from_run_id
 		)
-		values ($1, $2, $3, $4, $5, $6, $7, $8)
+		values (coalesce(nullif($1, '')::uuid, gen_random_uuid()), $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
 		on conflict (owner_id, idempotency_key) do update set
 			subject = excluded.subject,
 			body_markdown = excluded.body_markdown,
+			illustration_prompt = excluded.illustration_prompt,
+			illustration_alt = excluded.illustration_alt,
+			illustration_mime_type = excluded.illustration_mime_type,
+			illustration_base64 = excluded.illustration_base64,
+			illustration_model = excluded.illustration_model,
 			status = excluded.status,
 			generated_from_run_id = excluded.generated_from_run_id,
 			updated_at = now()
 		returning id
-	`, ownerID, digest.DigestDate, digest.ScheduledFor, digest.IdempotencyKey, digest.Subject, digest.BodyMarkdown, digest.Status, nullableRunID(runID)).Scan(&digestID)
+	`, digest.ID, ownerID, digest.DigestDate, digest.ScheduledFor, digest.IdempotencyKey, digest.Subject, digest.BodyMarkdown, digest.IllustrationPrompt, digest.IllustrationAlt, digest.IllustrationMimeType, digest.IllustrationBase64, digest.IllustrationModel, digest.Status, nullableRunID(runID)).Scan(&digestID)
 	if err != nil {
 		return nil, err
 	}

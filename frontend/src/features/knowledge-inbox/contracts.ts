@@ -174,6 +174,11 @@ export type DigestIssue = {
   subject: string;
   bodyMarkdown: string;
   status: "generated" | "sent" | "failed" | "blocked";
+  illustrationUrl?: string;
+  illustrationAlt?: string;
+  illustrationPrompt?: string;
+  illustrationMimeType?: string;
+  illustrationModel?: string;
   deliveries?: Array<{
     provider: string;
     recipient: string;

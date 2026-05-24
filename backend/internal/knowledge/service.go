@@ -19,6 +19,7 @@ type Store interface {
 	SaveRun(ctx context.Context, result Result, sources []ProcessedSource) error
 	SaveFeedback(ctx context.Context, event FeedbackEvent) error
 	ReadDigests(ctx context.Context, limit int) ([]DigestIssue, error)
+	ReadDigestIllustration(ctx context.Context, ownerID string, digestID string) (*DigestIllustration, error)
 	SaveDigest(ctx context.Context, digest DigestIssue) (*DigestIssue, error)
 	ReadXTokens(ctx context.Context, ownerID string) (*EncryptedXTokens, error)
 	SaveXTokens(ctx context.Context, tokens EncryptedXTokens) error
@@ -54,6 +55,9 @@ func (s *Service) ReadLatest(ctx context.Context) (*Result, error) {
 		return latest, err
 	}
 	normalizeResultInsightEngine(latest)
+	if latest.Digest != nil {
+		s.annotateDigestIllustration(latest.Digest)
+	}
 	return latest, nil
 }
 
@@ -376,6 +380,10 @@ func (s *Service) GenerateDigest(ctx context.Context) (*DigestIssue, error) {
 	}
 	digest := s.composeDigestIssue(ctx, time.Now().UTC(), latest.Summaries, latest.Insights, latest.Themes, latest.InsightClusters, latest.Connections)
 	digest.OwnerID = s.cfg.OwnerID
+	if err := ensureDigestID(&digest); err != nil {
+		return nil, err
+	}
+	s.annotateDigestIllustration(&digest)
 	digest.Deliveries = append(digest.Deliveries, s.deliverDigest(ctx, digest, ""))
 	if len(digest.Deliveries) > 0 {
 		digest.Status = digest.Deliveries[0].Status
@@ -387,7 +395,18 @@ func (s *Service) ReadDigests(ctx context.Context, limit int) ([]DigestIssue, er
 	if limit <= 0 || limit > 100 {
 		limit = 50
 	}
-	return s.store.ReadDigests(ctx, limit)
+	digests, err := s.store.ReadDigests(ctx, limit)
+	if err != nil {
+		return nil, err
+	}
+	for index := range digests {
+		s.annotateDigestIllustration(&digests[index])
+	}
+	return digests, nil
+}
+
+func (s *Service) ReadDigestIllustration(ctx context.Context, digestID string) (*DigestIllustration, error) {
+	return s.store.ReadDigestIllustration(ctx, s.cfg.OwnerID, digestID)
 }
 
 func (s *Service) SendLatestDigest(ctx context.Context, recipientEmail string) (*DigestIssue, error) {
@@ -409,6 +428,10 @@ func (s *Service) SendLatestDigest(ctx context.Context, recipientEmail string) (
 		digest = s.composeDigestIssue(ctx, time.Now().UTC(), latest.Summaries, latest.Insights, latest.Themes, latest.InsightClusters, latest.Connections)
 	}
 	digest.OwnerID = s.cfg.OwnerID
+	if err := ensureDigestID(&digest); err != nil {
+		return nil, err
+	}
+	s.annotateDigestIllustration(&digest)
 	delivery := s.deliverDigest(ctx, digest, recipient)
 	digest.Deliveries = []DigestDelivery{delivery}
 	digest.Status = delivery.Status
@@ -432,6 +455,7 @@ func (s *Service) SendProvidedDigest(ctx context.Context, recipientEmail string,
 		digest.IdempotencyKey = "manual:" + digest.DigestDate + ":" + digestBodyFingerprint(digest.BodyMarkdown)
 	}
 	digest.OwnerID = s.cfg.OwnerID
+	s.annotateDigestIllustration(&digest)
 	delivery := s.deliverDigest(ctx, digest, recipient)
 	digest.Deliveries = []DigestDelivery{delivery}
 	digest.Status = delivery.Status

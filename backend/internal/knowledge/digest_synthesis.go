@@ -11,7 +11,7 @@ import (
 	"time"
 )
 
-const digestPromptVersion = "newsletter-editorial-v2"
+const digestPromptVersion = "newsletter-editorial-v3"
 
 type promptDigestResponse struct {
 	Subject      string   `json:"subject"`
@@ -28,19 +28,20 @@ func (s *Service) composeDigestIssue(ctx context.Context, generatedAt time.Time,
 	payload, err := s.promptDigest(ctx, digest, summaries, digestInsights, themes, insightClusters, connections)
 	if err != nil {
 		s.logger.Warn("newsletter prompt synthesis failed; using structured digest", "error", err)
-		return digest
+	} else {
+		if strings.TrimSpace(payload.Subject) != "" {
+			digest.Subject = strings.TrimSpace(payload.Subject)
+		}
+		bodyMarkdown := strings.TrimSpace(payload.BodyMarkdown)
+		if bodyMarkdown == "" && len(payload.BodyLines) > 0 {
+			bodyMarkdown = strings.TrimSpace(strings.Join(payload.BodyLines, "\n"))
+		}
+		if bodyMarkdown != "" {
+			digest.BodyMarkdown = ensureDigestSourceLinks(bodyMarkdown, digestInsights)
+			digest.IdempotencyKey = "daily:" + digest.DigestDate + ":" + digestBodyFingerprint(digest.BodyMarkdown)
+		}
 	}
-	if strings.TrimSpace(payload.Subject) != "" {
-		digest.Subject = strings.TrimSpace(payload.Subject)
-	}
-	bodyMarkdown := strings.TrimSpace(payload.BodyMarkdown)
-	if bodyMarkdown == "" && len(payload.BodyLines) > 0 {
-		bodyMarkdown = strings.TrimSpace(strings.Join(payload.BodyLines, "\n"))
-	}
-	if bodyMarkdown != "" {
-		digest.BodyMarkdown = ensureDigestSourceLinks(bodyMarkdown, digestInsights)
-		digest.IdempotencyKey = "daily:" + digest.DigestDate + ":" + digestBodyFingerprint(digest.BodyMarkdown)
-	}
+	s.addDigestIllustration(ctx, &digest, digestInsights, themes, connections)
 	return digest
 }
 
@@ -53,6 +54,7 @@ func (s *Service) promptDigest(ctx context.Context, base DigestIssue, summaries 
 			"Use the editorial lessons from high-retention newsletters sampled from Gmail: a clear masthead, a warm 'welcome back' opener, a context paragraph that explains why this set matters now, curiosity-driven section heads, plain-language explainers, tight source-grounding, and a useful reader action at the end.",
 			"Blend these patterns: The Ken's narrative lead and named sections, Finshots' simple question-to-explanation flow, Morning Brew-style scannability, and The Atlas-style context setting before the lead story. Do not copy their wording, jokes, branding, or structure wholesale.",
 			"Use this format: one sharp subject; '# Abhijit's Second Brain - <date>'; a 2-3 sentence welcome/context opener; '## The Lead' for the strongest idea; '## The Rest Of The Brief' for the remaining source-grounded ideas; and '## One Thing To Do Next'.",
+			"The issue will be paired with a simple black-on-white editorial sketch. Do not describe the illustration in the copy; make the writing stand on its own.",
 			"Do not create an 'In This Issue' section, a teaser list, or a block of source cards. Move straight from context into the lead story.",
 			"Each section should have a '### <specific question or tension>' heading, a short setup paragraph, a why-it-matters paragraph, and a natural source link using the original insight title. Never use link text that only says 'Source'.",
 			"Keep the full body between 550 and 850 words when five insights are available. Paragraphs stay short enough for a phone screen.",
