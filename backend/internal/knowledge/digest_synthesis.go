@@ -47,7 +47,7 @@ func (s *Service) composeDigestIssue(ctx context.Context, generatedAt time.Time,
 	if strings.TrimSpace(digest.BodyMarkdown) == "" {
 		return DigestIssue{}, fmt.Errorf("digest newsletter synthesis returned an empty body")
 	}
-	digest.IdempotencyKey = "daily:" + digest.DigestDate + ":" + digestBodyFingerprint(digest.BodyMarkdown)
+	digest.IdempotencyKey = "daily:" + digest.DigestDate
 	if err := s.addDigestIllustration(ctx, &digest, digestInsights, themes, connections); err != nil {
 		return DigestIssue{}, err
 	}

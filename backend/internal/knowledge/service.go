@@ -26,6 +26,12 @@ type Store interface {
 	SaveXTokens(ctx context.Context, tokens EncryptedXTokens) error
 }
 
+type digestSourceReader interface {
+	ReadNewDigestSources(ctx context.Context, ownerID string, promptVersion string, model string) ([]DigestSourceRef, error)
+}
+
+var ErrNoNewDigestSources = errors.New("no new source-grounded digest inputs since last digest")
+
 type Service struct {
 	cfg          config.Config
 	store        Store
@@ -342,14 +348,6 @@ func (s *Service) Run(ctx context.Context) (Result, error) {
 	result.InsightClusters = buildInsightClusters(processed)
 	result.Insights = rankInsights(result.Insights, result.InsightClusters)
 	result.Connections = buildSourceConnections(processed)
-	if hasDigestInputs(result.Summaries, result.Insights) {
-		digest, err := s.composeDigestIssue(ctx, result.GeneratedAt, result.Summaries, result.Insights, result.Themes, result.InsightClusters, result.Connections)
-		if err != nil {
-			return result, err
-		}
-		digest.OwnerID = s.cfg.OwnerID
-		result.Digest = &digest
-	}
 
 	switch {
 	case len(xBookmarks) > 0:
@@ -543,11 +541,19 @@ func (s *Service) GenerateDigest(ctx context.Context) (*DigestIssue, error) {
 	if !hasDigestInputs(latest.Summaries, latest.Insights) {
 		return nil, fmt.Errorf("no source-grounded digest inputs are available")
 	}
-	digest, err := s.composeDigestIssue(ctx, time.Now().UTC(), latest.Summaries, latest.Insights, latest.Themes, latest.InsightClusters, latest.Connections)
+	sourceRefs, summaries, insights, themes, insightClusters, connections, err := s.digestInputsForLatest(ctx, latest)
+	if err != nil {
+		return nil, err
+	}
+	if !hasDigestInputs(summaries, insights) {
+		return nil, ErrNoNewDigestSources
+	}
+	digest, err := s.composeDigestIssue(ctx, time.Now().UTC(), summaries, insights, themes, insightClusters, connections)
 	if err != nil {
 		return nil, err
 	}
 	digest.OwnerID = s.cfg.OwnerID
+	digest.SourceRefs = sourceRefs
 	if err := ensureDigestID(&digest); err != nil {
 		return nil, err
 	}
@@ -565,6 +571,210 @@ func (s *Service) GenerateDigest(ctx context.Context) (*DigestIssue, error) {
 		s.publishAppStateForResult(ctx, *latest, "")
 	}
 	return saved, nil
+}
+
+func (s *Service) digestInputsForLatest(ctx context.Context, latest *Result) ([]DigestSourceRef, []Summary, []Insight, []ThemeCluster, []InsightCluster, []SourceConnection, error) {
+	sourceRefs, err := s.readNewDigestSourceRefs(ctx, latest)
+	if err != nil {
+		return nil, nil, nil, nil, nil, nil, err
+	}
+	if len(sourceRefs) == 0 {
+		return nil, nil, nil, nil, nil, nil, ErrNoNewDigestSources
+	}
+	allowed := digestSourceRefMap(sourceRefs)
+	summaries := filterDigestSummaries(latest.Summaries, allowed)
+	insights := filterDigestInsights(latest.Insights, allowed)
+	sourceRefs = filterDigestSourceRefsForInputs(sourceRefs, summaries, insights)
+	if len(sourceRefs) == 0 {
+		return nil, nil, nil, nil, nil, nil, ErrNoNewDigestSources
+	}
+	allowed = digestSourceRefMap(sourceRefs)
+	insightIDs := digestInsightIDSet(insights)
+	return sourceRefs,
+		summaries,
+		insights,
+		filterDigestThemes(latest.Themes, allowed),
+		filterDigestInsightClusters(latest.InsightClusters, insightIDs),
+		filterDigestConnections(latest.Connections, allowed),
+		nil
+}
+
+func (s *Service) readNewDigestSourceRefs(ctx context.Context, latest *Result) ([]DigestSourceRef, error) {
+	if reader, ok := s.store.(digestSourceReader); ok {
+		return reader.ReadNewDigestSources(ctx, s.cfg.OwnerID, synthesisPromptVersion, s.synthesisModel())
+	}
+	return newDigestSourceRefsFromLatest(latest), nil
+}
+
+func newDigestSourceRefsFromLatest(latest *Result) []DigestSourceRef {
+	if latest == nil {
+		return nil
+	}
+	cutoff := time.Time{}
+	if latest.Digest != nil && !latest.Digest.ScheduledFor.IsZero() {
+		cutoff = latest.Digest.ScheduledFor
+	}
+	refsByKey := map[string]DigestSourceRef{}
+	addRef := func(source string, externalID string, title string, sourceURL string, captureHash string, generatedAt *time.Time) {
+		if strings.TrimSpace(source) == "" || strings.TrimSpace(externalID) == "" {
+			return
+		}
+		seenAt := latest.GeneratedAt
+		if generatedAt != nil && !generatedAt.IsZero() {
+			seenAt = generatedAt.UTC()
+		}
+		if !cutoff.IsZero() && !seenAt.After(cutoff) {
+			return
+		}
+		key := digestSourceKey(source, externalID)
+		if _, exists := refsByKey[key]; exists {
+			return
+		}
+		seenAtCopy := seenAt
+		refsByKey[key] = DigestSourceRef{
+			Source:        source,
+			ExternalID:    externalID,
+			SourceURL:     sourceURL,
+			Title:         title,
+			CaptureHash:   captureHash,
+			FirstSeenAt:   &seenAtCopy,
+			SynthesizedAt: &seenAtCopy,
+			DigestRole:    "input",
+		}
+	}
+	for _, summary := range latest.Summaries {
+		addRef(summary.Source, summary.ID, summary.Title, summary.SourceURL, summary.CaptureHash, summary.GeneratedAt)
+	}
+	for _, insight := range latest.Insights {
+		addRef(insight.Source, insight.SourceID, insight.Title, insight.SourceURL, "", insight.GeneratedAt)
+	}
+	refs := make([]DigestSourceRef, 0, len(refsByKey))
+	for _, ref := range refsByKey {
+		refs = append(refs, ref)
+	}
+	return refs
+}
+
+func digestSourceRefMap(refs []DigestSourceRef) map[string]DigestSourceRef {
+	allowed := map[string]DigestSourceRef{}
+	for _, ref := range refs {
+		key := digestSourceKey(ref.Source, ref.ExternalID)
+		if key != ":" {
+			allowed[key] = ref
+		}
+	}
+	return allowed
+}
+
+func filterDigestSummaries(summaries []Summary, allowed map[string]DigestSourceRef) []Summary {
+	filtered := []Summary{}
+	for _, summary := range summaries {
+		if _, ok := allowed[digestSourceKey(summary.Source, summary.ID)]; ok {
+			filtered = append(filtered, summary)
+		}
+	}
+	return filtered
+}
+
+func filterDigestInsights(insights []Insight, allowed map[string]DigestSourceRef) []Insight {
+	filtered := []Insight{}
+	for _, insight := range insights {
+		if _, ok := allowed[digestSourceKey(insight.Source, insight.SourceID)]; ok {
+			filtered = append(filtered, insight)
+		}
+	}
+	return filtered
+}
+
+func filterDigestSourceRefsForInputs(refs []DigestSourceRef, summaries []Summary, insights []Insight) []DigestSourceRef {
+	used := map[string]bool{}
+	for _, summary := range summaries {
+		used[digestSourceKey(summary.Source, summary.ID)] = true
+	}
+	for _, insight := range insights {
+		used[digestSourceKey(insight.Source, insight.SourceID)] = true
+	}
+	filtered := []DigestSourceRef{}
+	for _, ref := range refs {
+		if used[digestSourceKey(ref.Source, ref.ExternalID)] {
+			if strings.TrimSpace(ref.DigestRole) == "" {
+				ref.DigestRole = "input"
+			}
+			filtered = append(filtered, ref)
+		}
+	}
+	return filtered
+}
+
+func filterDigestThemes(themes []ThemeCluster, allowed map[string]DigestSourceRef) []ThemeCluster {
+	filtered := []ThemeCluster{}
+	for _, theme := range themes {
+		sources := []string{}
+		for _, source := range theme.Sources {
+			if _, ok := allowed[source]; ok {
+				sources = append(sources, source)
+			}
+		}
+		if len(sources) == 0 {
+			continue
+		}
+		theme.Sources = sources
+		filtered = append(filtered, theme)
+	}
+	return filtered
+}
+
+func filterDigestInsightClusters(clusters []InsightCluster, insightIDs map[string]bool) []InsightCluster {
+	filtered := []InsightCluster{}
+	for _, cluster := range clusters {
+		ids := []string{}
+		for _, id := range cluster.InsightIDs {
+			if insightIDs[id] {
+				ids = append(ids, id)
+			}
+		}
+		if len(ids) == 0 {
+			continue
+		}
+		representatives := []string{}
+		for _, id := range cluster.RepresentativeInsightIDs {
+			if insightIDs[id] {
+				representatives = append(representatives, id)
+			}
+		}
+		cluster.InsightIDs = ids
+		cluster.RepresentativeInsightIDs = representatives
+		filtered = append(filtered, cluster)
+	}
+	return filtered
+}
+
+func filterDigestConnections(connections []SourceConnection, allowed map[string]DigestSourceRef) []SourceConnection {
+	filtered := []SourceConnection{}
+	for _, connection := range connections {
+		if _, ok := allowed[connection.LeftSourceID]; !ok {
+			continue
+		}
+		if _, ok := allowed[connection.RightSourceID]; !ok {
+			continue
+		}
+		filtered = append(filtered, connection)
+	}
+	return filtered
+}
+
+func digestInsightIDSet(insights []Insight) map[string]bool {
+	ids := map[string]bool{}
+	for _, insight := range insights {
+		if strings.TrimSpace(insight.ID) != "" {
+			ids[insight.ID] = true
+		}
+	}
+	return ids
+}
+
+func digestSourceKey(source string, externalID string) string {
+	return strings.TrimSpace(source) + ":" + strings.TrimSpace(externalID)
 }
 
 func (s *Service) ReadDigests(ctx context.Context, limit int) ([]DigestIssue, error) {
@@ -621,10 +831,18 @@ func (s *Service) SendLatestDigest(ctx context.Context, recipientEmail string) (
 		if !hasDigestInputs(latest.Summaries, latest.Insights) {
 			return nil, fmt.Errorf("no source-grounded digest inputs are available")
 		}
-		digest, err = s.composeDigestIssue(ctx, time.Now().UTC(), latest.Summaries, latest.Insights, latest.Themes, latest.InsightClusters, latest.Connections)
+		sourceRefs, summaries, insights, themes, insightClusters, connections, err := s.digestInputsForLatest(ctx, latest)
 		if err != nil {
 			return nil, err
 		}
+		if !hasDigestInputs(summaries, insights) {
+			return nil, ErrNoNewDigestSources
+		}
+		digest, err = s.composeDigestIssue(ctx, time.Now().UTC(), summaries, insights, themes, insightClusters, connections)
+		if err != nil {
+			return nil, err
+		}
+		digest.SourceRefs = sourceRefs
 	}
 	digest.OwnerID = s.cfg.OwnerID
 	if err := ensureDigestID(&digest); err != nil {

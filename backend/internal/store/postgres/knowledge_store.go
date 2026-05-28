@@ -110,6 +110,11 @@ func (s *Store) readLatestDigest(ctx context.Context) (*knowledge.DigestIssue, e
 	if err != nil {
 		return nil, err
 	}
+	refs, err := s.readDigestSourceRefs(ctx, digest.ID)
+	if err != nil {
+		return nil, err
+	}
+	digest.SourceRefs = refs
 	return &digest, nil
 }
 
@@ -147,6 +152,11 @@ func (s *Store) ReadDigests(ctx context.Context, limit int) ([]knowledge.DigestI
 		if err := rows.Scan(&digest.ID, &digest.OwnerID, &digest.DigestDate, &digest.ScheduledFor, &digest.IdempotencyKey, &digest.Subject, &digest.BodyMarkdown, &digest.IllustrationPrompt, &digest.IllustrationAlt, &digest.IllustrationMimeType, &digest.IllustrationBase64, &digest.IllustrationModel, &digest.Status); err != nil {
 			return nil, err
 		}
+		refs, err := s.readDigestSourceRefs(ctx, digest.ID)
+		if err != nil {
+			return nil, err
+		}
+		digest.SourceRefs = refs
 		digests = append(digests, digest)
 	}
 	if err := rows.Err(); err != nil {
@@ -179,6 +189,171 @@ func (s *Store) ReadDigestIllustration(ctx context.Context, ownerID string, dige
 		return nil, err
 	}
 	return &illustration, nil
+}
+
+func (s *Store) ReadNewDigestSources(ctx context.Context, ownerID string, promptVersion string, model string) ([]knowledge.DigestSourceRef, error) {
+	if ownerID == "" {
+		ownerID = "00000000-0000-0000-0000-000000000001"
+	}
+	rows, err := s.pool.Query(ctx, `
+		with latest_digest as (
+			select
+				coalesce(max(dd.attempted_at), di.scheduled_for, di.created_at) as cutoff
+			from digest_issues di
+			left join digest_deliveries dd on dd.digest_issue_id = di.id
+			where di.owner_id = $1
+			group by di.id, di.scheduled_for, di.created_at, di.updated_at
+			order by coalesce(max(dd.attempted_at), di.scheduled_for, di.created_at) desc, di.updated_at desc
+			limit 1
+		),
+		latest_synthesis as (
+			select distinct on (ks.source_item_id)
+				ks.id,
+				ks.source_item_id,
+				ks.source_capture_id,
+				ks.capture_hash,
+				ks.generated_at
+			from knowledge_syntheses ks
+			where ks.owner_id = $1
+			  and ks.prompt_version = $2
+			  and ks.model = $3
+			order by ks.source_item_id, ks.generated_at desc
+		)
+		select
+			si.id::text,
+			coalesce(coalesce(sc.id, ls.source_capture_id)::text, ''),
+			ls.id::text,
+			si.source_type,
+			si.external_id,
+			si.source_url,
+			si.title,
+			coalesce(sc.capture_hash, ls.capture_hash, si.latest_capture_hash, si.capture_hash),
+			si.first_seen_at,
+			sc.captured_at,
+			ls.generated_at
+		from source_items si
+		join latest_synthesis ls on ls.source_item_id = si.id
+		left join source_captures sc on sc.id = ls.source_capture_id
+		left join latest_digest ld on true
+		where si.owner_id = $1
+		  and (ld.cutoff is null or si.first_seen_at > ld.cutoff)
+		  and not exists (
+			select 1
+			from digest_source_items dsi
+			join digest_issues di on di.id = dsi.digest_issue_id
+			where di.owner_id = $1
+			  and dsi.source_item_id = si.id
+		  )
+		order by si.first_seen_at asc, si.source_type, si.external_id
+	`, ownerID, promptVersion, model)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	refs := []knowledge.DigestSourceRef{}
+	for rows.Next() {
+		var ref knowledge.DigestSourceRef
+		var firstSeenAt time.Time
+		var capturedAt *time.Time
+		var synthesizedAt time.Time
+		if err := rows.Scan(
+			&ref.SourceItemID,
+			&ref.SourceCaptureID,
+			&ref.KnowledgeSynthesisID,
+			&ref.Source,
+			&ref.ExternalID,
+			&ref.SourceURL,
+			&ref.Title,
+			&ref.CaptureHash,
+			&firstSeenAt,
+			&capturedAt,
+			&synthesizedAt,
+		); err != nil {
+			return nil, err
+		}
+		firstSeenAt = firstSeenAt.UTC()
+		synthesizedAt = synthesizedAt.UTC()
+		ref.FirstSeenAt = &firstSeenAt
+		if capturedAt != nil {
+			value := capturedAt.UTC()
+			ref.CapturedAt = &value
+		}
+		ref.SynthesizedAt = &synthesizedAt
+		ref.DigestRole = "input"
+		refs = append(refs, ref)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return refs, nil
+}
+
+func (s *Store) readDigestSourceRefs(ctx context.Context, digestID string) ([]knowledge.DigestSourceRef, error) {
+	if strings.TrimSpace(digestID) == "" {
+		return []knowledge.DigestSourceRef{}, nil
+	}
+	rows, err := s.pool.Query(ctx, `
+		select
+			coalesce(source_item_id::text, ''),
+			coalesce(source_capture_id::text, ''),
+			coalesce(knowledge_synthesis_id::text, ''),
+			source_type,
+			external_id,
+			source_url,
+			title,
+			capture_hash,
+			first_seen_at,
+			captured_at,
+			synthesized_at,
+			digest_role
+		from digest_source_items
+		where digest_issue_id = $1
+		order by first_seen_at asc nulls last, source_type, external_id
+	`, digestID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	refs := []knowledge.DigestSourceRef{}
+	for rows.Next() {
+		var ref knowledge.DigestSourceRef
+		var firstSeenAt *time.Time
+		var capturedAt *time.Time
+		var synthesizedAt *time.Time
+		if err := rows.Scan(
+			&ref.SourceItemID,
+			&ref.SourceCaptureID,
+			&ref.KnowledgeSynthesisID,
+			&ref.Source,
+			&ref.ExternalID,
+			&ref.SourceURL,
+			&ref.Title,
+			&ref.CaptureHash,
+			&firstSeenAt,
+			&capturedAt,
+			&synthesizedAt,
+			&ref.DigestRole,
+		); err != nil {
+			return nil, err
+		}
+		if firstSeenAt != nil {
+			value := firstSeenAt.UTC()
+			ref.FirstSeenAt = &value
+		}
+		if capturedAt != nil {
+			value := capturedAt.UTC()
+			ref.CapturedAt = &value
+		}
+		if synthesizedAt != nil {
+			value := synthesizedAt.UTC()
+			ref.SynthesizedAt = &value
+		}
+		refs = append(refs, ref)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return refs, nil
 }
 
 func (s *Store) SaveLatest(ctx context.Context, result knowledge.Result) error {
@@ -917,6 +1092,43 @@ func saveDigestTx(ctx context.Context, tx pgx.Tx, ownerID string, runID string, 
 		return nil, err
 	}
 	digest.ID = digestID
+	for _, source := range digest.SourceRefs {
+		if strings.TrimSpace(source.Source) == "" || strings.TrimSpace(source.ExternalID) == "" {
+			continue
+		}
+		if _, err := tx.Exec(ctx, `
+			insert into digest_source_items (
+				owner_id,
+				digest_issue_id,
+				source_item_id,
+				source_capture_id,
+				knowledge_synthesis_id,
+				source_type,
+				external_id,
+				capture_hash,
+				source_url,
+				title,
+				first_seen_at,
+				captured_at,
+				synthesized_at,
+				digest_role
+			)
+			values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, coalesce(nullif($14, ''), 'input'))
+			on conflict (digest_issue_id, source_type, external_id, capture_hash) do update set
+				owner_id = excluded.owner_id,
+				source_item_id = excluded.source_item_id,
+				source_capture_id = excluded.source_capture_id,
+				knowledge_synthesis_id = excluded.knowledge_synthesis_id,
+				source_url = excluded.source_url,
+				title = excluded.title,
+				first_seen_at = excluded.first_seen_at,
+				captured_at = excluded.captured_at,
+				synthesized_at = excluded.synthesized_at,
+				digest_role = excluded.digest_role
+		`, ownerID, digestID, nullableUUID(source.SourceItemID), nullableUUID(source.SourceCaptureID), nullableUUID(source.KnowledgeSynthesisID), source.Source, source.ExternalID, source.CaptureHash, safeUTF8(source.SourceURL), safeUTF8(source.Title), source.FirstSeenAt, source.CapturedAt, source.SynthesizedAt, source.DigestRole); err != nil {
+			return nil, err
+		}
+	}
 	for _, delivery := range digest.Deliveries {
 		attemptedAt := time.Now().UTC()
 		if delivery.AttemptedAt != nil {

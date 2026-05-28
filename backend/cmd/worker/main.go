@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -46,7 +47,6 @@ func main() {
 		logger.Info("worker cycle started", "reason", reason)
 		if runOnce(ctx, cfg, service, logger) {
 			runGraphSync(ctx, cfg, logger)
-			generateDigest(ctx, service, logger, "after_refresh")
 		}
 	}
 	runDigest := func(reason string) {
@@ -70,7 +70,7 @@ func main() {
 		logger.Error("schedule worker digest", "spec", digestSpec, "error", err)
 		os.Exit(1)
 	}
-	logger.Info("self organizing worker started", "refresh_spec", refreshSpec, "digest_after_refresh", true, "daily_digest_spec", digestSpec)
+	logger.Info("self organizing worker started", "refresh_spec", refreshSpec, "daily_digest_spec", digestSpec)
 	cronRunner.Start()
 	<-ctx.Done()
 	stopCtx := cronRunner.Stop()
@@ -95,6 +95,10 @@ func generateDigest(ctx context.Context, service *knowledge.Service, logger *slo
 	defer cancel()
 	digest, err := service.GenerateDigest(digestCtx)
 	if err != nil {
+		if errors.Is(err, knowledge.ErrNoNewDigestSources) {
+			logger.Info("worker digest skipped", "reason", reason, "error", err)
+			return
+		}
 		logger.Error("worker digest failed", "reason", reason, "error", err)
 		return
 	}

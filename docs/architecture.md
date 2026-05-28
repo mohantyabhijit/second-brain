@@ -55,10 +55,12 @@ Core tables:
 - `insight_clusters` and `cluster_memberships`: many-to-many groupings of similar insights. These group insights, not posts, so one source can contribute to several recurring patterns.
 - `theme_clusters` and `source_connections_evidence`: derived cross-source understanding for recurring themes and related-source explanations.
 - `feedback_events`: explicit user signals such as useful, obvious, stale, irrelevant, more like this, and less like this.
-- `digest_issues` and `digest_deliveries`: idempotent daily digest generation and email delivery status.
+- `digest_issues`, `digest_source_items`, and `digest_deliveries`: idempotent daily digest generation, exact source membership for each issue, and email delivery status.
 - `graph_sync_outbox`: pending Neo4j sync events derived from canonical source records.
 
 The recompute rule is: if the same source capture has the same prompt version and model, reuse the `knowledge_syntheses` row instead of running synthesis again. Source identity dedupe uses `(owner_id, source_type, external_id)`; content-version dedupe uses `(source_item_id, capture_hash)`.
+
+Daily digest selection uses the canonical ledger instead of the latest run payload alone: the 6 PM digest reads source items first seen after the previous digest and records the exact source item, capture, synthesis, URL, title, and timestamps in `digest_source_items`. Once a source item has appeared in a digest, it is excluded from later digest selection.
 
 ## Object Storage
 

@@ -166,6 +166,21 @@ export type SourceConnection = {
   sharedSignals: string[];
 };
 
+export type DigestSourceRef = {
+  sourceItemId?: string;
+  sourceCaptureId?: string;
+  knowledgeSynthesisId?: string;
+  source: string;
+  externalId: string;
+  sourceUrl?: string;
+  title?: string;
+  captureHash?: string;
+  firstSeenAt?: string;
+  capturedAt?: string;
+  synthesizedAt?: string;
+  digestRole?: string;
+};
+
 export type DigestIssue = {
   id?: string;
   digestDate: string;
@@ -187,6 +202,7 @@ export type DigestIssue = {
     error?: string;
     attemptedAt?: string;
   }>;
+  sources?: DigestSourceRef[];
 };
 
 export type FeedbackSignal =
