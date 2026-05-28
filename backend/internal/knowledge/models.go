@@ -217,22 +217,38 @@ type DigestDelivery struct {
 	AttemptedAt       *time.Time `json:"attemptedAt,omitempty"`
 }
 
+type DigestSourceRef struct {
+	SourceItemID         string     `json:"sourceItemId,omitempty"`
+	SourceCaptureID      string     `json:"sourceCaptureId,omitempty"`
+	KnowledgeSynthesisID string     `json:"knowledgeSynthesisId,omitempty"`
+	Source               string     `json:"source"`
+	ExternalID           string     `json:"externalId"`
+	SourceURL            string     `json:"sourceUrl,omitempty"`
+	Title                string     `json:"title,omitempty"`
+	CaptureHash          string     `json:"captureHash,omitempty"`
+	FirstSeenAt          *time.Time `json:"firstSeenAt,omitempty"`
+	CapturedAt           *time.Time `json:"capturedAt,omitempty"`
+	SynthesizedAt        *time.Time `json:"synthesizedAt,omitempty"`
+	DigestRole           string     `json:"digestRole,omitempty"`
+}
+
 type DigestIssue struct {
-	OwnerID              string           `json:"-"`
-	ID                   string           `json:"id,omitempty"`
-	DigestDate           string           `json:"digestDate"`
-	ScheduledFor         time.Time        `json:"scheduledFor"`
-	IdempotencyKey       string           `json:"idempotencyKey"`
-	Subject              string           `json:"subject"`
-	BodyMarkdown         string           `json:"bodyMarkdown"`
-	Status               string           `json:"status"`
-	IllustrationPrompt   string           `json:"illustrationPrompt,omitempty"`
-	IllustrationAlt      string           `json:"illustrationAlt,omitempty"`
-	IllustrationMimeType string           `json:"illustrationMimeType,omitempty"`
-	IllustrationModel    string           `json:"illustrationModel,omitempty"`
-	IllustrationBase64   string           `json:"-"`
-	IllustrationURL      string           `json:"illustrationUrl,omitempty"`
-	Deliveries           []DigestDelivery `json:"deliveries,omitempty"`
+	OwnerID              string            `json:"-"`
+	ID                   string            `json:"id,omitempty"`
+	DigestDate           string            `json:"digestDate"`
+	ScheduledFor         time.Time         `json:"scheduledFor"`
+	IdempotencyKey       string            `json:"idempotencyKey"`
+	Subject              string            `json:"subject"`
+	BodyMarkdown         string            `json:"bodyMarkdown"`
+	Status               string            `json:"status"`
+	IllustrationPrompt   string            `json:"illustrationPrompt,omitempty"`
+	IllustrationAlt      string            `json:"illustrationAlt,omitempty"`
+	IllustrationMimeType string            `json:"illustrationMimeType,omitempty"`
+	IllustrationModel    string            `json:"illustrationModel,omitempty"`
+	IllustrationBase64   string            `json:"-"`
+	IllustrationURL      string            `json:"illustrationUrl,omitempty"`
+	Deliveries           []DigestDelivery  `json:"deliveries,omitempty"`
+	SourceRefs           []DigestSourceRef `json:"sources,omitempty"`
 }
 
 type DigestIllustration struct {

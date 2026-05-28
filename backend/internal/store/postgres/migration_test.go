@@ -61,3 +61,28 @@ func TestXOAuthTokensMigrationDefinesEncryptedBackendStore(t *testing.T) {
 		}
 	}
 }
+
+func TestDigestSourceLedgerMigrationDefinesDigestMembership(t *testing.T) {
+	raw, err := os.ReadFile("../../../../supabase/migrations/202605280001_digest_source_ledger.sql")
+	if err != nil {
+		t.Fatalf("read migration: %v", err)
+	}
+	sql := string(raw)
+
+	requiredFragments := []string{
+		"create table if not exists public.digest_source_items",
+		"digest_issue_id uuid not null references public.digest_issues(id) on delete cascade",
+		"source_item_id uuid references public.source_items(id) on delete set null",
+		"source_capture_id uuid references public.source_captures(id) on delete set null",
+		"knowledge_synthesis_id uuid references public.knowledge_syntheses(id) on delete set null",
+		"unique (digest_issue_id, source_type, external_id, capture_hash)",
+		"alter table public.digest_source_items enable row level security",
+		`create policy "digest_source_items_no_browser_access"`,
+		"on public.digest_source_items (owner_id, source_type, external_id)",
+	}
+	for _, fragment := range requiredFragments {
+		if !strings.Contains(sql, fragment) {
+			t.Fatalf("migration missing fragment %q", fragment)
+		}
+	}
+}

@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"time"
 
 	"github.com/abhijitmohanty/second-brain/backend/internal/knowledge"
 )
@@ -100,6 +101,62 @@ func (s *Store) ReadCachedSyntheses(ctx context.Context, keys []knowledge.Synthe
 		}
 	}
 	return cached, nil
+}
+
+func (s *Store) ReadNewDigestSources(ctx context.Context, ownerID string, promptVersion string, model string) ([]knowledge.DigestSourceRef, error) {
+	latest, err := s.ReadLatest(ctx)
+	if err != nil || latest == nil {
+		return []knowledge.DigestSourceRef{}, err
+	}
+	cutoff := time.Time{}
+	if latest.Digest != nil && !latest.Digest.ScheduledFor.IsZero() {
+		cutoff = latest.Digest.ScheduledFor
+	}
+	refsByKey := map[string]knowledge.DigestSourceRef{}
+	addRef := func(source string, externalID string, title string, sourceURL string, captureHash string, generatedAt *time.Time) {
+		if source == "" || externalID == "" {
+			return
+		}
+		seenAt := latest.GeneratedAt
+		if generatedAt != nil && !generatedAt.IsZero() {
+			seenAt = generatedAt.UTC()
+		}
+		if !cutoff.IsZero() && !seenAt.After(cutoff) {
+			return
+		}
+		key := source + ":" + externalID
+		if _, exists := refsByKey[key]; exists {
+			return
+		}
+		seenAtCopy := seenAt
+		refsByKey[key] = knowledge.DigestSourceRef{
+			Source:        source,
+			ExternalID:    externalID,
+			SourceURL:     sourceURL,
+			Title:         title,
+			CaptureHash:   captureHash,
+			FirstSeenAt:   &seenAtCopy,
+			SynthesizedAt: &seenAtCopy,
+			DigestRole:    "input",
+		}
+	}
+	for _, summary := range latest.Summaries {
+		if promptVersion != "" && summary.PromptVersion != "" && summary.PromptVersion != promptVersion {
+			continue
+		}
+		if model != "" && summary.Model != "" && summary.Model != model {
+			continue
+		}
+		addRef(summary.Source, summary.ID, summary.Title, summary.SourceURL, summary.CaptureHash, summary.GeneratedAt)
+	}
+	for _, insight := range latest.Insights {
+		addRef(insight.Source, insight.SourceID, insight.Title, insight.SourceURL, "", insight.GeneratedAt)
+	}
+	refs := make([]knowledge.DigestSourceRef, 0, len(refsByKey))
+	for _, ref := range refsByKey {
+		refs = append(refs, ref)
+	}
+	return refs, nil
 }
 
 func (s *Store) SaveRun(ctx context.Context, result knowledge.Result, sources []knowledge.ProcessedSource) error {

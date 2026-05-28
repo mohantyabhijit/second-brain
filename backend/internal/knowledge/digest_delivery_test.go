@@ -253,3 +253,92 @@ func TestDigestInsightSelectionIncludesYouTubeWhenAvailable(t *testing.T) {
 		t.Fatalf("expected selected insights to include X when available: %#v", selected)
 	}
 }
+
+type digestSourceStore struct {
+	cacheStore
+	refs []DigestSourceRef
+}
+
+func (s digestSourceStore) ReadNewDigestSources(ctx context.Context, ownerID string, promptVersion string, model string) ([]DigestSourceRef, error) {
+	return s.refs, nil
+}
+
+func TestDigestInputsUseOnlyNewSourceRefs(t *testing.T) {
+	generatedAt := time.Date(2026, 5, 28, 9, 0, 0, 0, time.UTC)
+	service := NewService(config.Config{}, digestSourceStore{refs: []DigestSourceRef{{
+		Source:     "x",
+		ExternalID: "new",
+		SourceURL:  "https://x.com/example/status/new",
+		Title:      "New source",
+	}}}, http.DefaultClient)
+	latest := &Result{
+		GeneratedAt: generatedAt,
+		Summaries: []Summary{
+			{ID: "old", Source: "x", Title: "Old source", SourceURL: "https://x.com/example/status/old"},
+			{ID: "new", Source: "x", Title: "New source", SourceURL: "https://x.com/example/status/new"},
+		},
+		Insights: []Insight{
+			{ID: "old-insight", Source: "x", SourceID: "old", Title: "Old source", SourceURL: "https://x.com/example/status/old"},
+			{ID: "new-insight", Source: "x", SourceID: "new", Title: "New source", SourceURL: "https://x.com/example/status/new"},
+		},
+		Themes: []ThemeCluster{{
+			ID:      "theme-new",
+			Label:   "New",
+			Sources: []string{"x:old", "x:new"},
+		}},
+		InsightClusters: []InsightCluster{{
+			ID:                       "cluster-new",
+			InsightIDs:               []string{"old-insight", "new-insight"},
+			RepresentativeInsightIDs: []string{"old-insight", "new-insight"},
+		}},
+		Connections: []SourceConnection{{
+			ID:            "connection-old-new",
+			LeftSourceID:  "x:old",
+			RightSourceID: "x:new",
+		}},
+	}
+
+	refs, summaries, insights, themes, clusters, connections, err := service.digestInputsForLatest(context.Background(), latest)
+	if err != nil {
+		t.Fatalf("filter digest inputs: %v", err)
+	}
+	if len(refs) != 1 || refs[0].ExternalID != "new" {
+		t.Fatalf("expected only the new source ref, got %#v", refs)
+	}
+	if len(summaries) != 1 || summaries[0].ID != "new" {
+		t.Fatalf("expected only the new summary, got %#v", summaries)
+	}
+	if len(insights) != 1 || insights[0].ID != "new-insight" {
+		t.Fatalf("expected only the new insight, got %#v", insights)
+	}
+	if len(themes) != 1 || !slices.Equal(themes[0].Sources, []string{"x:new"}) {
+		t.Fatalf("expected theme sources to be narrowed to new sources, got %#v", themes)
+	}
+	if len(clusters) != 1 || !slices.Equal(clusters[0].InsightIDs, []string{"new-insight"}) {
+		t.Fatalf("expected insight cluster to be narrowed to new insights, got %#v", clusters)
+	}
+	if len(connections) != 0 {
+		t.Fatalf("expected cross-source connection with old source to be dropped, got %#v", connections)
+	}
+}
+
+func TestNewDigestSourceRefsFromLatestUsesLastDigestCutoff(t *testing.T) {
+	cutoff := time.Date(2026, 5, 27, 10, 0, 0, 0, time.UTC)
+	oldGeneratedAt := cutoff.Add(-time.Hour)
+	newGeneratedAt := cutoff.Add(time.Hour)
+	latest := &Result{
+		GeneratedAt: newGeneratedAt,
+		Digest: &DigestIssue{
+			ScheduledFor: cutoff,
+		},
+		Summaries: []Summary{
+			{ID: "old", Source: "x", Title: "Old source", GeneratedAt: &oldGeneratedAt},
+			{ID: "new", Source: "x", Title: "New source", GeneratedAt: &newGeneratedAt},
+		},
+	}
+
+	refs := newDigestSourceRefsFromLatest(latest)
+	if len(refs) != 1 || refs[0].ExternalID != "new" {
+		t.Fatalf("expected only sources generated after last digest, got %#v", refs)
+	}
+}
