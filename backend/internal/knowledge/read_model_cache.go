@@ -120,7 +120,10 @@ func CompactAppStateForView(state *AppState, view string, limit int) *AppState {
 		latest.YouTubeItems = firstN(state.Latest.YouTubeItems, limit)
 		latest.Summaries = summariesForSourceURLs(state.Latest.Summaries, "youtube", youtubeItemURLs(latest.YouTubeItems))
 	case "knowledge-graph":
-		// The graph page loads its canvas data from /api/knowledge-graph/insights.
+		compact.Graph = AppStateGraph{
+			Status:       state.Graph.Status,
+			InsightGraph: LimitInsightGraphResponsePointer(state.Graph.InsightGraph, MaxInsightGraphLimit),
+		}
 	default:
 		return state
 	}
@@ -327,6 +330,8 @@ func buildAppStateGraph(latest *Result, status string) AppStateGraph {
 	graph.Themes = latest.Themes
 	graph.InsightClusters = latest.InsightClusters
 	graph.Connections = latest.Connections
+	insightGraph := buildInsightGraphFromResult(latest, MaxInsightGraphLimit)
+	graph.InsightGraph = &insightGraph
 	return graph
 }
 

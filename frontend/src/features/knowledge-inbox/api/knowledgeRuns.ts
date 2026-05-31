@@ -149,7 +149,8 @@ function normalizeAppState(state: AppState): AppState {
       status: state.graph?.status ?? state.manifest?.graphStatus ?? "none",
       themes: state.graph?.themes ?? latest?.themes ?? [],
       insightClusters: state.graph?.insightClusters ?? latest?.insightClusters ?? [],
-      connections: state.graph?.connections ?? latest?.connections ?? []
+      connections: state.graph?.connections ?? latest?.connections ?? [],
+      insightGraph: state.graph?.insightGraph ? normalizeInsightGraph(state.graph.insightGraph) : undefined
     },
     askContext: {
       runId: state.askContext?.runId ?? state.manifest?.runId ?? "none",

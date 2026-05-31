@@ -15,3 +15,4 @@ if [[ "$graph_status" -ne 0 ]]; then
 fi
 
 npm run digest:run
+npm run precompute:run

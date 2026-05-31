@@ -1,6 +1,11 @@
 package knowledge
 
-import "testing"
+import (
+	"context"
+	"testing"
+
+	"github.com/abhijitmohanty/second-brain/backend/internal/config"
+)
 
 func TestNormalizeInsightGraphLimit(t *testing.T) {
 	t.Run("defaults empty limit", func(t *testing.T) {
@@ -88,4 +93,44 @@ func TestBuildInsightGraphEdgesPrioritizesAndDedupes(t *testing.T) {
 	if got := edgeByID["insight-c::insight-d"].Reason; got != "shared_type" {
 		t.Fatalf("expected shared type edge, got %q", got)
 	}
+}
+
+func TestReadInsightGraphUsesPrecomputedReadModel(t *testing.T) {
+	cache := &graphReadModelCache{
+		graph: InsightGraphResponse{
+			Nodes: []InsightGraphNode{{ID: "cached", Label: "Cached graph", Topics: []string{}}},
+			Edges: []InsightGraphEdge{},
+			Stats: InsightGraphStats{TotalInsights: 1, ReturnedInsights: 1, ReturnedEdges: 0},
+		},
+	}
+	service := NewService(config.Config{
+		OwnerID:       "owner-1",
+		Neo4jURI:      "bolt://127.0.0.1:1",
+		Neo4jUsername: "neo4j",
+		Neo4jPassword: "password",
+		Neo4jDatabase: "missing",
+	}, &cacheOrderStore{}, nil)
+	service.SetReadModelCache(cache)
+
+	graph, err := service.ReadInsightGraph(context.Background(), 10)
+	if err != nil {
+		t.Fatalf("read precomputed graph: %v", err)
+	}
+	if got := graph.Nodes[0].ID; got != "cached" {
+		t.Fatalf("expected precomputed graph node, got %q", got)
+	}
+	if cache.reads != 1 {
+		t.Fatalf("expected one graph read-model lookup, got %d", cache.reads)
+	}
+}
+
+type graphReadModelCache struct {
+	cacheOrderReadModel
+	graph InsightGraphResponse
+	reads int
+}
+
+func (c *graphReadModelCache) ReadInsightGraph(context.Context, string, int) (InsightGraphResponse, error) {
+	c.reads++
+	return c.graph, nil
 }

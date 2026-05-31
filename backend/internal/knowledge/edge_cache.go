@@ -43,7 +43,7 @@ func (s *Service) shouldPurgeEdgeCache(reason string) bool {
 		return false
 	}
 	switch reason {
-	case "refresh_publish", "refresh_noop_publish", "digest_publish":
+	case "refresh_publish", "refresh_noop_publish", "digest_publish", "precompute_publish", "post_refresh_precompute", "daily_precompute":
 		return true
 	default:
 		return false
@@ -92,14 +92,18 @@ func edgeCachePurgeURLs(baseURL string) []string {
 		"/insights/",
 		"/daily-newsletter/",
 		"/original-x-bookmarks/",
+		"/original-x-posts/",
 		"/original-youtube-videos/",
+		"/original-youtube-posts/",
 		"/knowledge-graph/",
 		"/api/app-state",
 		"/api/app-state?view=insights&limit=20",
 		"/api/app-state?view=daily-newsletter&limit=10",
 		"/api/app-state?view=original-x-posts&limit=15",
 		"/api/app-state?view=original-youtube-posts&limit=15",
-		"/api/app-state?view=knowledge-graph&limit=1",
+		"/api/app-state?view=knowledge-graph&limit=180",
+		"/api/digests",
+		"/api/knowledge-graph/insights?limit=180",
 	}
 	urls := make([]string, 0, len(paths))
 	for _, path := range paths {

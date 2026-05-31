@@ -16,6 +16,8 @@ RUN_LIGHTHOUSE=1 LIGHTHOUSE_BIN="npx --yes lighthouse@13.3.0" npm run perf:measu
 
 The script measures public pages plus the full and view-scoped API boot payloads. It writes response bodies and optional Lighthouse JSON under `/tmp/second-brain-performance` by default.
 
+The page-to-view-model contract is documented in `docs/precomputed-view-models.md`. Regressions to page-time compute should be treated as performance bugs.
+
 ## Cloudflare Caching
 
 The origin now emits cache headers that Cloudflare can honor:
@@ -30,18 +32,21 @@ Cloudflare routes `abhijitmohanty.com/second-brain*` and `www.abhijitmohanty.com
 1. `/second-brain/_next/static/*` with an Edge TTL of one year.
 2. `/second-brain/api/digests/*/illustration` with an Edge TTL of one year.
 3. `GET /second-brain/api/app-state*` with an Edge TTL of five minutes.
-4. `/second-brain/*` HTML with an Edge TTL of five minutes.
-5. It bypasses non-`GET` requests, requests with `Authorization` or `Cookie`, `/second-brain/api/auth/*`, `/second-brain/api/debug/*`, and mutation endpoints.
+4. `GET /second-brain/api/digests` and `GET /second-brain/api/knowledge-graph/insights` as compatibility read-model APIs.
+5. `/second-brain/*` HTML with an Edge TTL of five minutes.
+6. It bypasses non-`GET` requests, requests with `Authorization` or `Cookie`, `/second-brain/api/auth/*`, `/second-brain/api/debug/*`, and mutation endpoints.
 
 Deploy Worker changes with `npm run edge-cache:deploy`. The runtime cache-purge token is not enough for this command; Worker deploys need a Cloudflare token with account-level Workers edit permission and zone-level Workers routes edit permission, or an authenticated Cloudflare connector/session.
 
-The backend purges Cloudflare automatically after successful refresh and digest read-model publishes when `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ZONE_ID` are configured. If automatic purge is unavailable, manually purge:
+The backend purges Cloudflare automatically after successful refresh, digest, and precompute read-model publishes when `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ZONE_ID` are configured. If automatic purge is unavailable, manually purge:
 
 - `/second-brain/`
 - `/second-brain/insights/`
 - `/second-brain/daily-newsletter/`
 - `/second-brain/original-x-bookmarks/`
+- `/second-brain/original-x-posts/`
 - `/second-brain/original-youtube-videos/`
+- `/second-brain/original-youtube-posts/`
 - `/second-brain/knowledge-graph/`
 - `/second-brain/api/app-state*`
 

@@ -61,12 +61,18 @@ test("matches strong and weak validators from If-None-Match lists", () => {
   assert.equal(etagMatches('"other"', '"target"'), false);
 });
 
-test("only app-state API requests are cached among JSON API routes", () => {
+test("only read-model API requests are cached among JSON API routes", () => {
   const appStateURL = new URL("https://abhijitmohanty.com/second-brain/api/app-state?view=insights");
+  const digestsURL = new URL("https://abhijitmohanty.com/second-brain/api/digests");
+  const graphURL = new URL("https://abhijitmohanty.com/second-brain/api/knowledge-graph/insights?limit=180");
   const askURL = new URL("https://abhijitmohanty.com/second-brain/api/ask");
   const appState = cachePolicy(new Request(appStateURL.toString()), appStateURL);
+  const digests = cachePolicy(new Request(digestsURL.toString()), digestsURL);
+  const graph = cachePolicy(new Request(graphURL.toString()), graphURL);
   const ask = cachePolicy(new Request(askURL.toString()), askURL);
 
   assert.equal(appState.edgeTtl, 300);
+  assert.equal(digests.edgeTtl, 300);
+  assert.equal(graph.edgeTtl, 300);
   assert.equal(ask, null);
 });

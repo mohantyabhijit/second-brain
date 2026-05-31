@@ -162,4 +162,12 @@ export REDIS_REFRESH_STATUS_TTL="${REDIS_REFRESH_STATUS_TTL:-24h}"
 export REDIS_ASK_ANSWER_TTL="${REDIS_ASK_ANSWER_TTL:-1h}"
 
 cd "$BACKEND_DIR"
-exec "$ONECLI" run --project "$PROJECT" -- go run ./cmd/digest
+BACKEND_CMD="${SECOND_BRAIN_BACKEND_CMD:-digest}"
+case "$BACKEND_CMD" in
+  digest|precompute) ;;
+  *)
+    echo "Unsupported backend command: $BACKEND_CMD" >&2
+    exit 1
+    ;;
+esac
+exec "$ONECLI" run --project "$PROJECT" -- go run "./cmd/$BACKEND_CMD"

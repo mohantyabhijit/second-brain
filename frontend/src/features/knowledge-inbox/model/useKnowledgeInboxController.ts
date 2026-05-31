@@ -3,7 +3,7 @@
 import { startTransition, useCallback, useEffect, useState } from "react";
 import { askSecondBrain, generateDailyDigest, readAppState, readDigestIssues, readKnowledgeRefreshStatus, readLatestKnowledgeRun, saveKnowledgeFeedback, sendLatestDigest, shareInsightToX, startKnowledgeInboxRefresh } from "../api/knowledgeRuns";
 import type { KnowledgeInboxPage } from "../KnowledgeInboxContainer";
-import type { AppState, AskSecondBrainResponse, DigestIssue, FeedbackSignal, KnowledgeRunResult, RefreshStatus } from "../contracts";
+import type { AppState, AskSecondBrainResponse, DigestIssue, FeedbackSignal, InsightGraphResponse, KnowledgeRunResult, RefreshStatus } from "../contracts";
 import { initialKnowledgeRun } from "./initialKnowledgeRun";
 
 export type ChatMessage = {
@@ -22,6 +22,7 @@ export function useKnowledgeInboxController(activePage: KnowledgeInboxPage = "in
   const [isAsking, setIsAsking] = useState(false);
   const [refreshStatus, setRefreshStatus] = useState<RefreshStatus | null>(null);
   const [digestIssues, setDigestIssues] = useState<DigestIssue[]>([]);
+  const [insightGraph, setInsightGraph] = useState<InsightGraphResponse | null>(null);
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [error, setError] = useState<string | null>(null);
 
@@ -31,6 +32,7 @@ export function useKnowledgeInboxController(activePage: KnowledgeInboxPage = "in
       startTransition(() => setRun(latest));
     }
     startTransition(() => setDigestIssues(state.digests ?? []));
+    startTransition(() => setInsightGraph(state.graph?.insightGraph ?? null));
     setRefreshStatus(state.refreshStatus);
     setIsRunning(state.refreshStatus?.status === "running");
   }, []);
@@ -222,6 +224,7 @@ export function useKnowledgeInboxController(activePage: KnowledgeInboxPage = "in
     isAsking,
     refreshStatus,
     digestIssues,
+    insightGraph,
     chatMessages,
     error,
     runValidation,
@@ -253,7 +256,7 @@ function appStateLimitForPage(page: KnowledgeInboxPage) {
     case "original-youtube-posts":
       return 15;
     case "knowledge-graph":
-      return 1;
+      return 180;
     default:
       return 20;
   }

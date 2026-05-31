@@ -83,6 +83,17 @@ func TestCompactAppStateForViewKeepsOnlyRequestedSurface(t *testing.T) {
 	if got := len(newsletterState.Digests); got != 1 {
 		t.Fatalf("expected 1 compact digest issue, got %d", got)
 	}
+
+	graphState := CompactAppStateForView(&state, "knowledge-graph", 10)
+	if graphState == nil || graphState.Graph.InsightGraph == nil {
+		t.Fatal("expected compact graph state with precomputed insight graph")
+	}
+	if got := len(graphState.Graph.InsightGraph.Nodes); got != 2 {
+		t.Fatalf("expected 2 precomputed graph nodes, got %d", got)
+	}
+	if got := len(graphState.Graph.Themes); got != 0 {
+		t.Fatalf("expected compact graph view to omit theme list duplication, got %d", got)
+	}
 }
 
 func TestBuildAppStateRunIDChangesWhenDigestChanges(t *testing.T) {

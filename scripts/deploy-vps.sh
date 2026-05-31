@@ -77,6 +77,7 @@ chmod +x \
   "$api_dir/second-brain-migrate" \
   "$api_dir/second-brain-refresh" \
   "$api_dir/second-brain-digest" \
+  "$api_dir/second-brain-precompute" \
   "$api_dir/second-brain-graph-sync" \
   "$api_dir/second-brain-worker" \
   "$api_dir/second-brain-x-token-import"

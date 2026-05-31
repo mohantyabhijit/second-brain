@@ -5,7 +5,7 @@ import Link from "next/link";
 import type { KnowledgeInboxPage } from "../KnowledgeInboxContainer";
 import type { ChatMessage } from "../model/useKnowledgeInboxController";
 import type { KnowledgeInboxViewModel, NavigationItemViewModel, SummaryCardViewModel } from "../presentation/viewModel";
-import type { DigestIssue, FeedbackSignal, ImportantTimeMarker, RefreshStatus } from "../contracts";
+import type { DigestIssue, FeedbackSignal, ImportantTimeMarker, InsightGraphResponse, RefreshStatus } from "../contracts";
 import { KnowledgeGraphView } from "./KnowledgeGraphView";
 type SecondBrainConsoleViewProps = {
   activePage: KnowledgeInboxPage;
@@ -14,6 +14,7 @@ type SecondBrainConsoleViewProps = {
   isAsking: boolean;
   isDigesting: boolean;
   isLoading: boolean;
+  insightGraph: InsightGraphResponse | null;
   model: KnowledgeInboxViewModel;
   refreshStatus: RefreshStatus | null;
   onAsk: (question: string, useLatest?: boolean) => Promise<void>;
@@ -71,7 +72,7 @@ const pageCopy: Record<
   },
   "knowledge-graph": {
     title: "Knowledge Graph",
-    kicker: "Neo4j",
+    kicker: "Graph",
     emptyTitle: "No graph insights yet"
   }
 };
@@ -81,7 +82,7 @@ const loadMoreCount = 25;
 const summaryPreviewLength = 220;
 const quotePreviewLength = 260;
 
-export function SecondBrainConsoleView({ activePage, chatMessages, digestIssues, isAsking, isDigesting, isLoading, model, refreshStatus, onAsk, onDigest, onSendDigest, onFeedback }: SecondBrainConsoleViewProps) {
+export function SecondBrainConsoleView({ activePage, chatMessages, digestIssues, insightGraph, isAsking, isDigesting, isLoading, model, refreshStatus, onAsk, onDigest, onSendDigest, onFeedback }: SecondBrainConsoleViewProps) {
   const [visibleCount, setVisibleCount] = useState(initialVisibleCount);
   const [copiedItems, setCopiedItems] = useState<Set<string>>(new Set());
   const [digestEmail, setDigestEmail] = useState("");
@@ -203,7 +204,7 @@ export function SecondBrainConsoleView({ activePage, chatMessages, digestIssues,
 
         <div className="wall-layout">
           {activePage === "knowledge-graph" ? (
-            <KnowledgeGraphView />
+            <KnowledgeGraphView graph={insightGraph} isLoading={isLoading} />
           ) : (
             <section className="feed-column" aria-label={`${page.title} feed`}>
               {feedItems.length ? (

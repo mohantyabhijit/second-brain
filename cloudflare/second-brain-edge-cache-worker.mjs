@@ -79,6 +79,13 @@ export function cachePolicy(request, url) {
     };
   }
 
+  if (path === "/second-brain/api/digests" || path === "/second-brain/api/knowledge-graph/insights") {
+    return {
+      edgeTtl: APP_STATE_EDGE_TTL_SECONDS,
+      cacheControl: "public, max-age=30, s-maxage=300, stale-while-revalidate=1800"
+    };
+  }
+
   if (path.startsWith("/second-brain/api/")) {
     return null;
   }

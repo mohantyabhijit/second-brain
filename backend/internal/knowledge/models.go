@@ -360,10 +360,11 @@ type AppStateViews struct {
 }
 
 type AppStateGraph struct {
-	Status          string             `json:"status"`
-	Themes          []ThemeCluster     `json:"themes"`
-	InsightClusters []InsightCluster   `json:"insightClusters"`
-	Connections     []SourceConnection `json:"connections"`
+	Status          string                `json:"status"`
+	Themes          []ThemeCluster        `json:"themes"`
+	InsightClusters []InsightCluster      `json:"insightClusters"`
+	Connections     []SourceConnection    `json:"connections"`
+	InsightGraph    *InsightGraphResponse `json:"insightGraph,omitempty"`
 }
 
 type AppStateAskContext struct {

@@ -123,6 +123,7 @@ func (c *Cache) ReadAppViewState(ctx context.Context, ownerID string, view strin
 			Themes:          []knowledge.ThemeCluster{},
 			InsightClusters: []knowledge.InsightCluster{},
 			Connections:     []knowledge.SourceConnection{},
+			InsightGraph:    &knowledge.InsightGraphResponse{Nodes: []knowledge.InsightGraphNode{}, Edges: []knowledge.InsightGraphEdge{}},
 		},
 		AskContext: knowledge.AppStateAskContext{
 			RunID:     manifest.RunID,
@@ -172,13 +173,33 @@ func (c *Cache) ReadAppViewState(ctx context.Context, ownerID string, view strin
 		state.Latest.YouTubeItems = firstN(videos, limit)
 	case "knowledge-graph":
 		var graph knowledge.AppStateGraph
-		if err := c.readRunJSON(ctx, ownerID, manifest.RunID, "graph", &graph); err == nil {
-			state.Graph = graph
+		if err := c.readRunJSON(ctx, ownerID, manifest.RunID, "graph", &graph); err != nil {
+			return nil, err
 		}
+		if graph.InsightGraph == nil {
+			return nil, knowledge.ErrReadModelCacheMiss
+		}
+		graph.InsightGraph = knowledge.LimitInsightGraphResponsePointer(graph.InsightGraph, limit)
+		state.Graph = graph
 	default:
 		return nil, knowledge.ErrReadModelCacheMiss
 	}
 	return &state, nil
+}
+
+func (c *Cache) ReadInsightGraph(ctx context.Context, ownerID string, limit int) (knowledge.InsightGraphResponse, error) {
+	manifest, err := c.readManifest(ctx, ownerID)
+	if err != nil {
+		return knowledge.InsightGraphResponse{}, err
+	}
+	var graph knowledge.AppStateGraph
+	if err := c.readRunJSON(ctx, ownerID, manifest.RunID, "graph", &graph); err != nil {
+		return knowledge.InsightGraphResponse{}, err
+	}
+	if graph.InsightGraph == nil {
+		return knowledge.InsightGraphResponse{}, knowledge.ErrReadModelCacheMiss
+	}
+	return knowledge.LimitInsightGraphResponse(*graph.InsightGraph, limit), nil
 }
 
 func (c *Cache) ReadLatest(ctx context.Context, ownerID string) (*knowledge.Result, error) {

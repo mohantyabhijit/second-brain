@@ -39,6 +39,11 @@ type latestViewReader interface {
 	ReadLatestView(ctx context.Context, view string, limit int) (*Result, error)
 }
 
+type readModelSnapshotStore interface {
+	ReadLatestReadModelSnapshot(ctx context.Context, ownerID string) (*AppState, error)
+	SaveReadModelSnapshot(ctx context.Context, ownerID string, state AppState) error
+}
+
 var ErrNoNewDigestSources = errors.New("no new source-grounded digest inputs since last digest")
 
 type Service struct {
@@ -115,6 +120,13 @@ func (s *Service) ReadLatest(ctx context.Context) (*Result, error) {
 			s.logger.Warn("read model cache fallback", "surface", "latest", "error", err)
 		}
 	}
+	if state, ok := s.readAppStateSnapshot(ctx); ok {
+		if state.Latest != nil {
+			s.normalizeAppState(state)
+			return state.Latest, nil
+		}
+		return nil, nil
+	}
 	return s.readLatestCanonical(ctx)
 }
 
@@ -141,6 +153,10 @@ func (s *Service) ReadAppState(ctx context.Context) (*AppState, string, error) {
 		if !errors.Is(err, ErrReadModelCacheMiss) {
 			s.logger.Warn("read model cache fallback", "surface", "app-state", "error", err)
 		}
+	}
+	if state, ok := s.readAppStateSnapshot(ctx); ok {
+		s.normalizeAppState(state)
+		return state, "snapshot", nil
 	}
 
 	latest, err := s.readLatestCanonical(ctx)
@@ -175,6 +191,12 @@ func (s *Service) ReadAppStateView(ctx context.Context, view string, limit int) 
 			s.logger.Warn("read model cache fallback", "surface", "app-state", "view", view, "error", err)
 		}
 	}
+	if state, ok := s.readAppStateSnapshot(ctx); ok {
+		compact := CompactAppStateForView(state, view, limit)
+		s.normalizeAppState(compact)
+		s.memoizeAppStateView(view, limit, compact)
+		return compact, "snapshot", nil
+	}
 	if state, cacheStatus, ok := s.readMemoizedAppStateView(view, limit); ok {
 		return state, cacheStatus, nil
 	}
@@ -195,6 +217,22 @@ func (s *Service) ReadAppStateView(ctx context.Context, view string, limit int) 
 	compact := CompactAppStateForView(&state, view, limit)
 	s.memoizeAppStateView(view, limit, compact)
 	return compact, "fallback", nil
+}
+
+func (s *Service) readAppStateSnapshot(ctx context.Context) (*AppState, bool) {
+	store, ok := s.store.(readModelSnapshotStore)
+	if !ok {
+		return nil, false
+	}
+	state, err := store.ReadLatestReadModelSnapshot(ctx, s.cfg.OwnerID)
+	if err == nil && state != nil {
+		s.logger.Info("read model snapshot hit", "surface", "app-state")
+		return state, true
+	}
+	if err != nil && !errors.Is(err, ErrReadModelCacheMiss) {
+		s.logger.Warn("read model snapshot fallback", "surface", "app-state", "error", err)
+	}
+	return nil, false
 }
 
 func (s *Service) readMemoizedAppStateView(view string, limit int) (*AppState, string, bool) {
@@ -233,6 +271,9 @@ func appStateViewMemoKey(view string, limit int) string {
 }
 
 func (s *Service) readLatestViewCanonical(ctx context.Context, view string, limit int) (*Result, error) {
+	if strings.TrimSpace(view) == "knowledge-graph" {
+		return s.readLatestCanonical(ctx)
+	}
 	if reader, ok := s.store.(latestViewReader); ok {
 		latest, err := reader.ReadLatestView(ctx, view, NormalizePageStateLimit(limit))
 		if err == nil {
@@ -591,9 +632,6 @@ func (s *Service) refreshTimeout() time.Duration {
 }
 
 func (s *Service) publishAppStateForResult(ctx context.Context, result Result, graphStatus string, reason string) error {
-	if s.cache == nil {
-		return nil
-	}
 	digests, err := s.readDigestsCanonical(ctx, 50)
 	if err != nil {
 		s.logger.Warn("read digests for Redis publish failed", "error", err)
@@ -606,12 +644,43 @@ func (s *Service) publishAppStateForResult(ctx context.Context, result Result, g
 	return s.publishAppStateBestEffort(ctx, state, reason)
 }
 
-func (s *Service) publishAppStateBestEffort(ctx context.Context, state AppState, reason string) error {
-	if s.cache == nil {
-		return nil
+func (s *Service) PublishReadModels(ctx context.Context, reason string) (*AppState, error) {
+	latest, err := s.readLatestCanonical(ctx)
+	if err != nil {
+		return nil, err
 	}
+	digests, err := s.readDigestsCanonical(ctx, 50)
+	if err != nil {
+		return nil, err
+	}
+	state := BuildAppState(s.cfg.OwnerID, latest, digests, s.ReadRefreshStatus(ctx), "")
+	s.normalizeAppState(&state)
+	if strings.TrimSpace(reason) == "" {
+		reason = "precompute_publish"
+	}
+	return &state, s.publishAppStateBestEffort(ctx, state, reason)
+}
+
+func (s *Service) publishAppStateBestEffort(ctx context.Context, state AppState, reason string) error {
 	publishCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 	defer cancel()
+	var snapshotErr error
+	snapshotPublished := false
+	if store, ok := s.store.(readModelSnapshotStore); ok {
+		if err := store.SaveReadModelSnapshot(publishCtx, s.cfg.OwnerID, state); err != nil {
+			snapshotErr = err
+			s.logger.Warn("read model snapshot publish failed", "reason", reason, "run_id", state.Manifest.RunID, "error", err)
+		} else {
+			snapshotPublished = true
+			s.logger.Info("read model snapshot publish completed", "reason", reason, "run_id", state.Manifest.RunID, "etag", state.Manifest.ETag)
+		}
+	}
+	if s.cache == nil {
+		if snapshotPublished {
+			s.purgeEdgeCacheBestEffort(publishCtx, reason)
+		}
+		return snapshotErr
+	}
 	var lastErr error
 	for attempt := 1; attempt <= 3; attempt++ {
 		if err := s.cache.PublishAppState(publishCtx, s.cfg.OwnerID, state); err != nil {
@@ -625,7 +694,10 @@ func (s *Service) publishAppStateBestEffort(ctx context.Context, state AppState,
 		}
 		s.logger.Info("read model cache publish completed", "reason", reason, "run_id", state.Manifest.RunID, "etag", state.Manifest.ETag)
 		s.purgeEdgeCacheBestEffort(publishCtx, reason)
-		return nil
+		return snapshotErr
+	}
+	if snapshotErr != nil {
+		return fmt.Errorf("snapshot publish: %v; redis publish: %w", snapshotErr, lastErr)
 	}
 	return lastErr
 }
@@ -675,6 +747,14 @@ func (s *Service) normalizeAppState(state *AppState) {
 	}
 	if state.Graph.Connections == nil {
 		state.Graph.Connections = []SourceConnection{}
+	}
+	if state.Graph.InsightGraph != nil {
+		if state.Graph.InsightGraph.Nodes == nil {
+			state.Graph.InsightGraph.Nodes = []InsightGraphNode{}
+		}
+		if state.Graph.InsightGraph.Edges == nil {
+			state.Graph.InsightGraph.Edges = []InsightGraphEdge{}
+		}
 	}
 	if state.AskContext.Sources == nil {
 		state.AskContext.Sources = []AskSecondBrainSource{}
@@ -960,6 +1040,19 @@ func (s *Service) ReadDigests(ctx context.Context, limit int) ([]DigestIssue, er
 		if !errors.Is(err, ErrReadModelCacheMiss) {
 			s.logger.Warn("read model cache fallback", "surface", "digests", "error", err)
 		}
+	}
+	if state, ok := s.readAppStateSnapshot(ctx); ok {
+		digests := state.Digests
+		if digests == nil {
+			digests = []DigestIssue{}
+		}
+		if limit > 0 && len(digests) > limit {
+			digests = digests[:limit]
+		}
+		for index := range digests {
+			s.annotateDigestIllustration(&digests[index])
+		}
+		return digests, nil
 	}
 	return s.readDigestsCanonical(ctx, limit)
 }
