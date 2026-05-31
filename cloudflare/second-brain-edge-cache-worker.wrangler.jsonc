@@ -1,0 +1,16 @@
+{
+  "$schema": "../node_modules/wrangler/config-schema.json",
+  "name": "second-brain-edge-cache",
+  "main": "./second-brain-edge-cache-worker.mjs",
+  "compatibility_date": "2026-05-31",
+  "routes": [
+    {
+      "pattern": "abhijitmohanty.com/second-brain*",
+      "zone_id": "8a11ef91b003469dfd0204f785ddf8a0"
+    },
+    {
+      "pattern": "www.abhijitmohanty.com/second-brain*",
+      "zone_id": "8a11ef91b003469dfd0204f785ddf8a0"
+    }
+  ]
+}

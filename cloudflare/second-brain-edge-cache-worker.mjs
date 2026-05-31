@@ -23,7 +23,7 @@ export default {
     const cacheKey = new Request(url.toString(), { method: "GET" });
     const cached = await cache.match(cacheKey);
     if (cached) {
-      return withEdgeCacheStatus(cached, "HIT");
+      return withConditionalRevalidation(request, withEdgeCacheStatus(cached, "HIT"));
     }
 
     const originResponse = await fetch(request, {
@@ -45,7 +45,7 @@ export default {
   }
 };
 
-function cachePolicy(request, url) {
+export function cachePolicy(request, url) {
   if (request.method !== "GET") {
     return null;
   }
@@ -93,11 +93,11 @@ function cachePolicy(request, url) {
   return null;
 }
 
-function isCacheableOriginResponse(response) {
+export function isCacheableOriginResponse(response) {
   return response.status === 200 && !response.headers.has("Set-Cookie");
 }
 
-function withEdgeCacheStatus(response, status) {
+export function withEdgeCacheStatus(response, status) {
   const headers = new Headers(response.headers);
   headers.set("X-Second-Brain-Edge-Cache", status);
   return new Response(response.body, {
@@ -105,4 +105,32 @@ function withEdgeCacheStatus(response, status) {
     statusText: response.statusText,
     headers
   });
+}
+
+export function withConditionalRevalidation(request, response) {
+  if (!etagMatches(request.headers.get("If-None-Match"), response.headers.get("ETag"))) {
+    return response;
+  }
+  const headers = new Headers(response.headers);
+  headers.delete("Content-Length");
+  headers.delete("Content-Type");
+  return new Response(null, {
+    status: 304,
+    headers
+  });
+}
+
+export function etagMatches(ifNoneMatch, etag) {
+  if (!ifNoneMatch || !etag) {
+    return false;
+  }
+  const expected = stripWeakETag(etag.trim());
+  return ifNoneMatch.split(",").some((candidate) => {
+    const value = candidate.trim();
+    return value === "*" || stripWeakETag(value) === expected;
+  });
+}
+
+function stripWeakETag(value) {
+  return value.replace(/^W\//i, "");
 }
