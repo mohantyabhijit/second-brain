@@ -71,8 +71,11 @@ test("only read-model API requests are cached among JSON API routes", () => {
   const graph = cachePolicy(new Request(graphURL.toString()), graphURL);
   const ask = cachePolicy(new Request(askURL.toString()), askURL);
 
-  assert.equal(appState.edgeTtl, 300);
-  assert.equal(digests.edgeTtl, 300);
-  assert.equal(graph.edgeTtl, 300);
+  assert.equal(appState.edgeTtl, 86400);
+  assert.equal(appState.cacheControl, "public, max-age=30, s-maxage=86400, stale-while-revalidate=604800");
+  assert.equal(digests.edgeTtl, 86400);
+  assert.equal(digests.cacheControl, "public, max-age=30, s-maxage=86400, stale-while-revalidate=604800");
+  assert.equal(graph.edgeTtl, 86400);
+  assert.equal(graph.cacheControl, "public, max-age=30, s-maxage=86400, stale-while-revalidate=604800");
   assert.equal(ask, null);
 });

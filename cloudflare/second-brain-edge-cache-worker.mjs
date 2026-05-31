@@ -1,6 +1,7 @@
 const HTML_EDGE_TTL_SECONDS = 300;
-const APP_STATE_EDGE_TTL_SECONDS = 300;
+const APP_STATE_EDGE_TTL_SECONDS = 86400;
 const STATIC_EDGE_TTL_SECONDS = 31536000;
+const APP_STATE_CACHE_CONTROL = "public, max-age=30, s-maxage=86400, stale-while-revalidate=604800";
 
 const MUTATING_API_PREFIXES = [
   "/second-brain/api/auth/",
@@ -75,14 +76,14 @@ export function cachePolicy(request, url) {
   if (path === "/second-brain/api/app-state") {
     return {
       edgeTtl: APP_STATE_EDGE_TTL_SECONDS,
-      cacheControl: "public, max-age=30, s-maxage=300, stale-while-revalidate=1800"
+      cacheControl: APP_STATE_CACHE_CONTROL
     };
   }
 
   if (path === "/second-brain/api/digests" || path === "/second-brain/api/knowledge-graph/insights") {
     return {
       edgeTtl: APP_STATE_EDGE_TTL_SECONDS,
-      cacheControl: "public, max-age=30, s-maxage=300, stale-while-revalidate=1800"
+      cacheControl: APP_STATE_CACHE_CONTROL
     };
   }
 
