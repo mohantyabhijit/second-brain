@@ -22,9 +22,11 @@ func NewRouter(cfg config.Config, service *knowledge.Service, logger *slog.Logge
 	service.SetLogger(logger)
 	mux := http.NewServeMux()
 
-	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
+	healthz := func(w http.ResponseWriter, r *http.Request) {
 		httputil.JSON(w, http.StatusOK, map[string]string{"status": "ok", "env": cfg.Env})
-	})
+	}
+	mux.HandleFunc("GET /healthz", healthz)
+	mux.HandleFunc("GET /api/healthz", healthz)
 
 	readLatest := func(w http.ResponseWriter, r *http.Request) {
 		latest, err := service.ReadLatest(r.Context())

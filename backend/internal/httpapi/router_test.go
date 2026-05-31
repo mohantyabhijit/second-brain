@@ -27,6 +27,12 @@ func TestRouterServesHealthAndCORSPreflight(t *testing.T) {
 		t.Fatalf("expected health status 200, got %d", health.Code)
 	}
 
+	proxiedHealth := httptest.NewRecorder()
+	router.ServeHTTP(proxiedHealth, httptest.NewRequest(http.MethodGet, "/api/healthz", nil))
+	if proxiedHealth.Code != http.StatusOK {
+		t.Fatalf("expected proxied health status 200, got %d", proxiedHealth.Code)
+	}
+
 	preflight := httptest.NewRecorder()
 	request := httptest.NewRequest(http.MethodOptions, "/api/knowledge-runs/refresh", nil)
 	request.Header.Set("Origin", "http://localhost:3000")
