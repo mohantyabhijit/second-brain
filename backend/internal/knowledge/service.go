@@ -71,12 +71,6 @@ type RunOutcome struct {
 	SkippedReason string
 }
 
-type RunOutcome struct {
-	Result        Result
-	NewContent    bool
-	SkippedReason string
-}
-
 func NewService(cfg config.Config, store Store, client *http.Client) *Service {
 	if client == nil {
 		client = http.DefaultClient
