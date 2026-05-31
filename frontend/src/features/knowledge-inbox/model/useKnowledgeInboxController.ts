@@ -2,6 +2,7 @@
 
 import { startTransition, useCallback, useEffect, useState } from "react";
 import { askSecondBrain, generateDailyDigest, readAppState, readDigestIssues, readKnowledgeRefreshStatus, readLatestKnowledgeRun, saveKnowledgeFeedback, sendLatestDigest, shareInsightToX, startKnowledgeInboxRefresh } from "../api/knowledgeRuns";
+import type { KnowledgeInboxPage } from "../KnowledgeInboxContainer";
 import type { AppState, AskSecondBrainResponse, DigestIssue, FeedbackSignal, KnowledgeRunResult, RefreshStatus } from "../contracts";
 import { initialKnowledgeRun } from "./initialKnowledgeRun";
 
@@ -13,7 +14,7 @@ export type ChatMessage = {
   status?: string;
 };
 
-export function useKnowledgeInboxController() {
+export function useKnowledgeInboxController(activePage: KnowledgeInboxPage = "insights") {
   const [run, setRun] = useState<KnowledgeRunResult>(() => initialKnowledgeRun);
   const [isLoading, setIsLoading] = useState(true);
   const [isRunning, setIsRunning] = useState(false);
@@ -36,7 +37,7 @@ export function useKnowledgeInboxController() {
 
   useEffect(() => {
     let ignore = false;
-    readAppState()
+    readAppState(activePage)
       .then((state) => {
         if (!ignore) {
           applyAppState(state);
@@ -52,7 +53,7 @@ export function useKnowledgeInboxController() {
     return () => {
       ignore = true;
     };
-  }, [applyAppState]);
+  }, [activePage, applyAppState]);
 
   useEffect(() => {
     let ignore = false;
@@ -68,7 +69,7 @@ export function useKnowledgeInboxController() {
         return;
       }
       if (status.status === "completed") {
-        const state = await readAppState().catch(() => null);
+        const state = await readAppState(activePage).catch(() => null);
         if (!ignore && state) {
           applyAppState(state);
         }
@@ -82,7 +83,7 @@ export function useKnowledgeInboxController() {
         window.clearTimeout(timer);
       }
     };
-  }, [applyAppState]);
+  }, [activePage, applyAppState]);
 
   const runValidation = useCallback(async () => {
     if (isRunning) {
@@ -106,7 +107,7 @@ export function useKnowledgeInboxController() {
       if (status.status === "failed") {
         throw new Error(status.error || "Knowledge inbox validation failed.");
       }
-      const state = await readAppState().catch(() => null);
+      const state = await readAppState(activePage).catch(() => null);
       if (state) {
         applyAppState(state);
       } else {
@@ -122,7 +123,7 @@ export function useKnowledgeInboxController() {
     } finally {
       setIsRunning(false);
     }
-  }, [applyAppState, isRunning]);
+  }, [activePage, applyAppState, isRunning]);
 
   const saveFeedback = useCallback(async (targetType: string, targetId: string, signal: FeedbackSignal, sourceUrl?: string) => {
     try {

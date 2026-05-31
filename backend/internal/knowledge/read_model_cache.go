@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -70,9 +71,174 @@ func BuildAppState(ownerID string, latest *Result, digests []DigestIssue, refres
 	return state
 }
 
+func CompactAppStateForView(state *AppState, view string, limit int) *AppState {
+	if state == nil {
+		return nil
+	}
+	normalizedView := strings.TrimSpace(view)
+	if normalizedView == "" || normalizedView == "full" {
+		return state
+	}
+	limit = NormalizePageStateLimit(limit)
+	compact := *state
+	compact.Views = AppStateViews{
+		Insights:             []Insight{},
+		OriginalXBookmarks:   []XBookmark{},
+		OriginalYouTubePosts: []YouTubeItem{},
+	}
+	compact.Graph = AppStateGraph{
+		Status:          state.Graph.Status,
+		Themes:          []ThemeCluster{},
+		InsightClusters: []InsightCluster{},
+		Connections:     []SourceConnection{},
+	}
+	compact.AskContext.Sources = nil
+	compact.Digests = nil
+	if state.Latest == nil {
+		return &compact
+	}
+
+	latest := resultShell(state.Latest)
+	switch normalizedView {
+	case "insights":
+		latest.Insights = firstN(state.Latest.Insights, limit)
+	case "daily-newsletter":
+		latest.Digest = compactDigestIssue(state.Latest.Digest)
+		latest.Summaries = firstN(state.Latest.Summaries, 8)
+		if len(state.Digests) > 0 {
+			compact.Digests = compactDigestIssues(firstN(state.Digests, limit))
+		} else if latest.Digest != nil {
+			compact.Digests = []DigestIssue{*latest.Digest}
+		} else {
+			compact.Digests = []DigestIssue{}
+		}
+	case "original-x-posts", "original-x-bookmarks":
+		latest.XBookmarks = firstN(state.Latest.XBookmarks, limit)
+		latest.Summaries = summariesForSourceURLs(state.Latest.Summaries, "x", xBookmarkURLs(latest.XBookmarks))
+	case "original-youtube-posts", "original-youtube-videos":
+		latest.YouTubeItems = firstN(state.Latest.YouTubeItems, limit)
+		latest.Summaries = summariesForSourceURLs(state.Latest.Summaries, "youtube", youtubeItemURLs(latest.YouTubeItems))
+	case "knowledge-graph":
+		// The graph page loads its canvas data from /api/knowledge-graph/insights.
+	default:
+		return state
+	}
+	compact.Latest = &latest
+	if compact.Digests == nil {
+		compact.Digests = []DigestIssue{}
+	}
+	return &compact
+}
+
+func NormalizePageStateLimit(limit int) int {
+	if limit <= 0 {
+		return 25
+	}
+	if limit > 50 {
+		return 50
+	}
+	return limit
+}
+
 func NormalizeResultForReadModel(result *Result) {
 	normalizeResultInsightEngine(result)
 	normalizeResultCollections(result)
+}
+
+func resultShell(latest *Result) Result {
+	result := Result{
+		GeneratedAt:     latest.GeneratedAt,
+		XBookmarks:      []XBookmark{},
+		YouTubeItems:    []YouTubeItem{},
+		Summaries:       []Summary{},
+		Insights:        []Insight{},
+		ActionItems:     []ActionItem{},
+		Processing:      []ProcessingEvent{},
+		Themes:          []ThemeCluster{},
+		InsightClusters: []InsightCluster{},
+		Connections:     []SourceConnection{},
+		Validation:      latest.Validation,
+		Blockers:        latest.Blockers,
+	}
+	result.SourceStatus = latest.SourceStatus
+	if result.Validation == nil {
+		result.Validation = []ValidationItem{}
+	}
+	if result.Blockers == nil {
+		result.Blockers = []string{}
+	}
+	return result
+}
+
+func compactDigestIssue(digest *DigestIssue) *DigestIssue {
+	if digest == nil {
+		return nil
+	}
+	compact := *digest
+	compact.Deliveries = nil
+	compact.SourceRefs = nil
+	compact.IllustrationPrompt = ""
+	compact.IllustrationModel = ""
+	return &compact
+}
+
+func compactDigestIssues(digests []DigestIssue) []DigestIssue {
+	if digests == nil {
+		return []DigestIssue{}
+	}
+	compact := make([]DigestIssue, 0, len(digests))
+	for index := range digests {
+		if digest := compactDigestIssue(&digests[index]); digest != nil {
+			compact = append(compact, *digest)
+		}
+	}
+	return compact
+}
+
+func firstN[T any](items []T, limit int) []T {
+	if items == nil {
+		return []T{}
+	}
+	if limit >= 0 && len(items) > limit {
+		return items[:limit]
+	}
+	return items
+}
+
+func summariesForSourceURLs(summaries []Summary, source string, urls map[string]struct{}) []Summary {
+	if len(summaries) == 0 || len(urls) == 0 {
+		return []Summary{}
+	}
+	filtered := []Summary{}
+	for _, summary := range summaries {
+		if summary.Source != source {
+			continue
+		}
+		if _, ok := urls[summary.SourceURL]; ok {
+			filtered = append(filtered, summary)
+		}
+	}
+	return filtered
+}
+
+func xBookmarkURLs(bookmarks []XBookmark) map[string]struct{} {
+	urls := map[string]struct{}{}
+	for _, bookmark := range bookmarks {
+		if strings.TrimSpace(bookmark.SourceURL) != "" {
+			urls[bookmark.SourceURL] = struct{}{}
+		}
+	}
+	return urls
+}
+
+func youtubeItemURLs(items []YouTubeItem) map[string]struct{} {
+	urls := map[string]struct{}{}
+	for _, item := range items {
+		if strings.TrimSpace(item.SourceURL) != "" {
+			urls[item.SourceURL] = struct{}{}
+		}
+	}
+	return urls
 }
 
 func normalizeResultCollections(result *Result) {

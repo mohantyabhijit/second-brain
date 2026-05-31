@@ -97,13 +97,13 @@ func (s *Store) readLatestDigest(ctx context.Context) (*knowledge.DigestIssue, e
 			coalesce(illustration_prompt, ''),
 			coalesce(illustration_alt, ''),
 			coalesce(illustration_mime_type, ''),
-			coalesce(illustration_base64, ''),
+			coalesce(illustration_base64, '') <> '',
 			coalesce(illustration_model, ''),
 			status
 		from digest_issues
 		order by updated_at desc, created_at desc
 		limit 1
-	`).Scan(&digest.ID, &digest.OwnerID, &digest.DigestDate, &digest.ScheduledFor, &digest.IdempotencyKey, &digest.Subject, &digest.BodyMarkdown, &digest.IllustrationPrompt, &digest.IllustrationAlt, &digest.IllustrationMimeType, &digest.IllustrationBase64, &digest.IllustrationModel, &digest.Status)
+	`).Scan(&digest.ID, &digest.OwnerID, &digest.DigestDate, &digest.ScheduledFor, &digest.IdempotencyKey, &digest.Subject, &digest.BodyMarkdown, &digest.IllustrationPrompt, &digest.IllustrationAlt, &digest.IllustrationMimeType, &digest.IllustrationAvailable, &digest.IllustrationModel, &digest.Status)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
 	}
@@ -134,7 +134,7 @@ func (s *Store) ReadDigests(ctx context.Context, limit int) ([]knowledge.DigestI
 			coalesce(illustration_prompt, ''),
 			coalesce(illustration_alt, ''),
 			coalesce(illustration_mime_type, ''),
-			coalesce(illustration_base64, ''),
+			coalesce(illustration_base64, '') <> '',
 			coalesce(illustration_model, ''),
 			status
 		from digest_issues
@@ -149,7 +149,7 @@ func (s *Store) ReadDigests(ctx context.Context, limit int) ([]knowledge.DigestI
 	digests := []knowledge.DigestIssue{}
 	for rows.Next() {
 		var digest knowledge.DigestIssue
-		if err := rows.Scan(&digest.ID, &digest.OwnerID, &digest.DigestDate, &digest.ScheduledFor, &digest.IdempotencyKey, &digest.Subject, &digest.BodyMarkdown, &digest.IllustrationPrompt, &digest.IllustrationAlt, &digest.IllustrationMimeType, &digest.IllustrationBase64, &digest.IllustrationModel, &digest.Status); err != nil {
+		if err := rows.Scan(&digest.ID, &digest.OwnerID, &digest.DigestDate, &digest.ScheduledFor, &digest.IdempotencyKey, &digest.Subject, &digest.BodyMarkdown, &digest.IllustrationPrompt, &digest.IllustrationAlt, &digest.IllustrationMimeType, &digest.IllustrationAvailable, &digest.IllustrationModel, &digest.Status); err != nil {
 			return nil, err
 		}
 		refs, err := s.readDigestSourceRefs(ctx, digest.ID)
@@ -1167,7 +1167,7 @@ func saveDigestTx(ctx context.Context, tx pgx.Tx, ownerID string, runID string, 
 			illustration_prompt = excluded.illustration_prompt,
 			illustration_alt = excluded.illustration_alt,
 			illustration_mime_type = excluded.illustration_mime_type,
-			illustration_base64 = excluded.illustration_base64,
+			illustration_base64 = coalesce(nullif(excluded.illustration_base64, ''), digest_issues.illustration_base64),
 			illustration_model = excluded.illustration_model,
 			status = excluded.status,
 			generated_from_run_id = excluded.generated_from_run_id,

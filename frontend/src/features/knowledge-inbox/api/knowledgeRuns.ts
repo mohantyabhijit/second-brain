@@ -1,5 +1,7 @@
 import type { AppState, AskSecondBrainResponse, DigestIssue, FeedbackSignal, InsightGraphResponse, KnowledgeRunResult, RefreshStatus } from "../contracts";
 
+export type AppStateView = "insights" | "daily-newsletter" | "original-x-posts" | "original-youtube-posts" | "knowledge-graph";
+
 const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8080";
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -24,8 +26,14 @@ export async function readLatestKnowledgeRun() {
   return payload.latest ? normalizeKnowledgeRun(payload.latest) : null;
 }
 
-export async function readAppState() {
-  const payload = await request<AppState>("/api/app-state");
+export async function readAppState(view?: AppStateView, limit = 25) {
+  const params = new URLSearchParams();
+  if (view) {
+    params.set("view", view);
+    params.set("limit", String(limit));
+  }
+  const path = params.size ? `/api/app-state?${params.toString()}` : "/api/app-state";
+  const payload = await request<AppState>(path);
   return normalizeAppState(payload);
 }
 

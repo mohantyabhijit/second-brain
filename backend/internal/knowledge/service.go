@@ -31,6 +31,10 @@ type digestSourceReader interface {
 	ReadNewDigestSources(ctx context.Context, ownerID string, promptVersion string, model string) ([]DigestSourceRef, error)
 }
 
+type readModelViewCache interface {
+	ReadAppViewState(ctx context.Context, ownerID string, view string, limit int) (*AppState, error)
+}
+
 var ErrNoNewDigestSources = errors.New("no new source-grounded digest inputs since last digest")
 
 type Service struct {
@@ -127,6 +131,39 @@ func (s *Service) ReadAppState(ctx context.Context) (*AppState, string, error) {
 	s.normalizeAppState(&state)
 	s.publishAppStateBestEffort(ctx, state, "fallback_warm")
 	return &state, "fallback", nil
+}
+
+func (s *Service) ReadAppStateView(ctx context.Context, view string, limit int) (*AppState, string, error) {
+	view = strings.TrimSpace(view)
+	if view == "" || view == "full" {
+		return s.ReadAppState(ctx)
+	}
+	if viewCache, ok := s.cache.(readModelViewCache); ok {
+		state, err := viewCache.ReadAppViewState(ctx, s.cfg.OwnerID, view, limit)
+		if err == nil {
+			s.logger.Info("read model cache hit", "surface", "app-state", "view", view)
+			s.normalizeAppState(state)
+			return state, "hit", nil
+		}
+		if !errors.Is(err, ErrReadModelCacheMiss) {
+			s.logger.Warn("read model cache fallback", "surface", "app-state", "view", view, "error", err)
+		}
+	}
+	latest, err := s.readLatestCanonical(ctx)
+	if err != nil {
+		return nil, "error", err
+	}
+	digests := []DigestIssue{}
+	switch view {
+	case "daily-newsletter":
+		digests, err = s.readDigestsCanonical(ctx, NormalizePageStateLimit(limit))
+		if err != nil {
+			return nil, "error", err
+		}
+	}
+	state := BuildAppState(s.cfg.OwnerID, latest, digests, s.ReadRefreshStatus(ctx), "")
+	s.normalizeAppState(&state)
+	return CompactAppStateForView(&state, view, limit), "fallback", nil
 }
 
 func (s *Service) StartRefresh() RefreshStatus {

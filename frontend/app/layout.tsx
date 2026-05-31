@@ -9,11 +9,6 @@ const inter = localFont({
       path: "../design-system/Inter-4.1/web/InterVariable.woff2",
       weight: "100 900",
       style: "normal"
-    },
-    {
-      path: "../design-system/Inter-4.1/web/InterVariable-Italic.woff2",
-      weight: "100 900",
-      style: "italic"
     }
   ],
   display: "swap",

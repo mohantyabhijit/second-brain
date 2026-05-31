@@ -109,6 +109,8 @@ jobs:
       REDIS_CACHE_TTL: ${{ secrets.REDIS_CACHE_TTL }}
       REDIS_REFRESH_STATUS_TTL: ${{ secrets.REDIS_REFRESH_STATUS_TTL }}
       REDIS_ASK_ANSWER_TTL: ${{ secrets.REDIS_ASK_ANSWER_TTL }}
+      MEMORY_PROFILING_ENABLED: ${{ secrets.MEMORY_PROFILING_ENABLED }}
+      MEMORY_PROFILE_TOKEN: ${{ secrets.MEMORY_PROFILE_TOKEN }}
       YOUTUBE_PLAYLIST_ID: ${{ secrets.YOUTUBE_PLAYLIST_ID }}
       YOUTUBE_TRANSCRIPT_TEST_VIDEO_ID: ${{ secrets.YOUTUBE_TRANSCRIPT_TEST_VIDEO_ID }}
       DIGEST_EMAIL_TO: ${{ secrets.DIGEST_EMAIL_TO }}
@@ -165,6 +167,8 @@ jobs:
           write_var REDIS_CACHE_TTL "${REDIS_CACHE_TTL:-720h}"
           write_var REDIS_REFRESH_STATUS_TTL "${REDIS_REFRESH_STATUS_TTL:-24h}"
           write_var REDIS_ASK_ANSWER_TTL "${REDIS_ASK_ANSWER_TTL:-1h}"
+          write_var MEMORY_PROFILING_ENABLED "${MEMORY_PROFILING_ENABLED:-false}"
+          write_var MEMORY_PROFILE_TOKEN "$MEMORY_PROFILE_TOKEN"
           write_var ONECLI_BIN /home/deploy/.local/bin/onecli
           write_var ONECLI_GATEWAY true
           write_var ONECLI_PROJECT second-brain
