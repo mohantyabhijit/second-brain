@@ -89,6 +89,14 @@ fi
 "$onecli" auth login --api-key "$onecli_api_key" >/dev/null
 unset onecli_api_key
 
+if ! command -v redis-server >/dev/null 2>&1; then
+  sudo apt-get update
+  sudo DEBIAN_FRONTEND=noninteractive apt-get install -y redis-server
+fi
+sudo systemctl enable redis-server >/dev/null
+sudo systemctl start redis-server
+redis-cli ping >/dev/null
+
 set -a
 # shellcheck disable=SC1091
 . "$api_dir/second-brain.env"
@@ -98,7 +106,8 @@ set +a
 cat > /tmp/second-brain-api.service <<SERVICE
 [Unit]
 Description=Second Brain API
-After=network.target
+After=network.target redis-server.service
+Wants=redis-server.service
 
 [Service]
 Type=simple
@@ -120,8 +129,8 @@ sudo systemctl restart second-brain-api
 cat > /tmp/second-brain-worker.service <<SERVICE
 [Unit]
 Description=Second Brain rcron self-organizing worker
-After=network-online.target second-brain-api.service
-Wants=network-online.target
+After=network-online.target redis-server.service second-brain-api.service
+Wants=network-online.target redis-server.service
 
 [Service]
 Type=simple

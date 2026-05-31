@@ -163,9 +163,6 @@ func (s *Service) ReadAppStateView(ctx context.Context, view string, limit int) 
 		return s.ReadAppState(ctx)
 	}
 	limit = NormalizePageStateLimit(limit)
-	if state, cacheStatus, ok := s.readMemoizedAppStateView(view, limit); ok {
-		return state, cacheStatus, nil
-	}
 	if viewCache, ok := s.cache.(readModelViewCache); ok {
 		state, err := viewCache.ReadAppViewState(ctx, s.cfg.OwnerID, view, limit)
 		if err == nil {
@@ -177,6 +174,9 @@ func (s *Service) ReadAppStateView(ctx context.Context, view string, limit int) 
 		if !errors.Is(err, ErrReadModelCacheMiss) {
 			s.logger.Warn("read model cache fallback", "surface", "app-state", "view", view, "error", err)
 		}
+	}
+	if state, cacheStatus, ok := s.readMemoizedAppStateView(view, limit); ok {
+		return state, cacheStatus, nil
 	}
 	latest, err := s.readLatestViewCanonical(ctx, view, limit)
 	if err != nil {
