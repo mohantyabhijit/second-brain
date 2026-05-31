@@ -33,6 +33,8 @@ Cloudflare routes `abhijitmohanty.com/second-brain*` and `www.abhijitmohanty.com
 4. `/second-brain/*` HTML with an Edge TTL of five minutes.
 5. It bypasses non-`GET` requests, requests with `Authorization` or `Cookie`, `/second-brain/api/auth/*`, `/second-brain/api/debug/*`, and mutation endpoints.
 
+Deploy Worker changes with `npm run edge-cache:deploy`. The runtime cache-purge token is not enough for this command; Worker deploys need a Cloudflare token with account-level Workers edit permission and zone-level Workers routes edit permission, or an authenticated Cloudflare connector/session.
+
 The backend purges Cloudflare automatically after successful refresh and digest read-model publishes when `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ZONE_ID` are configured. If automatic purge is unavailable, manually purge:
 
 - `/second-brain/`

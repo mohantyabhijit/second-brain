@@ -1,6 +1,7 @@
 {
   "$schema": "../node_modules/wrangler/config-schema.json",
   "name": "second-brain-edge-cache",
+  "account_id": "4265c2ec668186f4ff0efb447112d91c",
   "main": "./second-brain-edge-cache-worker.mjs",
   "compatibility_date": "2026-05-31",
   "routes": [

@@ -23,6 +23,8 @@ GitHub Actions stores only deploy/runtime secrets needed outside OneCLI:
 - `MEMORY_PROFILING_ENABLED`, `MEMORY_PROFILE_TOKEN`: optional backend profiling controls. When enabled in production, call `/second-brain/api/debug/memory` or `/second-brain/api/debug/pprof/heap?debug=1` with `Authorization: Bearer $MEMORY_PROFILE_TOKEN`.
 - `ONECLI_API_KEY`: logs the VPS deploy user into OneCLI so the API can run behind the OneCLI gateway.
 
+The `second-brain-edge-cache` Worker is deployed separately from the VPS workflow with `npm run edge-cache:deploy`. That deploy path needs `CLOUDFLARE_ACCOUNT_ID` or the checked-in Worker Wrangler config plus a token with Workers edit permissions; the runtime purge token only needs zone read and cache purge permissions.
+
 Provider API credentials stay in OneCLI instead of GitHub Secrets where possible:
 
 - X access token and refresh token.
