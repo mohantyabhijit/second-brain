@@ -35,7 +35,7 @@ func (s *Store) SaveReadModelSnapshot(ctx context.Context, ownerID string, state
 			published_at = excluded.published_at,
 			payload = excluded.payload,
 			updated_at = now()
-	`, ownerID, state.Manifest.SchemaVersion, state.Manifest.RunID, state.Manifest.ETag, state.Manifest.GeneratedAt, state.Manifest.PublishedAt, raw)
+	`, ownerID, state.Manifest.SchemaVersion, state.Manifest.RunID, state.Manifest.ETag, state.Manifest.GeneratedAt, state.Manifest.PublishedAt, string(raw))
 	return err
 }
 
