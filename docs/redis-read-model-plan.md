@@ -59,6 +59,7 @@ Redis stores derived read models, not canonical data.
 | `sb:v1:{owner}:view:{run_id}:original-youtube-posts` | string JSON | YouTube page read model | 30 days |
 | `sb:v1:{owner}:digests:{run_id}:list` | string JSON | Precomputed digest list for `/api/digests` | 30 days |
 | `sb:v1:{owner}:refresh:status` | string JSON | Shared refresh status and progress message | 24 hours |
+| `sb:v1:{owner}:source-materials` | hash | Derived source-material states keyed by `{source_type}:{external_id}:{prompt_version}:{model}` so scheduled refreshes can skip already processed captures before expensive provider/model work | 30 days |
 | `sb:v1:{owner}:graph:{run_id}:read-model` | string JSON | Themes, source connections, graph-derived cards, graph sync metadata | 30 days |
 | `sb:v1:{owner}:ask:context:{run_id}` | string JSON | Compact RAG/GraphRAG source bundle for the current run | 30 days |
 | `sb:v1:{owner}:ask:answer:{run_id}:{question_hash}` | string JSON | Optional repeated-question answer cache | 15 minutes to 6 hours |

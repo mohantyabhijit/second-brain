@@ -6,7 +6,7 @@
 4. Copy the pooled Postgres connection string into `SUPABASE_DB_URL`.
 5. Keep `SUPABASE_DB_URL` server-side only. Do not expose it as a `NEXT_PUBLIC_` variable.
 
-The app stores complete refresh payloads in `knowledge_runs.payload` as an audit log. It also writes normalized `source_items`, `source_captures`, `source_objects`, and `knowledge_syntheses` rows so source identity, content captures, Storage objects, and AI processing caches stay separately deduplicated.
+The app stores complete refresh payloads in `knowledge_runs.payload` as an audit log. It also writes normalized `source_items`, `source_captures`, `source_objects`, and `knowledge_syntheses` rows so source identity, content captures, Storage objects, and AI processing caches stay separately deduplicated. Scheduled refreshes use those tables as the canonical source-material list before fetching expensive transcripts or running model synthesis again.
 
 ## Responsibilities
 

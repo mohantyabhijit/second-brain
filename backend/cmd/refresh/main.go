@@ -42,13 +42,16 @@ func main() {
 	readModelCache, closeCache := rediscache.Open(ctx, cfg, logger)
 	defer closeCache()
 	service.SetReadModelCache(readModelCache)
-	result, err := service.Run(ctx)
+	outcome, err := service.RunCycle(ctx)
 	if err != nil {
 		logger.Error("knowledge refresh failed", "error", err)
 		os.Exit(1)
 	}
+	result := outcome.Result
 	logger.Info(
-		"knowledge refresh saved",
+		"knowledge refresh completed",
+		"new_content", outcome.NewContent,
+		"skipped_reason", outcome.SkippedReason,
 		"x_bookmarks", len(result.XBookmarks),
 		"youtube_items", len(result.YouTubeItems),
 		"summaries", len(result.Summaries),

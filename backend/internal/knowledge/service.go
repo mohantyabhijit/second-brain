@@ -17,6 +17,7 @@ import (
 type Store interface {
 	ReadLatest(ctx context.Context) (*Result, error)
 	ReadCachedSyntheses(ctx context.Context, keys []SynthesisCacheKey) (map[string]SynthesisRecord, error)
+	ReadSourceMaterialStates(ctx context.Context, ownerID string, keys []SourceMaterialKey) (map[string]SourceMaterialState, error)
 	SaveRun(ctx context.Context, result Result, sources []ProcessedSource) error
 	SaveFeedback(ctx context.Context, event FeedbackEvent) error
 	ReadDigests(ctx context.Context, limit int) ([]DigestIssue, error)
@@ -42,6 +43,12 @@ type Service struct {
 	refresh      RefreshStatus
 	xOAuthMu     sync.Mutex
 	xOAuthStates map[string]xOAuthState
+}
+
+type RunOutcome struct {
+	Result        Result
+	NewContent    bool
+	SkippedReason string
 }
 
 func NewService(cfg config.Config, store Store, client *http.Client) *Service {
@@ -201,6 +208,11 @@ func (s *Service) RefreshStatus() RefreshStatus {
 }
 
 func (s *Service) Run(ctx context.Context) (Result, error) {
+	outcome, err := s.RunCycle(ctx)
+	return outcome.Result, err
+}
+
+func (s *Service) RunCycle(ctx context.Context) (RunOutcome, error) {
 	start := time.Now()
 	blockers := []string{}
 	result := Result{
@@ -252,7 +264,7 @@ func (s *Service) Run(ctx context.Context) (Result, error) {
 	} else {
 		go func() {
 			youtubeStart := time.Now()
-			items, err := s.fetchYouTubeInboxItems(ctx, s.cfg.YouTubePlaylistID, s.cfg.YouTubeTranscriptTestVideoID)
+			items, err := s.fetchPlaylistItems(ctx, s.cfg.YouTubePlaylistID, 5)
 			youtubeFetch <- youtubeFetchResult{items: items, err: err, blocked: err != nil, duration: time.Since(youtubeStart)}
 		}()
 	}
@@ -274,15 +286,45 @@ func (s *Service) Run(ctx context.Context) (Result, error) {
 		blockers = append(blockers, youtubeResult.err.Error())
 	} else {
 		s.logger.Info(
-			"youtube inbox fetch completed",
+			"youtube playlist fetch completed",
 			"duration_ms", youtubeResult.duration.Milliseconds(),
 			"count", len(youtubeItems),
-			"transcripts_available", countAvailableTranscripts(youtubeItems),
 		)
+	}
+
+	model := s.synthesisModel()
+	sourceMaterials, materialBlockers := s.readSourceMaterialStates(ctx, sourceMaterialKeysFromFetched(xBookmarks, youtubeItems, synthesisPromptVersion, model))
+	blockers = append(blockers, materialBlockers...)
+	materialLookupFailed := len(materialBlockers) > 0
+	if !youtubeBlocked && !materialLookupFailed {
+		transcriptStart := time.Now()
+		youtubeItems = s.fetchYouTubeTranscriptsForNewMaterials(ctx, youtubeItems, s.cfg.YouTubeTranscriptTestVideoID, sourceMaterials)
+		s.logger.Info(
+			"youtube transcript fetch completed",
+			"duration_ms", time.Since(transcriptStart).Milliseconds(),
+			"count", len(youtubeItems),
+			"transcripts_available", countAvailableTranscripts(youtubeItems),
+			"transcripts_cached", countCachedTranscripts(youtubeItems),
+		)
+	} else if materialLookupFailed {
+		s.logger.Warn("youtube transcript fetch skipped because source material lookup failed")
 	}
 
 	result.XBookmarks = xBookmarks
 	result.YouTubeItems = youtubeItems
+
+	latest, latestErr := s.readLatestCanonical(ctx)
+	if latestErr != nil {
+		s.logger.Warn("latest run lookup failed before refresh merge", "error", latestErr)
+		blockers = append(blockers, "latest run lookup failed: "+latestErr.Error())
+	}
+	if materialLookupFailed {
+		if latest != nil {
+			s.setRefreshStage("completed", "Source material lookup failed; skipped refresh processing to avoid duplicate provider and model work.")
+			return RunOutcome{Result: *latest, NewContent: false, SkippedReason: "source_material_lookup_failed"}, nil
+		}
+		return RunOutcome{Result: result, NewContent: false, SkippedReason: "source_material_lookup_failed"}, fmt.Errorf(strings.Join(materialBlockers, "; "))
+	}
 
 	xCandidates := candidatesFromBookmarks(xBookmarks)
 	xProcessCount := len(xCandidates)
@@ -291,63 +333,54 @@ func (s *Service) Run(ctx context.Context) (Result, error) {
 		xProcessCount = len(xCandidates)
 	}
 	candidates := append(xCandidates, candidatesFromVideos(youtubeItems)...)
+	newCandidates, skippedCandidates := filterNewSourceCandidates(candidates, sourceMaterials, model)
 	s.logger.Info(
 		"source candidates prepared",
 		"count", len(candidates),
+		"new_count", len(newCandidates),
+		"skipped_count", len(skippedCandidates),
 		"x_count", len(xBookmarks),
 		"x_processing_count", xProcessCount,
 		"youtube_count", len(youtubeItems),
 	)
-	s.setRefreshStage("gleaning_insights", fmt.Sprintf("Gleaning insights from %d/%d X bookmark(s) and %d YouTube video(s).", xProcessCount, len(xBookmarks), len(youtubeItems)))
+	noNewContent := len(newCandidates) == 0 && len(blockers) == 0 && latest != nil && (len(candidates) > 0 || len(youtubeItems) > 0 || len(xBookmarks) > 0)
+	if noNewContent {
+		s.setRefreshStage("completed", "No new source materials found; skipped refresh processing.")
+		s.logger.Info(
+			"knowledge refresh skipped; no new source materials",
+			"x_count", len(xBookmarks),
+			"youtube_count", len(youtubeItems),
+			"cached_transcripts", countCachedTranscripts(youtubeItems),
+		)
+		return RunOutcome{Result: *latest, NewContent: false, SkippedReason: "no_new_source_materials"}, nil
+	}
+
+	s.setRefreshStage("gleaning_insights", fmt.Sprintf("Gleaning insights from %d new source material(s).", len(newCandidates)))
 	processStart := time.Now()
-	processed, synthesisBlockers := s.processSourceCandidates(ctx, candidates)
+	processed, synthesisBlockers := s.processSourceCandidates(ctx, newCandidates)
 	s.logger.Info("source candidates processed", "duration_ms", time.Since(processStart).Milliseconds(), "count", len(processed), "blockers", len(synthesisBlockers))
 	s.setRefreshStage("enriching_memory", "Embedding, ranking, clustering, and connecting repeated ideas across sources.")
 	enrichStart := time.Now()
 	processed = s.enrichProcessedSources(ctx, processed)
 	s.logger.Info("source enrichment completed", "duration_ms", time.Since(enrichStart).Milliseconds(), "count", len(processed))
 	blockers = append(blockers, synthesisBlockers...)
-	for _, item := range processed {
-		result.Summaries = append(result.Summaries, item.Synthesis.Summary)
-		result.Insights = append(result.Insights, item.Synthesis.Insights...)
-		result.ActionItems = append(result.ActionItems, item.Synthesis.ActionItems...)
-		if item.SourceType == SourceTypeYouTube && len(item.Synthesis.Summary.ImportantTimeMarkers) > 0 {
-			attachYouTubeTimeMarkers(result.YouTubeItems, item.ExternalID, item.Synthesis.Summary.ImportantTimeMarkers)
-		}
-		if item.Artifact.Path != "" {
-			result.Artifacts = append(result.Artifacts, item.Artifact)
-		}
-		if item.SummaryArtifact.Path != "" {
-			result.Artifacts = append(result.Artifacts, item.SummaryArtifact)
-		}
-		status := "generated"
-		detail := "Generated synthesis for current source capture."
-		if item.Cached {
-			status = "cached"
-			detail = "Skipped synthesis because this source capture was already processed."
-		}
-		if item.Artifact.Error != "" {
-			detail += " " + item.Artifact.Error
-		}
-		if item.SummaryArtifact.Error != "" {
-			detail += " " + item.SummaryArtifact.Error
-		}
-		result.Processing = append(result.Processing, ProcessingEvent{
-			Source:        string(item.SourceType),
-			SourceID:      item.ExternalID,
-			Title:         item.Title,
-			CaptureHash:   item.CaptureHash,
-			PromptVersion: item.Synthesis.PromptVersion,
-			Model:         item.Synthesis.Model,
-			Status:        status,
-			Detail:        detail,
-		})
+	excludeSourceIDs := processedSourceIDs(processed)
+	saveSources := processed
+	if latest != nil {
+		result.XBookmarks = mergeXBookmarks(latest.XBookmarks, result.XBookmarks)
+		result.YouTubeItems = mergeYouTubeItems(latest.YouTubeItems, result.YouTubeItems)
+		result.Summaries = append(result.Summaries, summariesExcluding(latest.Summaries, excludeSourceIDs)...)
+		result.Insights = append(result.Insights, insightsExcluding(latest.Insights, excludeSourceIDs)...)
+		result.ActionItems = append(result.ActionItems, actionItemsExcluding(latest.ActionItems, excludeSourceIDs)...)
+		saveSources = append(processedSourcesFromResult(latest, excludeSourceIDs), processed...)
 	}
+	appendProcessedOutput(&result, processed)
 
-	result.Themes = buildThemeClusters(processed)
-	result.InsightClusters = buildInsightClusters(processed)
+	graphSources := s.enrichProcessedSources(ctx, processedSourcesFromResult(&result, nil))
+	result.Themes = buildThemeClusters(graphSources)
+	result.InsightClusters = buildInsightClusters(graphSources)
 	result.Insights = rankInsights(result.Insights, result.InsightClusters)
-	result.Connections = buildSourceConnections(processed)
+	result.Connections = buildSourceConnections(graphSources)
 
 	switch {
 	case len(xBookmarks) > 0:
@@ -392,9 +425,9 @@ func (s *Service) Run(ctx context.Context) (Result, error) {
 		})
 		defer progressStore.SetRefreshProgressReporter(nil)
 	}
-	if err := s.store.SaveRun(ctx, result, processed); err != nil {
+	if err := s.store.SaveRun(ctx, result, saveSources); err != nil {
 		s.logger.Error("knowledge refresh persist failed", "duration_ms", time.Since(saveStart).Milliseconds(), "error", err)
-		return result, err
+		return RunOutcome{Result: result, NewContent: len(processed) > 0}, err
 	}
 	s.publishAppStateForResult(ctx, result, "")
 	s.logger.Info(
@@ -412,7 +445,7 @@ func (s *Service) Run(ctx context.Context) (Result, error) {
 		"connections", len(result.Connections),
 		"blockers", len(result.Blockers),
 	)
-	return result, nil
+	return RunOutcome{Result: result, NewContent: len(processed) > 0}, nil
 }
 
 func (s *Service) setRefreshStage(phase string, message string) {

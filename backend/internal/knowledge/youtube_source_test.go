@@ -96,6 +96,43 @@ func TestFetchSupadataTranscriptKeepsTimedSegments(t *testing.T) {
 	}
 }
 
+func TestFetchYouTubeTranscriptsSkipsAlreadyProcessedMaterial(t *testing.T) {
+	t.Setenv("OPENAI_API_KEY", "")
+	called := false
+	service := &Service{
+		cfg: config.Config{OpenAITranslationModel: "test-model"},
+		client: &http.Client{Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
+			called = true
+			return jsonResponse(`{"content":"should not be fetched","lang":"en"}`), nil
+		})},
+	}
+	key := SourceMaterialKey{
+		SourceType:    SourceTypeYouTube,
+		ExternalID:    "video-1",
+		PromptVersion: synthesisPromptVersion,
+		Model:         extractiveSynthesisModel,
+	}
+
+	items := service.fetchYouTubeTranscriptsForNewMaterials(context.Background(), []YouTubeItem{{VideoID: "video-1"}}, "", map[string]SourceMaterialState{
+		key.String(): {
+			SourceType:        SourceTypeYouTube,
+			ExternalID:        "video-1",
+			PromptVersion:     synthesisPromptVersion,
+			Model:             extractiveSynthesisModel,
+			ArtifactKind:      "transcript",
+			LatestCaptureHash: "capture-1",
+			Processed:         true,
+		},
+	})
+
+	if called {
+		t.Fatal("expected cached YouTube source material to skip Supadata")
+	}
+	if len(items) != 1 || items[0].TranscriptStatus != "cached" {
+		t.Fatalf("expected cached transcript status, got %#v", items)
+	}
+}
+
 func TestParseYouTubeDuration(t *testing.T) {
 	if got := parseYouTubeDuration("PT1H22M25S"); got != 4945 {
 		t.Fatalf("expected 4945 seconds, got %d", got)

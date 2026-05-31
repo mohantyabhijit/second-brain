@@ -411,6 +411,91 @@ func (s *Store) ReadCachedSyntheses(ctx context.Context, keys []knowledge.Synthe
 	return cached, nil
 }
 
+func (s *Store) ReadSourceMaterialStates(ctx context.Context, ownerID string, keys []knowledge.SourceMaterialKey) (map[string]knowledge.SourceMaterialState, error) {
+	states := map[string]knowledge.SourceMaterialState{}
+	if len(keys) == 0 {
+		return states, nil
+	}
+	if strings.TrimSpace(ownerID) == "" {
+		ownerID = "00000000-0000-0000-0000-000000000001"
+	}
+	sourceTypes := make([]string, 0, len(keys))
+	externalIDs := make([]string, 0, len(keys))
+	promptVersions := make([]string, 0, len(keys))
+	models := make([]string, 0, len(keys))
+	for _, key := range keys {
+		sourceTypes = append(sourceTypes, string(key.SourceType))
+		externalIDs = append(externalIDs, key.ExternalID)
+		promptVersions = append(promptVersions, key.PromptVersion)
+		models = append(models, key.Model)
+	}
+	rows, err := s.pool.Query(ctx, `
+		with requested as (
+			select source_type, external_id, prompt_version, model
+			from unnest($1::text[], $2::text[], $3::text[], $4::text[]) as request(source_type, external_id, prompt_version, model)
+		),
+		latest as (
+			select distinct on (si.source_type, si.external_id, requested.prompt_version, requested.model)
+				si.source_type,
+				si.external_id,
+				coalesce(ks.capture_hash, si.latest_capture_hash, si.capture_hash, '') as latest_capture_hash,
+				requested.prompt_version,
+				requested.model,
+				coalesce(si.content_type, '') as content_type,
+				coalesce(sc.metadata->>'artifactKind', source_object.kind, '') as artifact_kind,
+				si.last_seen_at
+			from requested
+			join source_items si
+			  on si.source_type = requested.source_type
+			 and si.external_id = requested.external_id
+			 and si.owner_id = $5
+			join knowledge_syntheses ks
+			  on ks.source_item_id = si.id
+			 and ks.prompt_version = requested.prompt_version
+			 and ks.model = requested.model
+			left join source_captures sc on sc.id = ks.source_capture_id
+			left join lateral (
+				select so.kind
+				from source_objects so
+				where so.source_capture_id = ks.source_capture_id
+				order by
+					case when so.kind in ('transcript', 'article', 'tweet') then 0 else 1 end,
+					so.captured_at desc
+				limit 1
+			) source_object on true
+			order by si.source_type, si.external_id, requested.prompt_version, requested.model, ks.generated_at desc
+		)
+		select source_type, external_id, latest_capture_hash, prompt_version, model, content_type, artifact_kind, last_seen_at
+		from latest
+	`, sourceTypes, externalIDs, promptVersions, models, ownerID)
+	if err != nil {
+		return states, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var state knowledge.SourceMaterialState
+		if err := rows.Scan(&state.SourceType, &state.ExternalID, &state.LatestCaptureHash, &state.PromptVersion, &state.Model, &state.ContentType, &state.ArtifactKind, &state.LastSeenAt); err != nil {
+			return states, err
+		}
+		state.Processed = true
+		if state.ArtifactKind == "" {
+			switch state.SourceType {
+			case knowledge.SourceTypeX:
+				state.ArtifactKind = state.ContentType
+			case knowledge.SourceTypeYouTube:
+				state.ArtifactKind = "metadata"
+			default:
+				state.ArtifactKind = "source"
+			}
+		}
+		states[state.Key().String()] = state
+	}
+	if err := rows.Err(); err != nil {
+		return states, err
+	}
+	return states, nil
+}
+
 func (s *Store) SaveRun(ctx context.Context, result knowledge.Result, sources []knowledge.ProcessedSource) error {
 	raw, err := json.Marshal(result)
 	if err != nil {
@@ -597,13 +682,14 @@ func upsertSourceItem(ctx context.Context, tx pgx.Tx, source knowledge.Processed
 func upsertSourceCapture(ctx context.Context, tx pgx.Tx, sourceItemID string, source knowledge.ProcessedSource) (string, error) {
 	ownerID := ownerIDForSource(source)
 	metadata, err := json.Marshal(map[string]any{
-		"sourceType":  source.SourceType,
-		"contentType": contentTypeForSource(source),
-		"externalId":  source.ExternalID,
-		"sourceUrl":   safeUTF8(source.SourceURL),
-		"title":       safeUTF8(source.Title),
-		"authorName":  safeUTF8(source.AuthorName),
-		"username":    safeUTF8(source.Username),
+		"sourceType":   source.SourceType,
+		"contentType":  contentTypeForSource(source),
+		"artifactKind": sourceArtifactKind(source),
+		"externalId":   source.ExternalID,
+		"sourceUrl":    safeUTF8(source.SourceURL),
+		"title":        safeUTF8(source.Title),
+		"authorName":   safeUTF8(source.AuthorName),
+		"username":     safeUTF8(source.Username),
 	})
 	if err != nil {
 		return "", err
@@ -1303,6 +1389,23 @@ func contentTypeForSource(source knowledge.ProcessedSource) string {
 		return "post"
 	default:
 		return "document"
+	}
+}
+
+func sourceArtifactKind(source knowledge.ProcessedSource) string {
+	if source.Artifact.Kind != "" {
+		return source.Artifact.Kind
+	}
+	switch source.SourceType {
+	case knowledge.SourceTypeYouTube:
+		return "transcript"
+	case knowledge.SourceTypeX:
+		if source.ContentType == "article" {
+			return "article"
+		}
+		return "tweet"
+	default:
+		return "source"
 	}
 }
 

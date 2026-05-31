@@ -159,6 +159,25 @@ func (s *Store) ReadNewDigestSources(ctx context.Context, ownerID string, prompt
 	return refs, nil
 }
 
+func (s *Store) ReadSourceMaterialStates(ctx context.Context, ownerID string, keys []knowledge.SourceMaterialKey) (map[string]knowledge.SourceMaterialState, error) {
+	latest, err := s.ReadLatest(ctx)
+	if err != nil || latest == nil {
+		return map[string]knowledge.SourceMaterialState{}, err
+	}
+	wanted := map[string]knowledge.SourceMaterialKey{}
+	for _, key := range keys {
+		wanted[key.String()] = key
+	}
+	states := map[string]knowledge.SourceMaterialState{}
+	for _, state := range knowledge.SourceMaterialStatesFromResult(latest) {
+		cacheKey := state.Key().String()
+		if _, ok := wanted[cacheKey]; ok {
+			states[cacheKey] = state
+		}
+	}
+	return states, nil
+}
+
 func (s *Store) SaveRun(ctx context.Context, result knowledge.Result, sources []knowledge.ProcessedSource) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
