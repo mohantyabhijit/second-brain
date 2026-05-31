@@ -13,12 +13,13 @@ import (
 )
 
 type Store struct {
-	path string
-	mu   sync.Mutex
+	path        string
+	mu          sync.Mutex
+	connections map[string][]knowledge.SourceProviderConnection
 }
 
 func New(path string) *Store {
-	return &Store{path: path}
+	return &Store{path: path, connections: map[string][]knowledge.SourceProviderConnection{}}
 }
 
 func (s *Store) ReadLatest(ctx context.Context) (*knowledge.Result, error) {
@@ -277,4 +278,39 @@ func (s *Store) SaveXTokens(ctx context.Context, tokens knowledge.EncryptedXToke
 		return err
 	}
 	return errors.New("shared X OAuth tokens require SUPABASE_DB_URL/Postgres store")
+}
+
+func (s *Store) ReadSourceProviderConnections(ctx context.Context, ownerID string) ([]knowledge.SourceProviderConnection, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	connections := append([]knowledge.SourceProviderConnection(nil), s.connections[ownerID]...)
+	return connections, nil
+}
+
+func (s *Store) SaveYouTubePlaylistConnection(ctx context.Context, ownerID string, playlistID string) (*knowledge.SourceProviderConnection, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	now := time.Now().UTC()
+	connection := knowledge.SourceProviderConnection{
+		ID:                "local-youtube-" + playlistID,
+		Provider:          "youtube",
+		ProviderAccountID: playlistID,
+		TokenStatus:       "active",
+		LastValidatedAt:   &now,
+		UpdatedAt:         now,
+	}
+	others := []knowledge.SourceProviderConnection{}
+	for _, existing := range s.connections[ownerID] {
+		if existing.Provider != "youtube" {
+			others = append(others, existing)
+		}
+	}
+	s.connections[ownerID] = append(others, connection)
+	return &connection, nil
 }

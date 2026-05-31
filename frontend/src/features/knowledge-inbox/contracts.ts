@@ -344,3 +344,44 @@ export type AppState = {
   graph: AppStateGraph;
   askContext: AppStateAskContext;
 };
+
+export type XAuthStatus = {
+  configured: boolean;
+  authorized: boolean;
+  username?: string;
+  accessExpiresAt?: string;
+  updatedAt?: string;
+};
+
+export type YouTubeConnectionStatus = {
+  configured: boolean;
+  playlistId?: string;
+  lastValidatedAt?: string;
+};
+
+export type WorkspaceStatus = {
+  profile: {
+    ownerId: string;
+    handle: string;
+    displayName: string;
+    email?: string;
+    isPublicOwner: boolean;
+    authenticated: boolean;
+  };
+  x: XAuthStatus;
+  youtube: YouTubeConnectionStatus;
+  onboarding: {
+    complete: boolean;
+    missing: string[];
+  };
+};
+
+export type SourceProviderConnection = {
+  id: string;
+  provider: string;
+  providerAccountId: string;
+  scopes: string[];
+  tokenStatus: string;
+  lastValidatedAt?: string;
+  updatedAt: string;
+};

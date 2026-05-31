@@ -15,6 +15,7 @@ import (
 
 	"github.com/abhijitmohanty/second-brain/backend/internal/config"
 	"github.com/abhijitmohanty/second-brain/backend/internal/knowledge"
+	"github.com/abhijitmohanty/second-brain/backend/internal/platform/httputil"
 	"github.com/abhijitmohanty/second-brain/backend/internal/store/localfile"
 )
 
@@ -65,8 +66,17 @@ func TestRouterReadsAndRefreshesKnowledgeRunsWithoutProviderSecrets(t *testing.T
 		t.Fatalf("expected no saved run before refresh, got %#v", latestPayload.Latest)
 	}
 
+	anonymousRefresh := httptest.NewRecorder()
+	router.ServeHTTP(anonymousRefresh, httptest.NewRequest(http.MethodPost, "/api/knowledge-runs/refresh", nil))
+	if anonymousRefresh.Code != http.StatusUnauthorized {
+		t.Fatalf("expected anonymous refresh status 401, got %d: %s", anonymousRefresh.Code, anonymousRefresh.Body.String())
+	}
+
+	router, authHeader := authenticatedTestRouter(t)
 	refresh := httptest.NewRecorder()
-	router.ServeHTTP(refresh, httptest.NewRequest(http.MethodPost, "/api/knowledge-runs/refresh", nil))
+	request := httptest.NewRequest(http.MethodPost, "/api/knowledge-runs/refresh", nil)
+	request.Header.Set("Authorization", authHeader)
+	router.ServeHTTP(refresh, request)
 	if refresh.Code != http.StatusAccepted {
 		t.Fatalf("expected refresh status 202, got %d: %s", refresh.Code, refresh.Body.String())
 	}
@@ -89,7 +99,7 @@ func TestRouterReadsAndRefreshesKnowledgeRunsWithoutProviderSecrets(t *testing.T
 	if !containsSubstring(result.Blockers, "X_USER_ACCESS_TOKEN") {
 		t.Fatalf("expected X credential blocker, got %#v", result.Blockers)
 	}
-	if !containsSubstring(result.Blockers, "YOUTUBE_PLAYLIST_ID") {
+	if !containsSubstring(result.Blockers, "public YouTube playlist") {
 		t.Fatalf("expected YouTube playlist blocker, got %#v", result.Blockers)
 	}
 
@@ -103,13 +113,17 @@ func TestRouterReadsAndRefreshesKnowledgeRunsWithoutProviderSecrets(t *testing.T
 	}
 
 	invalidDigestSend := httptest.NewRecorder()
-	router.ServeHTTP(invalidDigestSend, httptest.NewRequest(http.MethodPost, "/api/digests/send", strings.NewReader(`{"recipientEmail":"not-an-email"}`)))
+	invalidDigestRequest := httptest.NewRequest(http.MethodPost, "/api/digests/send", strings.NewReader(`{"recipientEmail":"not-an-email"}`))
+	invalidDigestRequest.Header.Set("Authorization", authHeader)
+	router.ServeHTTP(invalidDigestSend, invalidDigestRequest)
 	if invalidDigestSend.Code != http.StatusBadRequest {
 		t.Fatalf("expected invalid digest send status 400, got %d", invalidDigestSend.Code)
 	}
 
 	digestSend := httptest.NewRecorder()
-	router.ServeHTTP(digestSend, httptest.NewRequest(http.MethodPost, "/api/digests/send", strings.NewReader(`{"recipientEmail":"reader@example.com","digest":{"digestDate":"2026-05-24","subject":"Displayed digest","bodyMarkdown":"# Displayed digest\n\nA source-grounded newsletter body."}}`)))
+	digestRequest := httptest.NewRequest(http.MethodPost, "/api/digests/send", strings.NewReader(`{"recipientEmail":"reader@example.com","digest":{"digestDate":"2026-05-24","subject":"Displayed digest","bodyMarkdown":"# Displayed digest\n\nA source-grounded newsletter body."}}`))
+	digestRequest.Header.Set("Authorization", authHeader)
+	router.ServeHTTP(digestSend, digestRequest)
 	if digestSend.Code != http.StatusOK {
 		t.Fatalf("expected digest send status 200, got %d: %s", digestSend.Code, digestSend.Body.String())
 	}
@@ -156,6 +170,215 @@ func TestRouterServesAppStateFallback(t *testing.T) {
 
 	if !strings.HasPrefix(etag, `"`) || !strings.HasSuffix(etag, `"`) {
 		t.Fatalf("expected quoted app-state ETag, got %q", etag)
+	}
+}
+
+func TestRouterResolvesPublicAndAuthenticatedWorkspace(t *testing.T) {
+	router := testRouter(t)
+	publicWorkspace := httptest.NewRecorder()
+	router.ServeHTTP(publicWorkspace, httptest.NewRequest(http.MethodGet, "/api/workspace", nil))
+	if publicWorkspace.Code != http.StatusOK {
+		t.Fatalf("expected public workspace status 200, got %d: %s", publicWorkspace.Code, publicWorkspace.Body.String())
+	}
+	var publicPayload knowledge.WorkspaceStatus
+	if err := json.Unmarshal(publicWorkspace.Body.Bytes(), &publicPayload); err != nil {
+		t.Fatalf("decode public workspace: %v", err)
+	}
+	if !publicPayload.Profile.IsPublicOwner || publicPayload.Profile.Handle != "abhijitmohanty" || publicPayload.Profile.Authenticated {
+		t.Fatalf("expected public abhijitmohanty workspace, got %#v", publicPayload.Profile)
+	}
+
+	authenticatedRouter, authHeader := authenticatedTestRouter(t)
+	authWorkspace := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "/api/workspace", nil)
+	request.Header.Set("Authorization", authHeader)
+	authenticatedRouter.ServeHTTP(authWorkspace, request)
+	if authWorkspace.Code != http.StatusOK {
+		t.Fatalf("expected authenticated workspace status 200, got %d: %s", authWorkspace.Code, authWorkspace.Body.String())
+	}
+	var authPayload knowledge.WorkspaceStatus
+	if err := json.Unmarshal(authWorkspace.Body.Bytes(), &authPayload); err != nil {
+		t.Fatalf("decode authenticated workspace: %v", err)
+	}
+	if authPayload.Profile.IsPublicOwner || !authPayload.Profile.Authenticated {
+		t.Fatalf("expected private authenticated workspace, got %#v", authPayload.Profile)
+	}
+}
+
+func TestRouterRejectsInvalidSupabaseBearer(t *testing.T) {
+	router, _ := authenticatedTestRouter(t)
+	request := httptest.NewRequest(http.MethodGet, "/api/workspace", nil)
+	request.Header.Set("Authorization", "Bearer invalid-token")
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, request)
+	if response.Code != http.StatusUnauthorized {
+		t.Fatalf("expected invalid bearer status 401, got %d: %s", response.Code, response.Body.String())
+	}
+}
+
+func TestRouterStartsAuthenticatedXOAuthWithoutUndocumentedAuthorizeParameters(t *testing.T) {
+	cfg := testConfig(t)
+	cfg.XClientID = "x-client-id"
+	cfg.XClientSecret = "x-client-secret"
+	cfg.XRedirectURI = "https://example.com/second-brain/api/auth/x/callback"
+	cfg.XOAuthScopes = []string{"tweet.read", "users.read", "bookmark.read", "offline.access"}
+	cfg.XTokenEncryptionKey = "0123456789abcdef0123456789abcdef"
+	router, authHeader := authenticatedTestRouterWithConfig(t, cfg)
+
+	request := httptest.NewRequest(http.MethodGet, "/api/auth/x/start", nil)
+	request.Header.Set("Authorization", authHeader)
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("expected X auth start status 200, got %d: %s", response.Code, response.Body.String())
+	}
+	var payload struct {
+		URL string `json:"url"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("decode X auth start: %v", err)
+	}
+	if strings.Contains(payload.URL, "access_type=") {
+		t.Fatalf("X auth URL must not include access_type: %s", payload.URL)
+	}
+	if !strings.Contains(payload.URL, "offline.access") || !strings.Contains(payload.URL, "bookmark.read") {
+		t.Fatalf("X auth URL missing expected scopes: %s", payload.URL)
+	}
+}
+
+func TestRouterSavesAuthenticatedYouTubePlaylistConnection(t *testing.T) {
+	cfg := testConfig(t)
+	cfg.OneCLIGateway = true
+	client := &http.Client{Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
+		switch request.URL.Host + request.URL.Path {
+		case "www.googleapis.com/youtube/v3/playlistItems":
+			return jsonResponse(`{"items":[{"snippet":{"title":"Video","description":"","channelTitle":"Channel","publishedAt":"2026-05-24T00:00:00Z","resourceId":{"videoId":"video-1"}}}]}`), nil
+		case "www.googleapis.com/youtube/v3/videos":
+			return jsonResponse(`{"items":[{"id":"video-1","contentDetails":{"duration":"PT3M"}}]}`), nil
+		default:
+			t.Fatalf("unexpected provider request: %s", request.URL.String())
+			return nil, nil
+		}
+	})}
+	router, authHeader := authenticatedTestRouterWithConfigAndClient(t, cfg, client)
+	body := strings.NewReader(`{"playlistUrl":"https://www.youtube.com/playlist?list=PL123"}`)
+	request := httptest.NewRequest(http.MethodPost, "/api/source-connections/youtube", body)
+	request.Header.Set("Authorization", authHeader)
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("expected YouTube save status 200, got %d: %s", response.Code, response.Body.String())
+	}
+	var connection knowledge.SourceProviderConnection
+	if err := json.Unmarshal(response.Body.Bytes(), &connection); err != nil {
+		t.Fatalf("decode YouTube connection: %v", err)
+	}
+	if connection.Provider != "youtube" || connection.ProviderAccountID != "PL123" {
+		t.Fatalf("unexpected YouTube connection: %#v", connection)
+	}
+}
+
+func TestEndToEndAuthenticatedOnboardingKeepsPublicWorkspaceOpen(t *testing.T) {
+	cfg := testConfig(t)
+	cfg.OneCLIGateway = true
+	cfg.XClientID = "x-client-id"
+	cfg.XClientSecret = "x-client-secret"
+	cfg.XRedirectURI = "https://example.com/second-brain/api/auth/x/callback"
+	cfg.XOAuthScopes = []string{"tweet.read", "users.read", "bookmark.read", "offline.access"}
+	cfg.XTokenEncryptionKey = "0123456789abcdef0123456789abcdef"
+	client := &http.Client{Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
+		switch request.URL.Host + request.URL.Path {
+		case "www.googleapis.com/youtube/v3/playlistItems":
+			if got := request.URL.Query().Get("playlistId"); got != "PLONBOARD" {
+				t.Fatalf("unexpected playlist id %q", got)
+			}
+			return jsonResponse(`{"items":[{"snippet":{"title":"Onboarding video","description":"","channelTitle":"Channel","publishedAt":"2026-05-24T00:00:00Z","resourceId":{"videoId":"video-1"}}}]}`), nil
+		case "www.googleapis.com/youtube/v3/videos":
+			return jsonResponse(`{"items":[{"id":"video-1","contentDetails":{"duration":"PT3M"}}]}`), nil
+		default:
+			t.Fatalf("unexpected provider request: %s", request.URL.String())
+			return nil, nil
+		}
+	})}
+	router, authHeader := authenticatedTestRouterWithConfigAndClient(t, cfg, client)
+
+	publicWorkspace := httptest.NewRecorder()
+	router.ServeHTTP(publicWorkspace, httptest.NewRequest(http.MethodGet, "/api/workspace", nil))
+	if publicWorkspace.Code != http.StatusOK {
+		t.Fatalf("expected public workspace status 200, got %d: %s", publicWorkspace.Code, publicWorkspace.Body.String())
+	}
+	var publicStatus knowledge.WorkspaceStatus
+	if err := json.Unmarshal(publicWorkspace.Body.Bytes(), &publicStatus); err != nil {
+		t.Fatalf("decode public workspace: %v", err)
+	}
+	if !publicStatus.Profile.IsPublicOwner || publicStatus.Profile.Authenticated || publicStatus.Profile.Handle != "abhijitmohanty" {
+		t.Fatalf("expected anonymous public abhijitmohanty workspace, got %#v", publicStatus.Profile)
+	}
+
+	anonymousPlaylist := httptest.NewRecorder()
+	router.ServeHTTP(anonymousPlaylist, httptest.NewRequest(http.MethodPost, "/api/source-connections/youtube", strings.NewReader(`{"playlistId":"PLONBOARD"}`)))
+	if anonymousPlaylist.Code != http.StatusUnauthorized {
+		t.Fatalf("expected anonymous playlist save 401, got %d: %s", anonymousPlaylist.Code, anonymousPlaylist.Body.String())
+	}
+
+	authWorkspace := httptest.NewRecorder()
+	authWorkspaceRequest := httptest.NewRequest(http.MethodGet, "/api/workspace", nil)
+	authWorkspaceRequest.Header.Set("Authorization", authHeader)
+	router.ServeHTTP(authWorkspace, authWorkspaceRequest)
+	if authWorkspace.Code != http.StatusOK {
+		t.Fatalf("expected authenticated workspace status 200, got %d: %s", authWorkspace.Code, authWorkspace.Body.String())
+	}
+	var authStatus knowledge.WorkspaceStatus
+	if err := json.Unmarshal(authWorkspace.Body.Bytes(), &authStatus); err != nil {
+		t.Fatalf("decode authenticated workspace: %v", err)
+	}
+	if authStatus.Profile.IsPublicOwner || !authStatus.Profile.Authenticated {
+		t.Fatalf("expected private authenticated workspace, got %#v", authStatus.Profile)
+	}
+	if authStatus.Onboarding.Complete || !containsSubstring(authStatus.Onboarding.Missing, "x") || !containsSubstring(authStatus.Onboarding.Missing, "youtube") {
+		t.Fatalf("expected authenticated onboarding to require X and YouTube, got %#v", authStatus.Onboarding)
+	}
+
+	savePlaylist := httptest.NewRecorder()
+	savePlaylistRequest := httptest.NewRequest(http.MethodPost, "/api/source-connections/youtube", strings.NewReader(`{"playlistUrl":"https://www.youtube.com/playlist?list=PLONBOARD"}`))
+	savePlaylistRequest.Header.Set("Authorization", authHeader)
+	router.ServeHTTP(savePlaylist, savePlaylistRequest)
+	if savePlaylist.Code != http.StatusOK {
+		t.Fatalf("expected playlist save status 200, got %d: %s", savePlaylist.Code, savePlaylist.Body.String())
+	}
+
+	authWorkspaceAfterPlaylist := httptest.NewRecorder()
+	authWorkspaceAfterPlaylistRequest := httptest.NewRequest(http.MethodGet, "/api/workspace", nil)
+	authWorkspaceAfterPlaylistRequest.Header.Set("Authorization", authHeader)
+	router.ServeHTTP(authWorkspaceAfterPlaylist, authWorkspaceAfterPlaylistRequest)
+	if authWorkspaceAfterPlaylist.Code != http.StatusOK {
+		t.Fatalf("expected workspace after playlist status 200, got %d: %s", authWorkspaceAfterPlaylist.Code, authWorkspaceAfterPlaylist.Body.String())
+	}
+	if err := json.Unmarshal(authWorkspaceAfterPlaylist.Body.Bytes(), &authStatus); err != nil {
+		t.Fatalf("decode workspace after playlist: %v", err)
+	}
+	if !authStatus.YouTube.Configured || authStatus.YouTube.PlaylistID != "PLONBOARD" {
+		t.Fatalf("expected saved YouTube playlist in workspace, got %#v", authStatus.YouTube)
+	}
+	if authStatus.Onboarding.Complete || !containsSubstring(authStatus.Onboarding.Missing, "x") || containsSubstring(authStatus.Onboarding.Missing, "youtube") {
+		t.Fatalf("expected only X to remain missing, got %#v", authStatus.Onboarding)
+	}
+
+	xStart := httptest.NewRecorder()
+	xStartRequest := httptest.NewRequest(http.MethodGet, "/api/auth/x/start", nil)
+	xStartRequest.Header.Set("Authorization", authHeader)
+	router.ServeHTTP(xStart, xStartRequest)
+	if xStart.Code != http.StatusOK {
+		t.Fatalf("expected X start status 200, got %d: %s", xStart.Code, xStart.Body.String())
+	}
+	var xStartPayload struct {
+		URL string `json:"url"`
+	}
+	if err := json.Unmarshal(xStart.Body.Bytes(), &xStartPayload); err != nil {
+		t.Fatalf("decode X start response: %v", err)
+	}
+	if !strings.Contains(xStartPayload.URL, "bookmark.read") || !strings.Contains(xStartPayload.URL, "offline.access") || strings.Contains(xStartPayload.URL, "access_type=") {
+		t.Fatalf("unexpected X authorize URL: %s", xStartPayload.URL)
 	}
 }
 
@@ -272,6 +495,38 @@ func testRouter(t *testing.T) http.Handler {
 	return newTestRouter(t, testConfig(t))
 }
 
+func authenticatedTestRouter(t *testing.T) (http.Handler, string) {
+	t.Helper()
+	return authenticatedTestRouterWithConfig(t, testConfig(t))
+}
+
+func authenticatedTestRouterWithConfig(t *testing.T, cfg config.Config) (http.Handler, string) {
+	t.Helper()
+	return authenticatedTestRouterWithConfigAndClient(t, cfg, http.DefaultClient)
+}
+
+func authenticatedTestRouterWithConfigAndClient(t *testing.T, cfg config.Config, client *http.Client) (http.Handler, string) {
+	t.Helper()
+	authServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/auth/v1/user" {
+			http.NotFound(w, r)
+			return
+		}
+		if r.Header.Get("apikey") != "publishable-test-key" || r.Header.Get("Authorization") != "Bearer valid-token" {
+			httputil.Error(w, http.StatusUnauthorized, "invalid token")
+			return
+		}
+		httputil.JSON(w, http.StatusOK, map[string]string{
+			"id":    "11111111-1111-1111-1111-111111111111",
+			"email": "reader@example.com",
+		})
+	}))
+	t.Cleanup(authServer.Close)
+	cfg.SupabaseURL = authServer.URL
+	cfg.SupabasePublishableKey = "publishable-test-key"
+	return newTestRouterWithClient(t, cfg, client), "Bearer valid-token"
+}
+
 func testConfig(t *testing.T) config.Config {
 	t.Helper()
 	clearProviderEnv(t)
@@ -290,8 +545,13 @@ func testConfig(t *testing.T) config.Config {
 
 func newTestRouter(t *testing.T, cfg config.Config) http.Handler {
 	t.Helper()
+	return newTestRouterWithClient(t, cfg, http.DefaultClient)
+}
+
+func newTestRouterWithClient(t *testing.T, cfg config.Config, client *http.Client) http.Handler {
+	t.Helper()
 	store := localfile.New(cfg.KnowledgeRunPath)
-	service := knowledge.NewService(cfg, store, http.DefaultClient)
+	service := knowledge.NewService(cfg, store, client)
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	return NewRouter(cfg, service, logger)
 }
@@ -375,6 +635,20 @@ func clearProviderEnvForBenchmark(b *testing.B) {
 		"ONECLI_GATEWAY",
 	} {
 		b.Setenv(key, "")
+	}
+}
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (fn roundTripFunc) RoundTrip(request *http.Request) (*http.Response, error) {
+	return fn(request)
+}
+
+func jsonResponse(body string) *http.Response {
+	return &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"application/json"}},
+		Body:       io.NopCloser(strings.NewReader(body)),
 	}
 }
 

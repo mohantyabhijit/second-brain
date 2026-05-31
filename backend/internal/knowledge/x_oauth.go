@@ -150,6 +150,19 @@ func (s *Service) CompleteXOAuth(ctx context.Context, state string, code string)
 	return &XOAuthResult{Profile: *profile, AccessExpiresAt: tokenSet.AccessExpiresAt}, nil
 }
 
+func (s *Service) HasXOAuthState(state string) bool {
+	state = strings.TrimSpace(state)
+	if state == "" {
+		return false
+	}
+	now := time.Now().UTC()
+	s.xOAuthMu.Lock()
+	defer s.xOAuthMu.Unlock()
+	s.pruneExpiredXOAuthStatesLocked(now)
+	_, ok := s.xOAuthStates[state]
+	return ok
+}
+
 func (s *Service) ImportXRefreshToken(ctx context.Context, refreshToken string) (*XOAuthResult, error) {
 	if err := s.validateXOAuthConfig(); err != nil {
 		return nil, err

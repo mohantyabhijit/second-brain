@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/abhijitmohanty/second-brain/backend/internal/config"
 	"github.com/abhijitmohanty/second-brain/backend/internal/knowledge"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -59,13 +60,19 @@ func (s *Store) reportRefreshProgress(done int, total int) {
 }
 
 func (s *Store) ReadLatest(ctx context.Context) (*knowledge.Result, error) {
+	return s.ReadLatestForOwner(ctx, config.DefaultOwnerID)
+}
+
+func (s *Store) ReadLatestForOwner(ctx context.Context, ownerID string) (*knowledge.Result, error) {
+	ownerID = defaultOwnerID(ownerID)
 	var raw []byte
 	err := s.pool.QueryRow(ctx, `
 		select payload
 		from knowledge_runs
+		where owner_id = $1
 		order by generated_at desc
 		limit 1
-	`).Scan(&raw)
+	`, ownerID).Scan(&raw)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
 	}
@@ -77,13 +84,18 @@ func (s *Store) ReadLatest(ctx context.Context) (*knowledge.Result, error) {
 	if err := json.Unmarshal(raw, &result); err != nil {
 		return nil, err
 	}
-	if digest, err := s.readLatestDigest(ctx); err == nil && digest != nil {
+	if digest, err := s.readLatestDigestForOwner(ctx, ownerID); err == nil && digest != nil {
 		result.Digest = digest
 	}
 	return &result, nil
 }
 
 func (s *Store) ReadLatestView(ctx context.Context, view string, limit int) (*knowledge.Result, error) {
+	return s.ReadLatestViewForOwner(ctx, config.DefaultOwnerID, view, limit)
+}
+
+func (s *Store) ReadLatestViewForOwner(ctx context.Context, ownerID string, view string, limit int) (*knowledge.Result, error) {
+	ownerID = defaultOwnerID(ownerID)
 	field, limit := latestViewField(view, limit)
 	var raw []byte
 	var err error
@@ -92,6 +104,7 @@ func (s *Store) ReadLatestView(ctx context.Context, view string, limit int) (*kn
 			with latest as (
 				select payload
 				from knowledge_runs
+				where owner_id = $1
 				order by generated_at desc
 				limit 1
 			)
@@ -102,12 +115,13 @@ func (s *Store) ReadLatestView(ctx context.Context, view string, limit int) (*kn
 				'blockers', coalesce(payload->'blockers', '[]'::jsonb)
 			)
 			from latest
-		`).Scan(&raw)
+		`, ownerID).Scan(&raw)
 	} else {
 		err = s.pool.QueryRow(ctx, fmt.Sprintf(`
 			with latest as (
 				select payload
 				from knowledge_runs
+				where owner_id = $1
 				order by generated_at desc
 				limit 1
 			)
@@ -127,7 +141,7 @@ func (s *Store) ReadLatestView(ctx context.Context, view string, limit int) (*kn
 				), '[]'::jsonb)
 			)
 			from latest
-		`, field), limit).Scan(&raw)
+		`, field), ownerID, limit).Scan(&raw)
 	}
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
@@ -164,6 +178,11 @@ func latestViewField(view string, limit int) (string, int) {
 }
 
 func (s *Store) readLatestDigest(ctx context.Context) (*knowledge.DigestIssue, error) {
+	return s.readLatestDigestForOwner(ctx, config.DefaultOwnerID)
+}
+
+func (s *Store) readLatestDigestForOwner(ctx context.Context, ownerID string) (*knowledge.DigestIssue, error) {
+	ownerID = defaultOwnerID(ownerID)
 	var digest knowledge.DigestIssue
 	err := s.pool.QueryRow(ctx, `
 		select
@@ -181,9 +200,10 @@ func (s *Store) readLatestDigest(ctx context.Context) (*knowledge.DigestIssue, e
 			coalesce(illustration_model, ''),
 			status
 		from digest_issues
+		where owner_id = $1
 		order by updated_at desc, created_at desc
 		limit 1
-	`).Scan(&digest.ID, &digest.OwnerID, &digest.DigestDate, &digest.ScheduledFor, &digest.IdempotencyKey, &digest.Subject, &digest.BodyMarkdown, &digest.IllustrationPrompt, &digest.IllustrationAlt, &digest.IllustrationMimeType, &digest.IllustrationAvailable, &digest.IllustrationModel, &digest.Status)
+	`, ownerID).Scan(&digest.ID, &digest.OwnerID, &digest.DigestDate, &digest.ScheduledFor, &digest.IdempotencyKey, &digest.Subject, &digest.BodyMarkdown, &digest.IllustrationPrompt, &digest.IllustrationAlt, &digest.IllustrationMimeType, &digest.IllustrationAvailable, &digest.IllustrationModel, &digest.Status)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
 	}
@@ -194,9 +214,14 @@ func (s *Store) readLatestDigest(ctx context.Context) (*knowledge.DigestIssue, e
 }
 
 func (s *Store) ReadDigests(ctx context.Context, limit int) ([]knowledge.DigestIssue, error) {
+	return s.ReadDigestsForOwner(ctx, config.DefaultOwnerID, limit)
+}
+
+func (s *Store) ReadDigestsForOwner(ctx context.Context, ownerID string, limit int) ([]knowledge.DigestIssue, error) {
 	if limit <= 0 || limit > 100 {
 		limit = 50
 	}
+	ownerID = defaultOwnerID(ownerID)
 	rows, err := s.pool.Query(ctx, `
 		select
 			id::text,
@@ -213,9 +238,10 @@ func (s *Store) ReadDigests(ctx context.Context, limit int) ([]knowledge.DigestI
 			coalesce(illustration_model, ''),
 			status
 		from digest_issues
+		where owner_id = $1
 		order by scheduled_for desc, updated_at desc, created_at desc
-		limit $1
-	`, limit)
+		limit $2
+	`, ownerID, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -431,7 +457,12 @@ func (s *Store) SaveLatest(ctx context.Context, result knowledge.Result) error {
 }
 
 func (s *Store) ReadCachedSyntheses(ctx context.Context, keys []knowledge.SynthesisCacheKey) (map[string]knowledge.SynthesisRecord, error) {
+	return s.ReadCachedSynthesesForOwner(ctx, config.DefaultOwnerID, keys)
+}
+
+func (s *Store) ReadCachedSynthesesForOwner(ctx context.Context, ownerID string, keys []knowledge.SynthesisCacheKey) (map[string]knowledge.SynthesisRecord, error) {
 	cached := map[string]knowledge.SynthesisRecord{}
+	ownerID = defaultOwnerID(ownerID)
 	for _, key := range keys {
 		var summaryRaw, insightsRaw, actionsRaw []byte
 		var generatedAt time.Time
@@ -445,9 +476,11 @@ func (s *Store) ReadCachedSyntheses(ctx context.Context, keys []knowledge.Synthe
 			  and ($3 = '' or coalesce(sc.capture_hash, ks.capture_hash) = $3)
 			  and ks.prompt_version = $4
 			  and ks.model = $5
+			  and ks.owner_id = $6
+			  and si.owner_id = $6
 			order by ks.generated_at desc
 			limit 1
-		`, string(key.SourceType), key.ExternalID, key.CaptureHash, key.PromptVersion, key.Model).Scan(&summaryRaw, &insightsRaw, &actionsRaw, &generatedAt)
+		`, string(key.SourceType), key.ExternalID, key.CaptureHash, key.PromptVersion, key.Model, ownerID).Scan(&summaryRaw, &insightsRaw, &actionsRaw, &generatedAt)
 		if errors.Is(err, pgx.ErrNoRows) {
 			continue
 		}
@@ -1425,8 +1458,173 @@ func (s *Store) SaveXTokens(ctx context.Context, tokens knowledge.EncryptedXToke
 	return err
 }
 
+func (s *Store) ResolveOwnerForAuthUser(ctx context.Context, authUserID string, email string, publicOwnerID string, publicOwnerEmail string) (string, error) {
+	authUserID = strings.TrimSpace(authUserID)
+	email = strings.TrimSpace(email)
+	publicOwnerID = defaultOwnerID(publicOwnerID)
+	publicOwnerEmail = strings.TrimSpace(strings.ToLower(publicOwnerEmail))
+	if authUserID == "" {
+		return "", fmt.Errorf("authenticated Supabase user id is required")
+	}
+	if publicOwnerEmail != "" && strings.EqualFold(email, publicOwnerEmail) {
+		var ownerID string
+		err := s.pool.QueryRow(ctx, `
+			update user_profiles
+			set auth_user_id = $1,
+			    email = nullif($2, ''),
+			    updated_at = now()
+			where id = $3
+			returning id::text
+		`, authUserID, email, publicOwnerID).Scan(&ownerID)
+		if err != nil {
+			return "", err
+		}
+		return ownerID, nil
+	}
+	var ownerID string
+	err := s.pool.QueryRow(ctx, `
+		select id::text
+		from user_profiles
+		where auth_user_id = $1
+		limit 1
+	`, authUserID).Scan(&ownerID)
+	if err == nil {
+		return ownerID, nil
+	}
+	if !errors.Is(err, pgx.ErrNoRows) {
+		return "", err
+	}
+	handle := "user-" + strings.ReplaceAll(authUserID, "-", "")
+	if len(handle) > 17 {
+		handle = handle[:17]
+	}
+	displayName := "Second Brain User"
+	if email != "" {
+		displayName = email
+	}
+	err = s.pool.QueryRow(ctx, `
+		insert into user_profiles (id, email, auth_user_id, handle, display_name)
+		values ($1, nullif($2, ''), $1, $3, $4)
+		on conflict (id) do update set
+			email = coalesce(nullif(excluded.email, ''), user_profiles.email),
+			auth_user_id = excluded.auth_user_id,
+			handle = coalesce(nullif(user_profiles.handle, ''), excluded.handle),
+			display_name = coalesce(nullif(user_profiles.display_name, ''), excluded.display_name),
+			updated_at = now()
+		returning id::text
+	`, authUserID, email, handle, displayName).Scan(&ownerID)
+	if err != nil {
+		return "", err
+	}
+	return ownerID, nil
+}
+
+func (s *Store) ReadSourceProviderConnections(ctx context.Context, ownerID string) ([]knowledge.SourceProviderConnection, error) {
+	ownerID = defaultOwnerID(ownerID)
+	rows, err := s.pool.Query(ctx, `
+		select
+			id::text,
+			provider,
+			provider_account_id,
+			scopes,
+			token_status,
+			last_validated_at,
+			updated_at
+		from source_connections
+		where owner_id = $1
+		order by provider, updated_at desc
+	`, ownerID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	connections := []knowledge.SourceProviderConnection{}
+	for rows.Next() {
+		var connection knowledge.SourceProviderConnection
+		if err := rows.Scan(
+			&connection.ID,
+			&connection.Provider,
+			&connection.ProviderAccountID,
+			&connection.Scopes,
+			&connection.TokenStatus,
+			&connection.LastValidatedAt,
+			&connection.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		connections = append(connections, connection)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return connections, nil
+}
+
+func (s *Store) SaveYouTubePlaylistConnection(ctx context.Context, ownerID string, playlistID string) (*knowledge.SourceProviderConnection, error) {
+	ownerID = defaultOwnerID(ownerID)
+	playlistID = strings.TrimSpace(playlistID)
+	if playlistID == "" {
+		return nil, fmt.Errorf("YouTube playlist id is required")
+	}
+	tx, err := s.beginWriteTx(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback(ctx)
+	if _, err := tx.Exec(ctx, `
+		delete from source_connections
+		where owner_id = $1
+		  and provider = 'youtube'
+		  and provider_account_id <> $2
+	`, ownerID, playlistID); err != nil {
+		return nil, err
+	}
+	var connection knowledge.SourceProviderConnection
+	err = tx.QueryRow(ctx, `
+		insert into source_connections (
+			owner_id,
+			provider,
+			provider_account_id,
+			scopes,
+			token_ref,
+			token_status,
+			last_validated_at,
+			updated_at
+		)
+		values ($1, 'youtube', $2, '{}'::text[], $3, 'active', now(), now())
+		on conflict (owner_id, provider, provider_account_id) do update set
+			token_ref = excluded.token_ref,
+			token_status = 'active',
+			last_validated_at = now(),
+			updated_at = now()
+		returning id::text, provider, provider_account_id, scopes, token_status, last_validated_at, updated_at
+	`, ownerID, playlistID, "public-playlist:"+playlistID).Scan(
+		&connection.ID,
+		&connection.Provider,
+		&connection.ProviderAccountID,
+		&connection.Scopes,
+		&connection.TokenStatus,
+		&connection.LastValidatedAt,
+		&connection.UpdatedAt,
+	)
+	if err != nil {
+		return nil, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return nil, err
+	}
+	return &connection, nil
+}
+
 func sourceKey(sourceType knowledge.SourceType, externalID string) string {
 	return string(sourceType) + ":" + externalID
+}
+
+func defaultOwnerID(ownerID string) string {
+	if strings.TrimSpace(ownerID) == "" {
+		return config.DefaultOwnerID
+	}
+	return strings.TrimSpace(ownerID)
 }
 
 func ownerIDFromSources(sources []knowledge.ProcessedSource) string {
@@ -1435,14 +1633,14 @@ func ownerIDFromSources(sources []knowledge.ProcessedSource) string {
 			return source.OwnerID
 		}
 	}
-	return "00000000-0000-0000-0000-000000000001"
+	return config.DefaultOwnerID
 }
 
 func ownerIDForSource(source knowledge.ProcessedSource) string {
 	if source.OwnerID != "" {
 		return source.OwnerID
 	}
-	return "00000000-0000-0000-0000-000000000001"
+	return config.DefaultOwnerID
 }
 
 func contentTypeForSource(source knowledge.ProcessedSource) string {

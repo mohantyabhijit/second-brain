@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 	"os"
 	"regexp"
 	"sort"
@@ -72,6 +73,28 @@ func (s *Service) fetchYouTubeInboxItems(ctx context.Context, playlistID string,
 	}
 
 	return s.fetchYouTubeTranscriptsForNewMaterials(ctx, items, transcriptVideoID, nil), nil
+}
+
+func normalizeYouTubePlaylistID(playlistID string, playlistURL string) string {
+	candidate := strings.TrimSpace(playlistID)
+	if candidate == "" {
+		candidate = strings.TrimSpace(playlistURL)
+	}
+	if candidate == "" {
+		return ""
+	}
+	if !strings.Contains(candidate, "://") {
+		return strings.TrimSpace(candidate)
+	}
+	parsed, err := url.Parse(candidate)
+	if err != nil {
+		return ""
+	}
+	list := strings.TrimSpace(parsed.Query().Get("list"))
+	if list != "" {
+		return list
+	}
+	return ""
 }
 
 func (s *Service) fetchYouTubeTranscriptsForNewMaterials(ctx context.Context, items []YouTubeItem, transcriptVideoID string, sourceMaterials map[string]SourceMaterialState) []YouTubeItem {

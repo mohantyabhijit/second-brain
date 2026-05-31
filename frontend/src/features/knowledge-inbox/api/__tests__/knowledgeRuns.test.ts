@@ -326,4 +326,61 @@ describe("knowledge run API client", () => {
 
     await expect(sendLatestDigest({ recipientEmail: "reader@example.com" })).rejects.toThrow("Local backend cannot reach Supabase Postgres.");
   });
+
+  it("attaches Supabase bearer tokens and skips public app-state etag reuse for signed-in users", async () => {
+    vi.stubEnv("NEXT_PUBLIC_API_BASE_URL", "https://api.example.test");
+    vi.stubGlobal("window", {});
+    vi.doMock("../../../../utils/supabase/client", () => ({
+      tryCreateClient: () => ({
+        auth: {
+          getSession: async () => ({ data: { session: { access_token: "session-token" } } })
+        }
+      })
+    }));
+    const payload = {
+      manifest: {
+        schemaVersion: "redis-read-model-v1",
+        runId: "run-1",
+        generatedAt: "2026-05-24T00:00:00.000Z",
+        publishedAt: "2026-05-24T00:00:01.000Z",
+        etag: "abc",
+        graphStatus: "derived",
+        digestStatus: "sent"
+      },
+      latest: null,
+      views: null,
+      digests: null,
+      refreshStatus: {
+        id: "idle",
+        status: "idle",
+        startedAt: "2026-05-24T00:00:00.000Z"
+      },
+      graph: null,
+      askContext: null
+    };
+    const fetchMock = vi.fn(async () => {
+      return new Response(JSON.stringify(payload), {
+        status: 200,
+        headers: { "Content-Type": "application/json", ETag: '"private-etag"' }
+      });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { readAppState } = await import("../knowledgeRuns");
+    await readAppState();
+    await readAppState();
+
+    expect(fetchMock).toHaveBeenNthCalledWith(1, "https://api.example.test/api/app-state", {
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: "Bearer session-token"
+      }
+    });
+    expect(fetchMock).toHaveBeenNthCalledWith(2, "https://api.example.test/api/app-state", {
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: "Bearer session-token"
+      }
+    });
+  });
 });

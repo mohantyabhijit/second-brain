@@ -13,6 +13,7 @@ type KnowledgeInboxContainerProps = {
 
 export default function KnowledgeInboxContainer({ initialPage = "insights" }: KnowledgeInboxContainerProps) {
   const {
+    auth,
     run,
     isLoading,
     isRunning,
@@ -22,7 +23,12 @@ export default function KnowledgeInboxContainer({ initialPage = "insights" }: Kn
     digestIssues,
     insightGraph,
     chatMessages,
+    workspace,
     error,
+    signIn,
+    signOut,
+    connectX,
+    savePlaylist,
     saveFeedback,
     generateDigest,
     sendDigest,
@@ -39,8 +45,14 @@ export default function KnowledgeInboxContainer({ initialPage = "insights" }: Kn
       refreshStatus={refreshStatus}
       digestIssues={digestIssues}
       insightGraph={insightGraph}
+      auth={auth}
+      workspace={workspace}
       model={model}
       chatMessages={chatMessages}
+      onSignIn={signIn}
+      onSignOut={signOut}
+      onConnectX={connectX}
+      onSavePlaylist={savePlaylist}
       onAsk={askBrain}
       onDigest={generateDigest}
       onSendDigest={sendDigest}

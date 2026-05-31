@@ -1,10 +1,11 @@
 "use client";
 
 import { startTransition, useCallback, useEffect, useState } from "react";
-import { askSecondBrain, generateDailyDigest, readAppState, readKnowledgeRefreshStatus, saveKnowledgeFeedback, sendLatestDigest, shareInsightToX, startKnowledgeInboxRefresh } from "../api/knowledgeRuns";
+import { askSecondBrain, clearAppStateCache, generateDailyDigest, readAppState, readKnowledgeRefreshStatus, readWorkspaceStatus, saveKnowledgeFeedback, saveYouTubePlaylist, sendLatestDigest, shareInsightToX, startKnowledgeInboxRefresh, startXAuth } from "../api/knowledgeRuns";
 import type { KnowledgeInboxPage } from "../KnowledgeInboxContainer";
-import type { AppState, AskSecondBrainResponse, DigestIssue, FeedbackSignal, InsightGraphResponse, KnowledgeRunResult, RefreshStatus } from "../contracts";
+import type { AppState, AskSecondBrainResponse, DigestIssue, FeedbackSignal, InsightGraphResponse, KnowledgeRunResult, RefreshStatus, WorkspaceStatus } from "../contracts";
 import { initialKnowledgeRun } from "./initialKnowledgeRun";
+import { useSupabaseAuth } from "./useSupabaseAuth";
 
 export type ChatMessage = {
   id: string;
@@ -15,6 +16,7 @@ export type ChatMessage = {
 };
 
 export function useKnowledgeInboxController(activePage: KnowledgeInboxPage = "insights") {
+  const auth = useSupabaseAuth();
   const [run, setRun] = useState<KnowledgeRunResult>(() => initialKnowledgeRun);
   const [isLoading, setIsLoading] = useState(true);
   const [isRunning, setIsRunning] = useState(false);
@@ -25,6 +27,7 @@ export function useKnowledgeInboxController(activePage: KnowledgeInboxPage = "in
   const [insightGraph, setInsightGraph] = useState<InsightGraphResponse | null>(null);
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [workspace, setWorkspace] = useState<WorkspaceStatus | null>(null);
 
   const applyAppState = useCallback((state: AppState) => {
     const latest = state.latest;
@@ -39,6 +42,14 @@ export function useKnowledgeInboxController(activePage: KnowledgeInboxPage = "in
 
   useEffect(() => {
     let ignore = false;
+    clearAppStateCache();
+    readWorkspaceStatus()
+      .then((status) => {
+        if (!ignore) {
+          setWorkspace(status);
+        }
+      })
+      .catch(() => undefined);
     readAppState(activePage, appStateLimitForPage(activePage))
       .then((state) => {
         if (!ignore) {
@@ -55,7 +66,7 @@ export function useKnowledgeInboxController(activePage: KnowledgeInboxPage = "in
     return () => {
       ignore = true;
     };
-  }, [activePage, applyAppState]);
+  }, [activePage, applyAppState, auth.authVersion]);
 
   useEffect(() => {
     let ignore = false;
@@ -85,7 +96,7 @@ export function useKnowledgeInboxController(activePage: KnowledgeInboxPage = "in
         window.clearTimeout(timer);
       }
     };
-  }, [activePage, applyAppState]);
+  }, [activePage, applyAppState, auth.authVersion]);
 
   const runValidation = useCallback(async () => {
     if (isRunning) {
@@ -207,7 +218,46 @@ export function useKnowledgeInboxController(activePage: KnowledgeInboxPage = "in
     }
   }, []);
 
+  const signIn = useCallback(
+    async (email: string) => {
+      setError(null);
+      await auth.signIn(email);
+    },
+    [auth]
+  );
+
+  const signOut = useCallback(async () => {
+    setError(null);
+    await auth.signOut();
+    setWorkspace(null);
+    setRun(initialKnowledgeRun);
+    clearAppStateCache();
+  }, [auth]);
+
+  const connectX = useCallback(async () => {
+    setError(null);
+    try {
+      const { url } = await startXAuth();
+      window.location.assign(url);
+    } catch (xError) {
+      setError(xError instanceof Error ? xError.message : "X authorization could not be started.");
+    }
+  }, []);
+
+  const savePlaylist = useCallback(async (playlist: string) => {
+    setError(null);
+    try {
+      await saveYouTubePlaylist({ playlistId: playlist, playlistUrl: playlist });
+      const status = await readWorkspaceStatus();
+      setWorkspace(status);
+    } catch (playlistError) {
+      setError(playlistError instanceof Error ? playlistError.message : "YouTube playlist could not be saved.");
+      throw playlistError;
+    }
+  }, []);
+
   return {
+    auth,
     run,
     isLoading,
     isRunning,
@@ -217,7 +267,12 @@ export function useKnowledgeInboxController(activePage: KnowledgeInboxPage = "in
     digestIssues,
     insightGraph,
     chatMessages,
+    workspace,
     error,
+    signIn,
+    signOut,
+    connectX,
+    savePlaylist,
     runValidation,
     saveFeedback,
     generateDigest,
