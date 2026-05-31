@@ -5,12 +5,43 @@ import (
 	"encoding/base64"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/abhijitmohanty/second-brain/backend/internal/config"
 )
+
+func TestBeginXOAuthUsesDocumentedXAuthorizeParameters(t *testing.T) {
+	key := base64.StdEncoding.EncodeToString([]byte("0123456789abcdef0123456789abcdef"))
+	service := NewService(config.Config{
+		XClientID:           "client-id",
+		XClientSecret:       "client-secret",
+		XRedirectURI:        "https://example.com/api/auth/x/callback",
+		XOAuthScopes:        []string{"tweet.read", "users.read", "bookmark.read", "offline.access"},
+		XTokenEncryptionKey: key,
+	}, &xTokenTestStore{}, http.DefaultClient)
+
+	rawURL, err := service.BeginXOAuth(context.Background())
+	if err != nil {
+		t.Fatalf("begin oauth: %v", err)
+	}
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		t.Fatalf("parse authorize url: %v", err)
+	}
+	query := parsed.Query()
+	if query.Get("access_type") != "" {
+		t.Fatalf("X authorize URL should not include undocumented access_type, got %q", query.Get("access_type"))
+	}
+	if query.Get("scope") != "tweet.read users.read bookmark.read offline.access" {
+		t.Fatalf("unexpected scope: %q", query.Get("scope"))
+	}
+	if query.Get("code_challenge_method") != "S256" {
+		t.Fatalf("expected S256 PKCE challenge, got %q", query.Get("code_challenge_method"))
+	}
+}
 
 func TestGetValidXAccessTokenUsesStoredTokenBeforeRefreshWindow(t *testing.T) {
 	key := base64.StdEncoding.EncodeToString([]byte("0123456789abcdef0123456789abcdef"))

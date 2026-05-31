@@ -84,7 +84,6 @@ func (s *Service) BeginXOAuth(ctx context.Context) (string, error) {
 	config := s.xOAuthConfig()
 	return config.AuthCodeURL(
 		state,
-		oauth2.AccessTypeOffline,
 		oauth2.S256ChallengeOption(verifier),
 	), nil
 }
