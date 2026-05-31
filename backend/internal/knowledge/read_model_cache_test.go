@@ -96,6 +96,18 @@ func TestCompactAppStateForViewKeepsOnlyRequestedSurface(t *testing.T) {
 	}
 }
 
+func TestNormalizeAppStateViewLimitAllowsLargeGraphViews(t *testing.T) {
+	if got := NormalizeAppStateViewLimit("insights", 180); got != 50 {
+		t.Fatalf("expected non-graph page limit capped at 50, got %d", got)
+	}
+	if got := NormalizeAppStateViewLimit("knowledge-graph", 180); got != 180 {
+		t.Fatalf("expected graph page limit to preserve 180, got %d", got)
+	}
+	if got := NormalizeAppStateViewLimit("knowledge-graph", 999); got != MaxInsightGraphLimit {
+		t.Fatalf("expected graph page limit capped at %d, got %d", MaxInsightGraphLimit, got)
+	}
+}
+
 func TestBuildAppStateRunIDChangesWhenDigestChanges(t *testing.T) {
 	now := time.Date(2026, 5, 31, 5, 0, 0, 0, time.UTC)
 	latest := &Result{

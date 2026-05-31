@@ -80,7 +80,7 @@ func CompactAppStateForView(state *AppState, view string, limit int) *AppState {
 	if normalizedView == "" || normalizedView == "full" {
 		return state
 	}
-	limit = NormalizePageStateLimit(limit)
+	limit = NormalizeAppStateViewLimit(normalizedView, limit)
 	compact := *state
 	compact.Views = AppStateViews{
 		Insights:             []Insight{},
@@ -142,6 +142,19 @@ func NormalizePageStateLimit(limit int) int {
 		return 50
 	}
 	return limit
+}
+
+func NormalizeAppStateViewLimit(view string, limit int) int {
+	if strings.TrimSpace(view) == "knowledge-graph" {
+		if limit <= 0 {
+			return DefaultInsightGraphLimit
+		}
+		if limit > MaxInsightGraphLimit {
+			return MaxInsightGraphLimit
+		}
+		return limit
+	}
+	return NormalizePageStateLimit(limit)
 }
 
 func NormalizeResultForReadModel(result *Result) {

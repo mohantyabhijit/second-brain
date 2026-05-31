@@ -172,7 +172,7 @@ func (s *Service) ReadAppStateView(ctx context.Context, view string, limit int) 
 	if view == "" || view == "full" {
 		return s.ReadAppState(ctx)
 	}
-	limit = NormalizePageStateLimit(limit)
+	limit = NormalizeAppStateViewLimit(view, limit)
 	if viewCache, ok := s.cache.(readModelViewCache); ok {
 		state, err := viewCache.ReadAppViewState(ctx, s.cfg.OwnerID, view, limit)
 		if err == nil {
@@ -261,7 +261,7 @@ func (s *Service) memoizeAppStateView(view string, limit int, state *AppState) {
 }
 
 func appStateViewMemoKey(view string, limit int) string {
-	return strings.TrimSpace(view) + ":" + fmt.Sprint(NormalizePageStateLimit(limit))
+	return strings.TrimSpace(view) + ":" + fmt.Sprint(NormalizeAppStateViewLimit(view, limit))
 }
 
 func (s *Service) readLatestViewCanonical(ctx context.Context, view string, limit int) (*Result, error) {
