@@ -31,6 +31,7 @@
     "x:token:status": "bash scripts/show-x-token-status.sh",
     "email:save-secrets": "bash scripts/save-digest-email-secrets.sh",
     "redis:save-secret": "bash scripts/save-redis-secrets.sh",
+    "perf:measure": "node scripts/measure-production-performance.mjs",
     "backend:test": "cd backend && GOCACHE=$PWD/../.cache/go-build go test ./...",
     "test": "npm run frontend:test && npm run backend:test",
     "ci": "npm run typecheck && npm run lint && npm run test && npm run build",

@@ -162,8 +162,15 @@ cat > /tmp/second-brain-nginx-block <<'NGINX'
         proxy_send_timeout 180s;
     }
 
+    location /second-brain/_next/static/ {
+        alias /srv/second-brain/frontend/current/_next/static/;
+        add_header Cache-Control "public, max-age=31536000, immutable" always;
+        try_files $uri =404;
+    }
+
     location /second-brain/ {
         alias /srv/second-brain/frontend/current/;
+        add_header Cache-Control "public, max-age=60, s-maxage=300, stale-while-revalidate=1800" always;
         try_files $uri $uri/ =404;
     }
     # END second-brain

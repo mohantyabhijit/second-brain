@@ -47,7 +47,14 @@ func (s *Service) addDigestIllustration(ctx context.Context, digest *DigestIssue
 }
 
 func (s *Service) annotateDigestIllustration(digest *DigestIssue) {
-	if digest == nil || strings.TrimSpace(digest.ID) == "" || strings.TrimSpace(digest.IllustrationBase64) == "" {
+	if digest == nil || strings.TrimSpace(digest.ID) == "" {
+		return
+	}
+	hasIllustration := digest.IllustrationAvailable ||
+		strings.TrimSpace(digest.IllustrationBase64) != "" ||
+		strings.TrimSpace(digest.IllustrationMimeType) != "" ||
+		strings.TrimSpace(digest.IllustrationAlt) != ""
+	if !hasIllustration {
 		return
 	}
 	digest.IllustrationURL = s.digestIllustrationURL(digest.ID)

@@ -83,6 +83,86 @@ func (s *Store) ReadLatest(ctx context.Context) (*knowledge.Result, error) {
 	return &result, nil
 }
 
+func (s *Store) ReadLatestView(ctx context.Context, view string, limit int) (*knowledge.Result, error) {
+	field, limit := latestViewField(view, limit)
+	var raw []byte
+	var err error
+	if field == "" {
+		err = s.pool.QueryRow(ctx, `
+			with latest as (
+				select payload
+				from knowledge_runs
+				order by generated_at desc
+				limit 1
+			)
+			select jsonb_build_object(
+				'generatedAt', payload->'generatedAt',
+				'sourceStatus', payload->'sourceStatus',
+				'validation', coalesce(payload->'validation', '[]'::jsonb),
+				'blockers', coalesce(payload->'blockers', '[]'::jsonb)
+			)
+			from latest
+		`).Scan(&raw)
+	} else {
+		err = s.pool.QueryRow(ctx, fmt.Sprintf(`
+			with latest as (
+				select payload
+				from knowledge_runs
+				order by generated_at desc
+				limit 1
+			)
+			select jsonb_build_object(
+				'generatedAt', payload->'generatedAt',
+				'sourceStatus', payload->'sourceStatus',
+				'validation', coalesce(payload->'validation', '[]'::jsonb),
+				'blockers', coalesce(payload->'blockers', '[]'::jsonb),
+				'%[1]s', coalesce((
+					select jsonb_agg(item.value order by item.ordinality)
+					from (
+						select value, ordinality
+						from jsonb_array_elements(coalesce(payload->'%[1]s', '[]'::jsonb)) with ordinality as item(value, ordinality)
+						order by ordinality
+						limit $1
+					) item
+				), '[]'::jsonb)
+			)
+			from latest
+		`, field), limit).Scan(&raw)
+	}
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	var result knowledge.Result
+	if err := json.Unmarshal(raw, &result); err != nil {
+		return nil, err
+	}
+	return &result, nil
+}
+
+func latestViewField(view string, limit int) (string, int) {
+	if limit <= 0 || limit > 50 {
+		limit = 25
+	}
+	switch strings.TrimSpace(view) {
+	case "insights":
+		return "insights", limit
+	case "daily-newsletter":
+		if limit > 8 {
+			limit = 8
+		}
+		return "summaries", limit
+	case "original-x-posts", "original-x-bookmarks":
+		return "xBookmarks", limit
+	case "original-youtube-posts", "original-youtube-videos":
+		return "youtubeItems", limit
+	default:
+		return "", limit
+	}
+}
+
 func (s *Store) readLatestDigest(ctx context.Context) (*knowledge.DigestIssue, error) {
 	var digest knowledge.DigestIssue
 	err := s.pool.QueryRow(ctx, `
@@ -97,24 +177,19 @@ func (s *Store) readLatestDigest(ctx context.Context) (*knowledge.DigestIssue, e
 			coalesce(illustration_prompt, ''),
 			coalesce(illustration_alt, ''),
 			coalesce(illustration_mime_type, ''),
-			coalesce(illustration_base64, ''),
+			coalesce(illustration_base64, '') <> '',
 			coalesce(illustration_model, ''),
 			status
 		from digest_issues
 		order by updated_at desc, created_at desc
 		limit 1
-	`).Scan(&digest.ID, &digest.OwnerID, &digest.DigestDate, &digest.ScheduledFor, &digest.IdempotencyKey, &digest.Subject, &digest.BodyMarkdown, &digest.IllustrationPrompt, &digest.IllustrationAlt, &digest.IllustrationMimeType, &digest.IllustrationBase64, &digest.IllustrationModel, &digest.Status)
+	`).Scan(&digest.ID, &digest.OwnerID, &digest.DigestDate, &digest.ScheduledFor, &digest.IdempotencyKey, &digest.Subject, &digest.BodyMarkdown, &digest.IllustrationPrompt, &digest.IllustrationAlt, &digest.IllustrationMimeType, &digest.IllustrationAvailable, &digest.IllustrationModel, &digest.Status)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
 	}
 	if err != nil {
 		return nil, err
 	}
-	refs, err := s.readDigestSourceRefs(ctx, digest.ID)
-	if err != nil {
-		return nil, err
-	}
-	digest.SourceRefs = refs
 	return &digest, nil
 }
 
@@ -134,7 +209,7 @@ func (s *Store) ReadDigests(ctx context.Context, limit int) ([]knowledge.DigestI
 			coalesce(illustration_prompt, ''),
 			coalesce(illustration_alt, ''),
 			coalesce(illustration_mime_type, ''),
-			coalesce(illustration_base64, ''),
+			coalesce(illustration_base64, '') <> '',
 			coalesce(illustration_model, ''),
 			status
 		from digest_issues
@@ -149,14 +224,9 @@ func (s *Store) ReadDigests(ctx context.Context, limit int) ([]knowledge.DigestI
 	digests := []knowledge.DigestIssue{}
 	for rows.Next() {
 		var digest knowledge.DigestIssue
-		if err := rows.Scan(&digest.ID, &digest.OwnerID, &digest.DigestDate, &digest.ScheduledFor, &digest.IdempotencyKey, &digest.Subject, &digest.BodyMarkdown, &digest.IllustrationPrompt, &digest.IllustrationAlt, &digest.IllustrationMimeType, &digest.IllustrationBase64, &digest.IllustrationModel, &digest.Status); err != nil {
+		if err := rows.Scan(&digest.ID, &digest.OwnerID, &digest.DigestDate, &digest.ScheduledFor, &digest.IdempotencyKey, &digest.Subject, &digest.BodyMarkdown, &digest.IllustrationPrompt, &digest.IllustrationAlt, &digest.IllustrationMimeType, &digest.IllustrationAvailable, &digest.IllustrationModel, &digest.Status); err != nil {
 			return nil, err
 		}
-		refs, err := s.readDigestSourceRefs(ctx, digest.ID)
-		if err != nil {
-			return nil, err
-		}
-		digest.SourceRefs = refs
 		digests = append(digests, digest)
 	}
 	if err := rows.Err(); err != nil {
@@ -1167,7 +1237,7 @@ func saveDigestTx(ctx context.Context, tx pgx.Tx, ownerID string, runID string, 
 			illustration_prompt = excluded.illustration_prompt,
 			illustration_alt = excluded.illustration_alt,
 			illustration_mime_type = excluded.illustration_mime_type,
-			illustration_base64 = excluded.illustration_base64,
+			illustration_base64 = coalesce(nullif(excluded.illustration_base64, ''), digest_issues.illustration_base64),
 			illustration_model = excluded.illustration_model,
 			status = excluded.status,
 			generated_from_run_id = excluded.generated_from_run_id,

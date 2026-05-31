@@ -125,6 +125,13 @@ func TestRouterServesAppStateFallback(t *testing.T) {
 	if got := appState.Header().Get("X-Second-Brain-Cache"); got != "fallback" {
 		t.Fatalf("expected app-state cache fallback header, got %q", got)
 	}
+	if got := appState.Header().Get("Cache-Control"); !strings.Contains(got, "s-maxage=300") {
+		t.Fatalf("expected app-state CDN cache header, got %q", got)
+	}
+	etag := appState.Header().Get("ETag")
+	if etag == "" {
+		t.Fatal("expected app-state ETag")
+	}
 	var payload knowledge.AppState
 	if err := json.Unmarshal(appState.Body.Bytes(), &payload); err != nil {
 		t.Fatalf("decode app-state response: %v", err)
@@ -137,6 +144,53 @@ func TestRouterServesAppStateFallback(t *testing.T) {
 	}
 	if payload.Digests == nil {
 		t.Fatal("expected normalized digest list")
+	}
+
+	if !strings.HasPrefix(etag, `"`) || !strings.HasSuffix(etag, `"`) {
+		t.Fatalf("expected quoted app-state ETag, got %q", etag)
+	}
+}
+
+func TestMemoryProfilingRoutesRequireOptInAndToken(t *testing.T) {
+	router := testRouter(t)
+
+	disabled := httptest.NewRecorder()
+	router.ServeHTTP(disabled, httptest.NewRequest(http.MethodGet, "/api/debug/memory", nil))
+	if disabled.Code != http.StatusNotFound {
+		t.Fatalf("expected disabled memory profiling status 404, got %d", disabled.Code)
+	}
+
+	cfg := testConfig(t)
+	cfg.Env = "production"
+	cfg.MemoryProfilingEnabled = true
+	cfg.MemoryProfilingToken = "profile-secret"
+	router = newTestRouter(t, cfg)
+
+	unauthorized := httptest.NewRecorder()
+	router.ServeHTTP(unauthorized, httptest.NewRequest(http.MethodGet, "/api/debug/memory", nil))
+	if unauthorized.Code != http.StatusUnauthorized {
+		t.Fatalf("expected missing profile token status 401, got %d", unauthorized.Code)
+	}
+
+	authorizedRequest := httptest.NewRequest(http.MethodGet, "/api/debug/memory?gc=1", nil)
+	authorizedRequest.Header.Set("Authorization", "Bearer profile-secret")
+	authorized := httptest.NewRecorder()
+	router.ServeHTTP(authorized, authorizedRequest)
+	if authorized.Code != http.StatusOK {
+		t.Fatalf("expected memory profile status 200, got %d: %s", authorized.Code, authorized.Body.String())
+	}
+	var payload memoryStatsResponse
+	if err := json.Unmarshal(authorized.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("decode memory profile response: %v", err)
+	}
+	if !payload.GCTriggered {
+		t.Fatal("expected gcTriggered when gc=1")
+	}
+	if payload.Goroutines == 0 {
+		t.Fatal("expected goroutine count")
+	}
+	if payload.HeapProfilePath == "" {
+		t.Fatal("expected heap profile path")
 	}
 }
 
@@ -166,9 +220,14 @@ func waitForLatestRun(t *testing.T, router http.Handler) knowledge.Result {
 
 func testRouter(t *testing.T) http.Handler {
 	t.Helper()
+	return newTestRouter(t, testConfig(t))
+}
+
+func testConfig(t *testing.T) config.Config {
+	t.Helper()
 	clearProviderEnv(t)
 
-	cfg := config.Config{
+	return config.Config{
 		Env:                    "test",
 		AllowedOrigins:         []string{"http://localhost:3000"},
 		OneCLIBin:              filepath.Join(t.TempDir(), "missing-onecli"),
@@ -178,6 +237,10 @@ func testRouter(t *testing.T) http.Handler {
 		OpenAITranslationModel: "gpt-4o-mini",
 		OpenAISynthesisModel:   "gpt-4o-mini",
 	}
+}
+
+func newTestRouter(t *testing.T, cfg config.Config) http.Handler {
+	t.Helper()
 	store := localfile.New(cfg.KnowledgeRunPath)
 	service := knowledge.NewService(cfg, store, http.DefaultClient)
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))

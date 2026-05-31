@@ -83,6 +83,98 @@ func (c *Cache) ReadAppState(ctx context.Context, ownerID string) (*knowledge.Ap
 	return &state, nil
 }
 
+func (c *Cache) ReadAppViewState(ctx context.Context, ownerID string, view string, limit int) (*knowledge.AppState, error) {
+	manifest, err := c.readManifest(ctx, ownerID)
+	if err != nil {
+		return nil, err
+	}
+	limit = knowledge.NormalizePageStateLimit(limit)
+	state := knowledge.AppState{
+		Manifest: manifest,
+		Latest: &knowledge.Result{
+			GeneratedAt:     manifest.GeneratedAt,
+			XBookmarks:      []knowledge.XBookmark{},
+			YouTubeItems:    []knowledge.YouTubeItem{},
+			Summaries:       []knowledge.Summary{},
+			Insights:        []knowledge.Insight{},
+			ActionItems:     []knowledge.ActionItem{},
+			Processing:      []knowledge.ProcessingEvent{},
+			Themes:          []knowledge.ThemeCluster{},
+			InsightClusters: []knowledge.InsightCluster{},
+			Connections:     []knowledge.SourceConnection{},
+			Validation:      []knowledge.ValidationItem{},
+			Blockers:        []string{},
+		},
+		Views: knowledge.AppStateViews{
+			Insights:             []knowledge.Insight{},
+			OriginalXBookmarks:   []knowledge.XBookmark{},
+			OriginalYouTubePosts: []knowledge.YouTubeItem{},
+		},
+		Digests: []knowledge.DigestIssue{},
+		RefreshStatus: knowledge.RefreshStatus{
+			ID:        "idle",
+			Status:    "idle",
+			StartedAt: manifest.PublishedAt,
+			Phase:     "idle",
+			Message:   "No refresh is currently running.",
+		},
+		Graph: knowledge.AppStateGraph{
+			Status:          manifest.GraphStatus,
+			Themes:          []knowledge.ThemeCluster{},
+			InsightClusters: []knowledge.InsightCluster{},
+			Connections:     []knowledge.SourceConnection{},
+		},
+		AskContext: knowledge.AppStateAskContext{
+			RunID:     manifest.RunID,
+			Sources:   []knowledge.AskSecondBrainSource{},
+			UpdatedAt: manifest.PublishedAt,
+		},
+	}
+	if status, err := c.ReadRefreshStatus(ctx, ownerID); err == nil && status != nil {
+		state.RefreshStatus = *status
+	}
+	c.applyRunMeta(ctx, ownerID, manifest.RunID, state.Latest)
+
+	switch strings.TrimSpace(view) {
+	case "insights":
+		var insights []knowledge.Insight
+		if err := c.readRunJSON(ctx, ownerID, manifest.RunID, "insights", &insights); err != nil {
+			return nil, err
+		}
+		state.Latest.Insights = firstN(insights, limit)
+	case "daily-newsletter":
+		digests, err := c.ReadDigests(ctx, ownerID, limit)
+		if err != nil {
+			return nil, err
+		}
+		state.Digests = compactDigestIssues(digests)
+		if len(state.Digests) > 0 {
+			digest := state.Digests[0]
+			state.Latest.Digest = &digest
+		}
+	case "original-x-posts", "original-x-bookmarks":
+		var bookmarks []knowledge.XBookmark
+		if err := c.readRunJSON(ctx, ownerID, manifest.RunID, "original-x-bookmarks", &bookmarks); err != nil {
+			return nil, err
+		}
+		state.Latest.XBookmarks = firstN(bookmarks, limit)
+	case "original-youtube-posts", "original-youtube-videos":
+		var videos []knowledge.YouTubeItem
+		if err := c.readRunJSON(ctx, ownerID, manifest.RunID, "original-youtube-posts", &videos); err != nil {
+			return nil, err
+		}
+		state.Latest.YouTubeItems = firstN(videos, limit)
+	case "knowledge-graph":
+		var graph knowledge.AppStateGraph
+		if err := c.readRunJSON(ctx, ownerID, manifest.RunID, "graph", &graph); err == nil {
+			state.Graph = graph
+		}
+	default:
+		return nil, knowledge.ErrReadModelCacheMiss
+	}
+	return &state, nil
+}
+
 func (c *Cache) ReadLatest(ctx context.Context, ownerID string) (*knowledge.Result, error) {
 	manifest, err := c.readManifest(ctx, ownerID)
 	if err != nil {
@@ -101,6 +193,61 @@ func (c *Cache) ReadLatest(ctx context.Context, ownerID string) (*knowledge.Resu
 	}
 	knowledge.NormalizeResultForReadModel(&result)
 	return &result, nil
+}
+
+func (c *Cache) readRunJSON(ctx context.Context, ownerID string, runID string, view string, target any) error {
+	var key string
+	switch view {
+	case "graph":
+		key = graphKey(ownerID, runID)
+	case "meta":
+		key = runMetaKey(ownerID, runID)
+	default:
+		key = viewKey(ownerID, runID, view)
+	}
+	raw, err := c.client.Get(ctx, key).Bytes()
+	if err != nil {
+		return redisError(err)
+	}
+	return json.Unmarshal(raw, target)
+}
+
+func (c *Cache) applyRunMeta(ctx context.Context, ownerID string, runID string, latest *knowledge.Result) {
+	if latest == nil {
+		return
+	}
+	var meta knowledge.Result
+	if err := c.readRunJSON(ctx, ownerID, runID, "meta", &meta); err != nil {
+		return
+	}
+	latest.SourceStatus = meta.SourceStatus
+	latest.Validation = meta.Validation
+	latest.Blockers = meta.Blockers
+}
+
+func firstN[T any](items []T, limit int) []T {
+	if items == nil {
+		return []T{}
+	}
+	if len(items) > limit {
+		return items[:limit]
+	}
+	return items
+}
+
+func compactDigestIssues(digests []knowledge.DigestIssue) []knowledge.DigestIssue {
+	if digests == nil {
+		return []knowledge.DigestIssue{}
+	}
+	compact := make([]knowledge.DigestIssue, 0, len(digests))
+	for _, digest := range digests {
+		digest.Deliveries = nil
+		digest.SourceRefs = nil
+		digest.IllustrationPrompt = ""
+		digest.IllustrationModel = ""
+		compact = append(compact, digest)
+	}
+	return compact
 }
 
 func (c *Cache) ReadDigests(ctx context.Context, ownerID string, limit int) ([]knowledge.DigestIssue, error) {
@@ -221,6 +368,17 @@ func (c *Cache) PublishAppState(ctx context.Context, ownerID string, state knowl
 	if err != nil {
 		return err
 	}
+	latestMeta := knowledge.Result{}
+	if state.Latest != nil {
+		latestMeta.GeneratedAt = state.Latest.GeneratedAt
+		latestMeta.SourceStatus = state.Latest.SourceStatus
+		latestMeta.Validation = state.Latest.Validation
+		latestMeta.Blockers = state.Latest.Blockers
+	}
+	latestMetaRaw, err := json.Marshal(latestMeta)
+	if err != nil {
+		return err
+	}
 	appStateRaw, err := json.Marshal(state)
 	if err != nil {
 		return err
@@ -256,6 +414,7 @@ func (c *Cache) PublishAppState(ctx context.Context, ownerID string, state knowl
 
 	pipe := c.client.Pipeline()
 	pipe.Set(ctx, latestRunKey(ownerID, runID), latestRaw, c.ttl)
+	pipe.Set(ctx, runMetaKey(ownerID, runID), latestMetaRaw, c.ttl)
 	pipe.Set(ctx, appStateKey(ownerID, runID), appStateRaw, c.ttl)
 	pipe.Set(ctx, digestsKey(ownerID, runID), digestsRaw, c.ttl)
 	pipe.Set(ctx, graphKey(ownerID, runID), graphRaw, c.ttl)
@@ -338,6 +497,10 @@ func appStateKey(ownerID string, runID string) string {
 
 func latestRunKey(ownerID string, runID string) string {
 	return key(ownerID, "run:"+runID+":latest")
+}
+
+func runMetaKey(ownerID string, runID string) string {
+	return key(ownerID, "run:"+runID+":meta")
 }
 
 func viewKey(ownerID string, runID string, view string) string {

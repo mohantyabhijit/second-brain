@@ -118,6 +118,44 @@ describe("knowledge run API client", () => {
     expect(state.askContext.sources).toEqual([]);
   });
 
+  it("requests view-scoped app state for page boot", async () => {
+    vi.stubEnv("NEXT_PUBLIC_API_BASE_URL", "https://api.example.test");
+    const fetchMock = vi.fn(async () => {
+      return new Response(
+        JSON.stringify({
+          manifest: {
+            schemaVersion: "redis-read-model-v1",
+            runId: "run-1",
+            generatedAt: "2026-05-24T00:00:00.000Z",
+            publishedAt: "2026-05-24T00:00:01.000Z",
+            etag: "abc",
+            graphStatus: "derived",
+            digestStatus: "sent"
+          },
+          latest: null,
+          views: null,
+          digests: null,
+          refreshStatus: {
+            id: "idle",
+            status: "idle",
+            startedAt: "2026-05-24T00:00:00.000Z"
+          },
+          graph: null,
+          askContext: null
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } }
+      );
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { readAppState } = await import("../knowledgeRuns");
+    await readAppState("daily-newsletter", 10);
+
+    expect(fetchMock).toHaveBeenCalledWith("https://api.example.test/api/app-state?view=daily-newsletter&limit=10", {
+      headers: { "Content-Type": "application/json" }
+    });
+  });
+
   it("reads persisted newsletter issues", async () => {
     vi.stubEnv("NEXT_PUBLIC_API_BASE_URL", "https://api.example.test");
     const fetchMock = vi.fn(async () => {

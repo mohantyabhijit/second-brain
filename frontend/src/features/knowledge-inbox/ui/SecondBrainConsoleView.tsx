@@ -218,6 +218,7 @@ export function SecondBrainConsoleView({ activePage, chatMessages, digestIssues,
                       itemKey={itemKey}
                       onCopy={() => toggleCopiedItem(itemKey, shortText(item.quote ?? item.body, quotePreviewLength), item)}
                       onOpen={() => setOpenSummaryItem(item)}
+                      prioritizeImage={activePage === "daily-newsletter" && index === 0}
                     />
                   );
                 })
@@ -294,7 +295,8 @@ function FeedCard({
   item,
   itemKey,
   onCopy,
-  onOpen
+  onOpen,
+  prioritizeImage
 }: {
   copied: boolean;
   index: number;
@@ -302,6 +304,7 @@ function FeedCard({
   itemKey: string;
   onCopy: () => void;
   onOpen: () => void;
+  prioritizeImage: boolean;
 }) {
   const quote = item.quote ? shortText(item.quote, quotePreviewLength) : null;
   const meta = feedMeta(item);
@@ -350,8 +353,19 @@ function FeedCard({
       </div>
 
       <div className="quote-column">
-        {/* eslint-disable-next-line @next/next/no-img-element -- Digest images are served by the Go API for static-export newsletters. */}
-        {item.imageUrl ? <img alt={item.imageAlt ?? ""} className="newsletter-thumb" src={item.imageUrl} /> : null}
+        {item.imageUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element -- Digest images are served by the Go API for static-export newsletters.
+          <img
+            alt={item.imageAlt ?? ""}
+            className="newsletter-thumb"
+            decoding="async"
+            fetchPriority={prioritizeImage ? "high" : "auto"}
+            height={236}
+            loading={prioritizeImage ? "eager" : "lazy"}
+            src={item.imageUrl}
+            width={236}
+          />
+        ) : null}
         <div className="feed-actions" aria-label={`Actions for item ${index + 1}`}>
           {item.sourceUrl ? (
             <a href={item.sourceUrl} onClick={(event) => event.stopPropagation()} rel="noreferrer" target="_blank">

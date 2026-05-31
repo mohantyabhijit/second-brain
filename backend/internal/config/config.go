@@ -58,6 +58,8 @@ type Config struct {
 	RedisCacheTTL                string
 	RedisRefreshStatusTTL        string
 	RedisAskAnswerTTL            string
+	MemoryProfilingEnabled       bool
+	MemoryProfilingToken         string
 	Neo4jURI                     string
 	Neo4jUsername                string
 	Neo4jPassword                string
@@ -117,6 +119,8 @@ func Load() Config {
 		RedisCacheTTL:                value("REDIS_CACHE_TTL", "720h"),
 		RedisRefreshStatusTTL:        value("REDIS_REFRESH_STATUS_TTL", "24h"),
 		RedisAskAnswerTTL:            value("REDIS_ASK_ANSWER_TTL", "1h"),
+		MemoryProfilingEnabled:       value("MEMORY_PROFILING_ENABLED", "false") == "true",
+		MemoryProfilingToken:         os.Getenv("MEMORY_PROFILE_TOKEN"),
 		Neo4jURI:                     os.Getenv("NEO4J_URI"),
 		Neo4jUsername:                os.Getenv("NEO4J_USERNAME"),
 		Neo4jPassword:                os.Getenv("NEO4J_PASSWORD"),

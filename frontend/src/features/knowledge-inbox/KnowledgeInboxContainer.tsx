@@ -26,7 +26,7 @@ export default function KnowledgeInboxContainer({ initialPage = "insights" }: Kn
     generateDigest,
     sendDigest,
     askBrain
-  } = useKnowledgeInboxController();
+  } = useKnowledgeInboxController(initialPage);
   const model = useMemo(() => toKnowledgeInboxViewModel(run, isRunning, error), [run, isRunning, error]);
 
   return (

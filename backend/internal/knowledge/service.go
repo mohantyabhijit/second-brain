@@ -31,18 +31,39 @@ type digestSourceReader interface {
 	ReadNewDigestSources(ctx context.Context, ownerID string, promptVersion string, model string) ([]DigestSourceRef, error)
 }
 
+type readModelViewCache interface {
+	ReadAppViewState(ctx context.Context, ownerID string, view string, limit int) (*AppState, error)
+}
+
+type latestViewReader interface {
+	ReadLatestView(ctx context.Context, view string, limit int) (*Result, error)
+}
+
 var ErrNoNewDigestSources = errors.New("no new source-grounded digest inputs since last digest")
 
 type Service struct {
-	cfg          config.Config
-	store        Store
-	cache        ReadModelCache
-	client       *http.Client
-	logger       *slog.Logger
-	refreshMu    sync.Mutex
-	refresh      RefreshStatus
-	xOAuthMu     sync.Mutex
-	xOAuthStates map[string]xOAuthState
+	cfg              config.Config
+	store            Store
+	cache            ReadModelCache
+	client           *http.Client
+	logger           *slog.Logger
+	refreshMu        sync.Mutex
+	refresh          RefreshStatus
+	appStateViewMu   sync.Mutex
+	appStateViewMemo map[string]cachedAppStateView
+	xOAuthMu         sync.Mutex
+	xOAuthStates     map[string]xOAuthState
+}
+
+type cachedAppStateView struct {
+	state     *AppState
+	expiresAt time.Time
+}
+
+type RunOutcome struct {
+	Result        Result
+	NewContent    bool
+	SkippedReason string
 }
 
 type RunOutcome struct {
@@ -55,7 +76,14 @@ func NewService(cfg config.Config, store Store, client *http.Client) *Service {
 	if client == nil {
 		client = http.DefaultClient
 	}
-	return &Service{cfg: cfg, store: store, client: client, logger: slog.Default(), xOAuthStates: map[string]xOAuthState{}}
+	return &Service{
+		cfg:              cfg,
+		store:            store,
+		client:           client,
+		logger:           slog.Default(),
+		appStateViewMemo: map[string]cachedAppStateView{},
+		xOAuthStates:     map[string]xOAuthState{},
+	}
 }
 
 func (s *Service) SetLogger(logger *slog.Logger) {
@@ -127,6 +155,94 @@ func (s *Service) ReadAppState(ctx context.Context) (*AppState, string, error) {
 	s.normalizeAppState(&state)
 	s.publishAppStateBestEffort(ctx, state, "fallback_warm")
 	return &state, "fallback", nil
+}
+
+func (s *Service) ReadAppStateView(ctx context.Context, view string, limit int) (*AppState, string, error) {
+	view = strings.TrimSpace(view)
+	if view == "" || view == "full" {
+		return s.ReadAppState(ctx)
+	}
+	limit = NormalizePageStateLimit(limit)
+	if state, cacheStatus, ok := s.readMemoizedAppStateView(view, limit); ok {
+		return state, cacheStatus, nil
+	}
+	if viewCache, ok := s.cache.(readModelViewCache); ok {
+		state, err := viewCache.ReadAppViewState(ctx, s.cfg.OwnerID, view, limit)
+		if err == nil {
+			s.logger.Info("read model cache hit", "surface", "app-state", "view", view)
+			s.normalizeAppState(state)
+			s.memoizeAppStateView(view, limit, state)
+			return state, "hit", nil
+		}
+		if !errors.Is(err, ErrReadModelCacheMiss) {
+			s.logger.Warn("read model cache fallback", "surface", "app-state", "view", view, "error", err)
+		}
+	}
+	latest, err := s.readLatestViewCanonical(ctx, view, limit)
+	if err != nil {
+		return nil, "error", err
+	}
+	digests := []DigestIssue{}
+	switch view {
+	case "daily-newsletter":
+		digests, err = s.readDigestsCanonical(ctx, NormalizePageStateLimit(limit))
+		if err != nil {
+			return nil, "error", err
+		}
+	}
+	state := BuildAppState(s.cfg.OwnerID, latest, digests, s.ReadRefreshStatus(ctx), "")
+	s.normalizeAppState(&state)
+	compact := CompactAppStateForView(&state, view, limit)
+	s.memoizeAppStateView(view, limit, compact)
+	return compact, "fallback", nil
+}
+
+func (s *Service) readMemoizedAppStateView(view string, limit int) (*AppState, string, bool) {
+	s.appStateViewMu.Lock()
+	defer s.appStateViewMu.Unlock()
+	if s.appStateViewMemo == nil {
+		s.appStateViewMemo = map[string]cachedAppStateView{}
+		return nil, "", false
+	}
+	key := appStateViewMemoKey(view, limit)
+	cached, ok := s.appStateViewMemo[key]
+	if !ok || cached.state == nil || time.Now().After(cached.expiresAt) {
+		delete(s.appStateViewMemo, key)
+		return nil, "", false
+	}
+	return cached.state, "memory", true
+}
+
+func (s *Service) memoizeAppStateView(view string, limit int, state *AppState) {
+	if state == nil {
+		return
+	}
+	s.appStateViewMu.Lock()
+	defer s.appStateViewMu.Unlock()
+	if s.appStateViewMemo == nil {
+		s.appStateViewMemo = map[string]cachedAppStateView{}
+	}
+	s.appStateViewMemo[appStateViewMemoKey(view, limit)] = cachedAppStateView{
+		state:     state,
+		expiresAt: time.Now().Add(30 * time.Second),
+	}
+}
+
+func appStateViewMemoKey(view string, limit int) string {
+	return strings.TrimSpace(view) + ":" + fmt.Sprint(NormalizePageStateLimit(limit))
+}
+
+func (s *Service) readLatestViewCanonical(ctx context.Context, view string, limit int) (*Result, error) {
+	if reader, ok := s.store.(latestViewReader); ok {
+		latest, err := reader.ReadLatestView(ctx, view, NormalizePageStateLimit(limit))
+		if err == nil {
+			normalizeResultInsightEngine(latest)
+			normalizeResultCollections(latest)
+			return latest, nil
+		}
+		s.logger.Warn("view-scoped latest fallback", "view", view, "error", err)
+	}
+	return s.readLatestCanonical(ctx)
 }
 
 func (s *Service) StartRefresh() RefreshStatus {

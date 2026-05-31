@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/http"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -36,17 +37,37 @@ func NewRouter(cfg config.Config, service *knowledge.Service, logger *slog.Logge
 	}
 
 	readAppState := func(w http.ResponseWriter, r *http.Request) {
-		state, cacheStatus, err := service.ReadAppState(r.Context())
+		start := time.Now()
+		view := strings.TrimSpace(r.URL.Query().Get("view"))
+		limit := queryInt(r, "limit")
+		var state *knowledge.AppState
+		var cacheStatus string
+		var err error
+		if view != "" {
+			state, cacheStatus, err = service.ReadAppStateView(r.Context(), view, limit)
+		} else {
+			state, cacheStatus, err = service.ReadAppState(r.Context())
+		}
 		if err != nil {
 			logger.Error("read app state", "error", err)
 			httputil.Error(w, http.StatusInternalServerError, "read app state")
 			return
 		}
+		w.Header().Set("Cache-Control", "public, max-age=30, s-maxage=300, stale-while-revalidate=1800")
+		w.Header().Set("Server-Timing", fmt.Sprintf(`appstate;dur=%d, cache;desc="%s"`, time.Since(start).Milliseconds(), cacheStatus))
 		if cacheStatus != "" {
 			w.Header().Set("X-Second-Brain-Cache", cacheStatus)
 		}
 		if state != nil && state.Manifest.ETag != "" {
-			w.Header().Set("ETag", `"`+state.Manifest.ETag+`"`)
+			etag := responseETag(state.Manifest.ETag)
+			if view != "" {
+				etag = responseETag(state.Manifest.ETag, view, knowledge.NormalizePageStateLimit(limit))
+			}
+			w.Header().Set("ETag", etag)
+			if etagMatches(r.Header.Get("If-None-Match"), etag) {
+				w.WriteHeader(http.StatusNotModified)
+				return
+			}
 		}
 		httputil.JSON(w, http.StatusOK, state)
 	}
@@ -120,7 +141,13 @@ func NewRouter(cfg config.Config, service *knowledge.Service, logger *slog.Logge
 			mimeType = http.DetectContentType(raw)
 		}
 		w.Header().Set("Content-Type", mimeType)
-		w.Header().Set("Cache-Control", "public, max-age=3600")
+		w.Header().Set("Cache-Control", "public, max-age=31536000, s-maxage=31536000, immutable")
+		etag := responseETag(digestID, "illustration", 0)
+		w.Header().Set("ETag", etag)
+		if etagMatches(r.Header.Get("If-None-Match"), etag) {
+			w.WriteHeader(http.StatusNotModified)
+			return
+		}
 		if illustration.Alt != "" {
 			w.Header().Set("X-Image-Alt", illustration.Alt)
 		}
@@ -243,6 +270,7 @@ func NewRouter(cfg config.Config, service *knowledge.Service, logger *slog.Logge
 	mux.HandleFunc("POST /api/share/tweet", shareTweet)
 	mux.HandleFunc("POST /api/ask", askSecondBrain)
 	mux.HandleFunc("GET /api/knowledge-graph/insights", readInsightGraph)
+	registerProfilingRoutes(mux, cfg, logger)
 
 	return requestLogger(logger, cors(cfg.AllowedOrigins, mux))
 }
@@ -278,6 +306,38 @@ func setSessionCookie(w http.ResponseWriter, cfg config.Config, xUserID string) 
 		SameSite: http.SameSiteLaxMode,
 	})
 	return nil
+}
+
+func queryInt(r *http.Request, key string) int {
+	raw := strings.TrimSpace(r.URL.Query().Get(key))
+	if raw == "" {
+		return 0
+	}
+	value, err := strconv.Atoi(raw)
+	if err != nil {
+		return 0
+	}
+	return value
+}
+
+func responseETag(parts ...any) string {
+	values := []string{}
+	for _, part := range parts {
+		value := strings.TrimSpace(fmt.Sprint(part))
+		if value != "" && value != "0" {
+			values = append(values, value)
+		}
+	}
+	return `"` + strings.Join(values, ":") + `"`
+}
+
+func etagMatches(header string, etag string) bool {
+	for _, value := range strings.Split(header, ",") {
+		if strings.TrimSpace(value) == etag {
+			return true
+		}
+	}
+	return false
 }
 
 type statusRecorder struct {
