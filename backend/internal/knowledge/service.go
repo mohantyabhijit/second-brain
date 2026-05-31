@@ -35,6 +35,10 @@ type readModelViewCache interface {
 	ReadAppViewState(ctx context.Context, ownerID string, view string, limit int) (*AppState, error)
 }
 
+type latestViewReader interface {
+	ReadLatestView(ctx context.Context, view string, limit int) (*Result, error)
+}
+
 var ErrNoNewDigestSources = errors.New("no new source-grounded digest inputs since last digest")
 
 type Service struct {
@@ -149,7 +153,7 @@ func (s *Service) ReadAppStateView(ctx context.Context, view string, limit int) 
 			s.logger.Warn("read model cache fallback", "surface", "app-state", "view", view, "error", err)
 		}
 	}
-	latest, err := s.readLatestCanonical(ctx)
+	latest, err := s.readLatestViewCanonical(ctx, view, limit)
 	if err != nil {
 		return nil, "error", err
 	}
@@ -164,6 +168,19 @@ func (s *Service) ReadAppStateView(ctx context.Context, view string, limit int) 
 	state := BuildAppState(s.cfg.OwnerID, latest, digests, s.ReadRefreshStatus(ctx), "")
 	s.normalizeAppState(&state)
 	return CompactAppStateForView(&state, view, limit), "fallback", nil
+}
+
+func (s *Service) readLatestViewCanonical(ctx context.Context, view string, limit int) (*Result, error) {
+	if reader, ok := s.store.(latestViewReader); ok {
+		latest, err := reader.ReadLatestView(ctx, view, NormalizePageStateLimit(limit))
+		if err == nil {
+			normalizeResultInsightEngine(latest)
+			normalizeResultCollections(latest)
+			return latest, nil
+		}
+		s.logger.Warn("view-scoped latest fallback", "view", view, "error", err)
+	}
+	return s.readLatestCanonical(ctx)
 }
 
 func (s *Service) StartRefresh() RefreshStatus {
