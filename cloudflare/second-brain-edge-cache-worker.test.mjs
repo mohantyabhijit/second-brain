@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   cachePolicy,
   etagMatches,
+  withClientCacheControl,
   withConditionalRevalidation,
   withEdgeCacheStatus
 } from "./second-brain-edge-cache-worker.mjs";
@@ -32,6 +33,27 @@ test("returns 304 for cached app-state hits with a matching ETag", async () => {
   assert.equal(response.headers.get("ETag"), '"app-state-etag:insights:20"');
   assert.equal(response.headers.get("X-Second-Brain-Edge-Cache"), "HIT");
   assert.equal(response.headers.has("Content-Type"), false);
+});
+
+test("read-model API hits keep edge cacheability separate from browser revalidation", async () => {
+  const appStateURL = new URL("https://abhijitmohanty.com/second-brain/api/app-state?view=insights&limit=20");
+  const policy = cachePolicy(new Request(appStateURL.toString()), appStateURL);
+  const cached = new Response(JSON.stringify({ ok: true }), {
+    headers: {
+      "Cache-Control": policy.cacheControl,
+      "Cloudflare-CDN-Cache-Control": policy.cacheControl,
+      ETag: '"app-state-etag:insights:20"'
+    }
+  });
+
+  const response = withClientCacheControl(withEdgeCacheStatus(cached, "HIT"), policy);
+
+  assert.equal(response.headers.get("Cache-Control"), "no-cache, must-revalidate");
+  assert.equal(
+    response.headers.get("Cloudflare-CDN-Cache-Control"),
+    "public, max-age=30, s-maxage=86400, stale-while-revalidate=604800"
+  );
+  assert.equal(response.headers.get("X-Second-Brain-Edge-Cache"), "HIT");
 });
 
 test("keeps cached hits as 200 responses when the ETag changed", async () => {
@@ -73,9 +95,12 @@ test("only read-model API requests are cached among JSON API routes", () => {
 
   assert.equal(appState.edgeTtl, 86400);
   assert.equal(appState.cacheControl, "public, max-age=30, s-maxage=86400, stale-while-revalidate=604800");
+  assert.equal(appState.clientCacheControl, "no-cache, must-revalidate");
   assert.equal(digests.edgeTtl, 86400);
   assert.equal(digests.cacheControl, "public, max-age=30, s-maxage=86400, stale-while-revalidate=604800");
+  assert.equal(digests.clientCacheControl, "no-cache, must-revalidate");
   assert.equal(graph.edgeTtl, 86400);
   assert.equal(graph.cacheControl, "public, max-age=30, s-maxage=86400, stale-while-revalidate=604800");
+  assert.equal(graph.clientCacheControl, "no-cache, must-revalidate");
   assert.equal(ask, null);
 });

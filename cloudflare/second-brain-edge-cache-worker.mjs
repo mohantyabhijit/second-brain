@@ -2,6 +2,7 @@ const HTML_EDGE_TTL_SECONDS = 300;
 const APP_STATE_EDGE_TTL_SECONDS = 86400;
 const STATIC_EDGE_TTL_SECONDS = 31536000;
 const APP_STATE_CACHE_CONTROL = "public, max-age=30, s-maxage=86400, stale-while-revalidate=604800";
+const APP_STATE_CLIENT_CACHE_CONTROL = "no-cache, must-revalidate";
 
 const MUTATING_API_PREFIXES = [
   "/second-brain/api/auth/",
@@ -24,7 +25,7 @@ export default {
     const cacheKey = new Request(url.toString(), { method: "GET" });
     const cached = await cache.match(cacheKey);
     if (cached) {
-      return withConditionalRevalidation(request, withEdgeCacheStatus(cached, "HIT"));
+      return withConditionalRevalidation(request, withClientCacheControl(withEdgeCacheStatus(cached, "HIT"), policy));
     }
 
     const originResponse = await fetch(request, {
@@ -40,9 +41,10 @@ export default {
     const response = new Response(originResponse.body, originResponse);
     response.headers.delete("Set-Cookie");
     response.headers.set("Cache-Control", policy.cacheControl);
+    response.headers.set("Cloudflare-CDN-Cache-Control", policy.cacheControl);
     response.headers.set("X-Second-Brain-Edge-Cache", "MISS");
     ctx.waitUntil(cache.put(cacheKey, response.clone()));
-    return response;
+    return withClientCacheControl(response, policy);
   }
 };
 
@@ -76,14 +78,16 @@ export function cachePolicy(request, url) {
   if (path === "/second-brain/api/app-state") {
     return {
       edgeTtl: APP_STATE_EDGE_TTL_SECONDS,
-      cacheControl: APP_STATE_CACHE_CONTROL
+      cacheControl: APP_STATE_CACHE_CONTROL,
+      clientCacheControl: APP_STATE_CLIENT_CACHE_CONTROL
     };
   }
 
   if (path === "/second-brain/api/digests" || path === "/second-brain/api/knowledge-graph/insights") {
     return {
       edgeTtl: APP_STATE_EDGE_TTL_SECONDS,
-      cacheControl: APP_STATE_CACHE_CONTROL
+      cacheControl: APP_STATE_CACHE_CONTROL,
+      clientCacheControl: APP_STATE_CLIENT_CACHE_CONTROL
     };
   }
 
@@ -108,6 +112,19 @@ export function isCacheableOriginResponse(response) {
 export function withEdgeCacheStatus(response, status) {
   const headers = new Headers(response.headers);
   headers.set("X-Second-Brain-Edge-Cache", status);
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers
+  });
+}
+
+export function withClientCacheControl(response, policy) {
+  if (!policy.clientCacheControl) {
+    return response;
+  }
+  const headers = new Headers(response.headers);
+  headers.set("Cache-Control", policy.clientCacheControl);
   return new Response(response.body, {
     status: response.status,
     statusText: response.statusText,
