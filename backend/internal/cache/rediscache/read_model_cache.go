@@ -88,7 +88,7 @@ func (c *Cache) ReadAppViewState(ctx context.Context, ownerID string, view strin
 	if err != nil {
 		return nil, err
 	}
-	limit = knowledge.NormalizePageStateLimit(limit)
+	limit = knowledge.NormalizeAppStateViewLimit(view, limit)
 	state := knowledge.AppState{
 		Manifest: manifest,
 		Latest: &knowledge.Result{

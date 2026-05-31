@@ -62,7 +62,7 @@ func NewRouter(cfg config.Config, service *knowledge.Service, logger *slog.Logge
 		if state != nil && state.Manifest.ETag != "" {
 			etag := responseETag(state.Manifest.ETag)
 			if view != "" {
-				etag = responseETag(state.Manifest.ETag, view, knowledge.NormalizePageStateLimit(limit))
+				etag = responseETag(state.Manifest.ETag, view, knowledge.NormalizeAppStateViewLimit(view, limit))
 			}
 			w.Header().Set("ETag", etag)
 			if etagMatches(r.Header.Get("If-None-Match"), etag) {
