@@ -1,6 +1,7 @@
 package knowledge
 
 import (
+	"strings"
 	"testing"
 	"time"
 )
@@ -81,5 +82,45 @@ func TestCompactAppStateForViewKeepsOnlyRequestedSurface(t *testing.T) {
 	}
 	if got := len(newsletterState.Digests); got != 1 {
 		t.Fatalf("expected 1 compact digest issue, got %d", got)
+	}
+}
+
+func TestBuildAppStateRunIDChangesWhenDigestChanges(t *testing.T) {
+	now := time.Date(2026, 5, 31, 5, 0, 0, 0, time.UTC)
+	latest := &Result{
+		GeneratedAt: now,
+		Insights:    []Insight{{ID: "i1", Title: "one"}},
+		Validation:  []ValidationItem{},
+		Blockers:    []string{},
+	}
+	withoutDigest := BuildAppState("owner-1", latest, nil, RefreshStatus{ID: "idle", Status: "idle", StartedAt: now}, "")
+	if strings.Contains(withoutDigest.Manifest.RunID, "-d") {
+		t.Fatalf("expected no digest suffix before a digest exists, got %q", withoutDigest.Manifest.RunID)
+	}
+
+	digest := DigestIssue{
+		ID:             "digest-1",
+		DigestDate:     "2026-05-31",
+		ScheduledFor:   now,
+		IdempotencyKey: "daily:2026-05-31",
+		Subject:        "Digest one",
+		BodyMarkdown:   "# Digest one",
+		Status:         "generated",
+	}
+	latest.Digest = &digest
+	first := BuildAppState("owner-1", latest, []DigestIssue{digest}, RefreshStatus{ID: "idle", Status: "idle", StartedAt: now}, "")
+	if !strings.Contains(first.Manifest.RunID, "-d") {
+		t.Fatalf("expected digest-versioned run ID, got %q", first.Manifest.RunID)
+	}
+
+	digest.Subject = "Digest two"
+	digest.BodyMarkdown = "# Digest two"
+	latest.Digest = &digest
+	second := BuildAppState("owner-1", latest, []DigestIssue{digest}, RefreshStatus{ID: "idle", Status: "idle", StartedAt: now}, "")
+	if first.Manifest.RunID == second.Manifest.RunID {
+		t.Fatalf("expected digest change to create a new read-model run ID, got %q", first.Manifest.RunID)
+	}
+	if first.Manifest.ETag == second.Manifest.ETag {
+		t.Fatal("expected digest change to create a new app-state ETag")
 	}
 }

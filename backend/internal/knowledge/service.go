@@ -153,7 +153,7 @@ func (s *Service) ReadAppState(ctx context.Context) (*AppState, string, error) {
 	}
 	state := BuildAppState(s.cfg.OwnerID, latest, digests, s.ReadRefreshStatus(ctx), "")
 	s.normalizeAppState(&state)
-	s.publishAppStateBestEffort(ctx, state, "fallback_warm")
+	_ = s.publishAppStateBestEffort(ctx, state, "fallback_warm")
 	return &state, "fallback", nil
 }
 
@@ -468,6 +468,9 @@ func (s *Service) RunCycle(ctx context.Context) (RunOutcome, error) {
 			"youtube_count", len(youtubeItems),
 			"cached_transcripts", countCachedTranscripts(youtubeItems),
 		)
+		if err := s.publishAppStateForResult(ctx, *latest, "", "refresh_noop_publish"); err != nil {
+			s.logger.Warn("read model cache noop publish failed", "error", err)
+		}
 		return RunOutcome{Result: *latest, NewContent: false, SkippedReason: "no_new_source_materials"}, nil
 	}
 
@@ -545,7 +548,9 @@ func (s *Service) RunCycle(ctx context.Context) (RunOutcome, error) {
 		s.logger.Error("knowledge refresh persist failed", "duration_ms", time.Since(saveStart).Milliseconds(), "error", err)
 		return RunOutcome{Result: result, NewContent: len(processed) > 0}, err
 	}
-	s.publishAppStateForResult(ctx, result, "")
+	if err := s.publishAppStateForResult(ctx, result, "", "refresh_publish"); err != nil {
+		s.logger.Warn("read model cache refresh publish failed", "error", err)
+	}
 	s.logger.Info(
 		"knowledge refresh completed",
 		"duration_ms", time.Since(start).Milliseconds(),
@@ -585,9 +590,9 @@ func (s *Service) refreshTimeout() time.Duration {
 	return timeout
 }
 
-func (s *Service) publishAppStateForResult(ctx context.Context, result Result, graphStatus string) {
+func (s *Service) publishAppStateForResult(ctx context.Context, result Result, graphStatus string, reason string) error {
 	if s.cache == nil {
-		return
+		return nil
 	}
 	digests, err := s.readDigestsCanonical(ctx, 50)
 	if err != nil {
@@ -598,20 +603,31 @@ func (s *Service) publishAppStateForResult(ctx context.Context, result Result, g
 	}
 	state := BuildAppState(s.cfg.OwnerID, &result, digests, s.RefreshStatus(), graphStatus)
 	s.normalizeAppState(&state)
-	s.publishAppStateBestEffort(ctx, state, "refresh_publish")
+	return s.publishAppStateBestEffort(ctx, state, reason)
 }
 
-func (s *Service) publishAppStateBestEffort(ctx context.Context, state AppState, reason string) {
+func (s *Service) publishAppStateBestEffort(ctx context.Context, state AppState, reason string) error {
 	if s.cache == nil {
-		return
+		return nil
 	}
 	publishCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 	defer cancel()
-	if err := s.cache.PublishAppState(publishCtx, s.cfg.OwnerID, state); err != nil {
-		s.logger.Warn("read model cache publish failed", "reason", reason, "run_id", state.Manifest.RunID, "error", err)
-		return
+	var lastErr error
+	for attempt := 1; attempt <= 3; attempt++ {
+		if err := s.cache.PublishAppState(publishCtx, s.cfg.OwnerID, state); err != nil {
+			lastErr = err
+			s.logger.Warn("read model cache publish failed", "reason", reason, "run_id", state.Manifest.RunID, "attempt", attempt, "error", err)
+			if publishCtx.Err() != nil {
+				break
+			}
+			time.Sleep(time.Duration(attempt) * 100 * time.Millisecond)
+			continue
+		}
+		s.logger.Info("read model cache publish completed", "reason", reason, "run_id", state.Manifest.RunID, "etag", state.Manifest.ETag)
+		s.purgeEdgeCacheBestEffort(publishCtx, reason)
+		return nil
 	}
-	s.logger.Info("read model cache publish completed", "reason", reason, "run_id", state.Manifest.RunID, "etag", state.Manifest.ETag)
+	return lastErr
 }
 
 func (s *Service) writeRefreshStatusBestEffort(status RefreshStatus) {
@@ -680,7 +696,7 @@ func (s *Service) SaveFeedback(ctx context.Context, event FeedbackEvent) error {
 }
 
 func (s *Service) GenerateDigest(ctx context.Context) (*DigestIssue, error) {
-	latest, err := s.ReadLatest(ctx)
+	latest, err := s.readLatestCanonical(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -717,7 +733,9 @@ func (s *Service) GenerateDigest(ctx context.Context) (*DigestIssue, error) {
 	}
 	if saved != nil {
 		latest.Digest = saved
-		s.publishAppStateForResult(ctx, *latest, "")
+		if err := s.publishAppStateForResult(ctx, *latest, "", "digest_publish"); err != nil {
+			s.logger.Warn("digest saved but read model cache publish failed", "digest_id", saved.ID, "error", err)
+		}
 	}
 	return saved, nil
 }
@@ -966,7 +984,7 @@ func (s *Service) SendLatestDigest(ctx context.Context, recipientEmail string) (
 	if err != nil {
 		return nil, err
 	}
-	latest, err := s.ReadLatest(ctx)
+	latest, err := s.readLatestCanonical(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -1007,7 +1025,9 @@ func (s *Service) SendLatestDigest(ctx context.Context, recipientEmail string) (
 	}
 	if saved != nil {
 		latest.Digest = saved
-		s.publishAppStateForResult(ctx, *latest, "")
+		if err := s.publishAppStateForResult(ctx, *latest, "", "digest_publish"); err != nil {
+			s.logger.Warn("digest delivery saved but read model cache publish failed", "digest_id", saved.ID, "error", err)
+		}
 	}
 	return saved, nil
 }

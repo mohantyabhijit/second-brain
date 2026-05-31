@@ -2,6 +2,7 @@ package knowledge
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -50,12 +51,66 @@ func TestReadAppStateViewChecksReadModelBeforeMemo(t *testing.T) {
 	}
 }
 
+func TestGenerateDigestUsesCanonicalLatestInsteadOfRedisLatest(t *testing.T) {
+	now := time.Date(2026, 5, 31, 6, 0, 0, 0, time.UTC)
+	store := &cacheOrderStore{
+		latest: &Result{
+			GeneratedAt: now,
+			Summaries:   []Summary{},
+			Insights:    []Insight{},
+			Validation:  []ValidationItem{},
+			Blockers:    []string{},
+		},
+	}
+	cache := &cacheOrderReadModel{
+		latest: &Result{
+			GeneratedAt: now.Add(-time.Hour),
+			Summaries: []Summary{{
+				ID:         "stale-summary",
+				Source:     "x",
+				Title:      "stale",
+				SourceURL:  "https://x.example/stale",
+				Summary:    "stale cached summary",
+				Confidence: "high",
+			}},
+			Insights: []Insight{{
+				ID:         "stale-insight",
+				Source:     "x",
+				SourceID:   "stale-summary",
+				Title:      "stale",
+				Insight:    "stale cached insight",
+				Evidence:   "stale evidence",
+				SourceURL:  "https://x.example/stale",
+				Confidence: "high",
+			}},
+		},
+	}
+	service := NewService(config.Config{OwnerID: "owner-1"}, store, nil)
+	service.SetReadModelCache(cache)
+
+	_, err := service.GenerateDigest(context.Background())
+	if err == nil {
+		t.Fatal("expected digest generation to stop on canonical empty inputs")
+	}
+	if !strings.Contains(err.Error(), "no source-grounded digest inputs") {
+		t.Fatalf("expected canonical empty-input error, got %v", err)
+	}
+	if cache.readLatestCalls != 0 {
+		t.Fatalf("expected digest generation not to read stale Redis latest, got %d cache reads", cache.readLatestCalls)
+	}
+	if store.readLatestCalls == 0 {
+		t.Fatal("expected digest generation to read canonical latest")
+	}
+}
+
 type cacheOrderStore struct {
-	latest  *Result
-	digests []DigestIssue
+	latest          *Result
+	digests         []DigestIssue
+	readLatestCalls int
 }
 
 func (s *cacheOrderStore) ReadLatest(context.Context) (*Result, error) {
+	s.readLatestCalls++
 	return s.latest, nil
 }
 
@@ -96,8 +151,10 @@ func (s *cacheOrderStore) SaveXTokens(context.Context, EncryptedXTokens) error {
 }
 
 type cacheOrderReadModel struct {
-	state *AppState
-	err   error
+	state           *AppState
+	latest          *Result
+	err             error
+	readLatestCalls int
 }
 
 func (c *cacheOrderReadModel) ReadAppViewState(context.Context, string, string, int) (*AppState, error) {
@@ -112,6 +169,10 @@ func (c *cacheOrderReadModel) ReadAppState(context.Context, string) (*AppState, 
 }
 
 func (c *cacheOrderReadModel) ReadLatest(context.Context, string) (*Result, error) {
+	c.readLatestCalls++
+	if c.latest != nil {
+		return c.latest, nil
+	}
 	return nil, ErrReadModelCacheMiss
 }
 

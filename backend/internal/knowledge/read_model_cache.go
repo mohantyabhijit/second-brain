@@ -43,6 +43,7 @@ func BuildAppState(ownerID string, latest *Result, digests []DigestIssue, refres
 	}
 
 	digests = normalizeDigests(digests)
+	runID = appStateRunID(runID, latestCopy, digests)
 	digestStatus := digestStatusFor(latestCopy, digests)
 	if graphStatus == "" {
 		graphStatus = graphStatusFor(latestCopy)
@@ -377,6 +378,65 @@ func digestStatusFor(latest *Result, digests []DigestIssue) string {
 		return digests[0].Status
 	}
 	return "none"
+}
+
+func appStateRunID(baseRunID string, latest *Result, digests []DigestIssue) string {
+	if !hasDigestVersionData(latest, digests) {
+		return baseRunID
+	}
+	payload := struct {
+		LatestDigest *digestVersionRecord  `json:"latestDigest,omitempty"`
+		Digests      []digestVersionRecord `json:"digests"`
+	}{
+		Digests: make([]digestVersionRecord, 0, len(digests)),
+	}
+	if latest != nil && latest.Digest != nil {
+		record := digestVersion(*latest.Digest)
+		payload.LatestDigest = &record
+	}
+	for _, digest := range digests {
+		payload.Digests = append(payload.Digests, digestVersion(digest))
+	}
+	raw, err := json.Marshal(payload)
+	if err != nil {
+		return baseRunID
+	}
+	sum := sha256.Sum256(raw)
+	return baseRunID + "-d" + hex.EncodeToString(sum[:])[:12]
+}
+
+func hasDigestVersionData(latest *Result, digests []DigestIssue) bool {
+	return (latest != nil && latest.Digest != nil) || len(digests) > 0
+}
+
+type digestVersionRecord struct {
+	ID                   string    `json:"id,omitempty"`
+	DigestDate           string    `json:"digestDate"`
+	ScheduledFor         time.Time `json:"scheduledFor"`
+	IdempotencyKey       string    `json:"idempotencyKey"`
+	Subject              string    `json:"subject"`
+	BodyMarkdown         string    `json:"bodyMarkdown"`
+	Status               string    `json:"status"`
+	IllustrationAlt      string    `json:"illustrationAlt,omitempty"`
+	IllustrationMimeType string    `json:"illustrationMimeType,omitempty"`
+	IllustrationModel    string    `json:"illustrationModel,omitempty"`
+	IllustrationReady    bool      `json:"illustrationReady"`
+}
+
+func digestVersion(digest DigestIssue) digestVersionRecord {
+	return digestVersionRecord{
+		ID:                   digest.ID,
+		DigestDate:           digest.DigestDate,
+		ScheduledFor:         digest.ScheduledFor.UTC(),
+		IdempotencyKey:       digest.IdempotencyKey,
+		Subject:              digest.Subject,
+		BodyMarkdown:         digest.BodyMarkdown,
+		Status:               digest.Status,
+		IllustrationAlt:      digest.IllustrationAlt,
+		IllustrationMimeType: digest.IllustrationMimeType,
+		IllustrationModel:    digest.IllustrationModel,
+		IllustrationReady:    digest.IllustrationAvailable || strings.TrimSpace(digest.IllustrationBase64) != "",
+	}
 }
 
 func graphStatusFor(latest *Result) string {

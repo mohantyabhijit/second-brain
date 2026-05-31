@@ -143,6 +143,11 @@ func (c *Cache) ReadAppViewState(ctx context.Context, ownerID string, view strin
 		}
 		state.Latest.Insights = firstN(insights, limit)
 	case "daily-newsletter":
+		var digest *knowledge.DigestIssue
+		if err := c.readRunJSON(ctx, ownerID, manifest.RunID, "daily-newsletter", &digest); err == nil && digest != nil {
+			state.Views.DailyNewsletter = digest
+			state.Latest.Digest = digest
+		}
 		digests, err := c.ReadDigests(ctx, ownerID, limit)
 		if err != nil {
 			return nil, err
@@ -150,6 +155,7 @@ func (c *Cache) ReadAppViewState(ctx context.Context, ownerID string, view strin
 		state.Digests = compactDigestIssues(digests)
 		if len(state.Digests) > 0 {
 			digest := state.Digests[0]
+			state.Views.DailyNewsletter = &digest
 			state.Latest.Digest = &digest
 		}
 	case "original-x-posts", "original-x-bookmarks":

@@ -3,6 +3,7 @@ import type { AppState, AskSecondBrainResponse, DigestIssue, FeedbackSignal, Ins
 export type AppStateView = "insights" | "daily-newsletter" | "original-x-posts" | "original-youtube-posts" | "knowledge-graph";
 
 const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8080";
+const appStateResponseCache = new Map<string, { etag: string; state: AppState }>();
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${apiBaseUrl}${path}`, {
@@ -33,8 +34,25 @@ export async function readAppState(view?: AppStateView, limit = 25) {
     params.set("limit", String(limit));
   }
   const path = params.size ? `/api/app-state?${params.toString()}` : "/api/app-state";
-  const payload = await request<AppState>(path);
-  return normalizeAppState(payload);
+  const cached = appStateResponseCache.get(path);
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  if (cached?.etag) {
+    headers["If-None-Match"] = cached.etag;
+  }
+  const response = await fetch(`${apiBaseUrl}${path}`, { headers });
+  if (response.status === 304 && cached) {
+    return cached.state;
+  }
+  if (!response.ok) {
+    const detail = await response.text();
+    throw new Error(readAPIError(detail) || `API request failed with ${response.status}`);
+  }
+  const state = normalizeAppState((await response.json()) as AppState);
+  const etag = response.headers.get("ETag");
+  if (etag) {
+    appStateResponseCache.set(path, { etag, state });
+  }
+  return state;
 }
 
 export async function readDigestIssues() {

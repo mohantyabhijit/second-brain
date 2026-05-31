@@ -58,6 +58,10 @@ type Config struct {
 	RedisCacheTTL                string
 	RedisRefreshStatusTTL        string
 	RedisAskAnswerTTL            string
+	CloudflareAPIToken           string
+	CloudflareZoneID             string
+	CloudflareAPIBaseURL         string
+	CloudflareCachePurgeEnabled  bool
 	MemoryProfilingEnabled       bool
 	MemoryProfilingToken         string
 	Neo4jURI                     string
@@ -119,6 +123,10 @@ func Load() Config {
 		RedisCacheTTL:                value("REDIS_CACHE_TTL", "720h"),
 		RedisRefreshStatusTTL:        value("REDIS_REFRESH_STATUS_TTL", "24h"),
 		RedisAskAnswerTTL:            value("REDIS_ASK_ANSWER_TTL", "1h"),
+		CloudflareAPIToken:           os.Getenv("CLOUDFLARE_API_TOKEN"),
+		CloudflareZoneID:             os.Getenv("CLOUDFLARE_ZONE_ID"),
+		CloudflareAPIBaseURL:         value("CLOUDFLARE_API_BASE_URL", "https://api.cloudflare.com/client/v4"),
+		CloudflareCachePurgeEnabled:  value("CLOUDFLARE_CACHE_PURGE_ENABLED", "true") == "true",
 		MemoryProfilingEnabled:       value("MEMORY_PROFILING_ENABLED", "false") == "true",
 		MemoryProfilingToken:         os.Getenv("MEMORY_PROFILE_TOKEN"),
 		Neo4jURI:                     os.Getenv("NEO4J_URI"),

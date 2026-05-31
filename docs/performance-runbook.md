@@ -33,7 +33,7 @@ Cloudflare routes `abhijitmohanty.com/second-brain*` and `www.abhijitmohanty.com
 4. `/second-brain/*` HTML with an Edge TTL of five minutes.
 5. It bypasses non-`GET` requests, requests with `Authorization` or `Cookie`, `/second-brain/api/auth/*`, `/second-brain/api/debug/*`, and mutation endpoints.
 
-Purge Cloudflare cache after a successful deploy or refresh publish for:
+The backend purges Cloudflare automatically after successful refresh and digest read-model publishes when `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ZONE_ID` are configured. If automatic purge is unavailable, manually purge:
 
 - `/second-brain/`
 - `/second-brain/insights/`
