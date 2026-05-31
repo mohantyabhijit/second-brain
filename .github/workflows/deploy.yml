@@ -58,6 +58,8 @@ jobs:
           NEXT_PUBLIC_BASE_PATH: ${{ env.SECOND_BRAIN_BASE_PATH }}
           NEXT_PUBLIC_API_BASE_URL: ${{ env.SECOND_BRAIN_API_BASE_URL }}
           NEXT_PUBLIC_GA_MEASUREMENT_ID: ${{ env.SECOND_BRAIN_GA_MEASUREMENT_ID }}
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY }}
         run: npm --prefix frontend run build
 
       - name: Build Linux API binaries
@@ -104,8 +106,12 @@ jobs:
       ONECLI_API_KEY: ${{ secrets.ONECLI_API_KEY }}
       SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
       SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_PUBLISHABLE_KEY: ${{ secrets.SUPABASE_PUBLISHABLE_KEY }}
       SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
       APP_USER_ID: ${{ secrets.APP_USER_ID }}
+      PUBLIC_OWNER_ID: ${{ secrets.PUBLIC_OWNER_ID }}
+      PUBLIC_OWNER_HANDLE: ${{ secrets.PUBLIC_OWNER_HANDLE }}
+      PUBLIC_OWNER_EMAIL: ${{ secrets.PUBLIC_OWNER_EMAIL }}
       SUPABASE_STORAGE_BUCKET: ${{ secrets.SUPABASE_STORAGE_BUCKET }}
       REDIS_URL: ${{ secrets.REDIS_URL }}
       REDIS_CACHE_ENABLED: ${{ secrets.REDIS_CACHE_ENABLED }}
@@ -162,8 +168,12 @@ jobs:
           write_var ALLOWED_ORIGINS "https://abhijitmohanty.com,https://www.abhijitmohanty.com"
           write_var SUPABASE_DB_URL "$SUPABASE_DB_URL"
           write_var SUPABASE_URL "$SUPABASE_URL"
+          write_var SUPABASE_PUBLISHABLE_KEY "$SUPABASE_PUBLISHABLE_KEY"
           write_var SUPABASE_SERVICE_ROLE_KEY "$SUPABASE_SERVICE_ROLE_KEY"
           write_var SUPABASE_STORAGE_BUCKET "${SUPABASE_STORAGE_BUCKET:-sources}"
+          write_var PUBLIC_OWNER_ID "${PUBLIC_OWNER_ID:-00000000-0000-0000-0000-000000000001}"
+          write_var PUBLIC_OWNER_HANDLE "${PUBLIC_OWNER_HANDLE:-abhijitmohanty}"
+          write_var PUBLIC_OWNER_EMAIL "$PUBLIC_OWNER_EMAIL"
           redis_url="${REDIS_URL:-redis://127.0.0.1:6379/0}"
           write_var REDIS_URL "$redis_url"
           write_var REDIS_CACHE_ENABLED "${REDIS_CACHE_ENABLED:-true}"

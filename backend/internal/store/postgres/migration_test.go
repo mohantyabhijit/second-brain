@@ -111,3 +111,28 @@ func TestReadModelSnapshotMigrationDefinesPrecomputedPayloadStore(t *testing.T) 
 		}
 	}
 }
+
+func TestSupabaseAuthPublicOwnerMigrationDefinesWorkspaceMapping(t *testing.T) {
+	raw, err := os.ReadFile("../../../../supabase/migrations/202606010001_supabase_auth_public_owner.sql")
+	if err != nil {
+		t.Fatalf("read migration: %v", err)
+	}
+	sql := string(raw)
+
+	requiredFragments := []string{
+		"add column if not exists handle text not null default ''",
+		"add column if not exists auth_user_id uuid references auth.users(id) on delete set null",
+		"add column if not exists is_public_owner boolean not null default false",
+		"handle = 'abhijitmohanty'",
+		"display_name = 'Abhijit Mohanty'",
+		"is_public_owner = true",
+		"public-playlist:PLH_SZ1gwLn4gpQyZICprtx3nKRYGPKE7r",
+		"create unique index if not exists user_profiles_handle_uidx",
+		"create unique index if not exists user_profiles_auth_user_id_uidx",
+	}
+	for _, fragment := range requiredFragments {
+		if !strings.Contains(sql, fragment) {
+			t.Fatalf("migration missing fragment %q", fragment)
+		}
+	}
+}

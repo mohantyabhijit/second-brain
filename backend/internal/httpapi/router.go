@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -10,6 +11,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/abhijitmohanty/second-brain/backend/internal/config"
@@ -18,9 +20,82 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 )
 
+type requestScope struct {
+	service       *knowledge.Service
+	ownerID       string
+	authenticated bool
+	publicOwner   bool
+}
+
+type supabaseAuthUser struct {
+	ID    string `json:"id"`
+	Email string `json:"email"`
+}
+
 func NewRouter(cfg config.Config, service *knowledge.Service, logger *slog.Logger) http.Handler {
 	service.SetLogger(logger)
 	mux := http.NewServeMux()
+	publicOwnerID := strings.TrimSpace(cfg.PublicOwnerID)
+	if publicOwnerID == "" {
+		publicOwnerID = config.DefaultOwnerID
+	}
+	ownerServices := map[string]*knowledge.Service{
+		service.OwnerID(): service,
+	}
+	var ownerServicesMu sync.Mutex
+	serviceForOwner := func(ownerID string) *knowledge.Service {
+		ownerID = strings.TrimSpace(ownerID)
+		if ownerID == "" {
+			ownerID = publicOwnerID
+		}
+		ownerServicesMu.Lock()
+		defer ownerServicesMu.Unlock()
+		if scoped, ok := ownerServices[ownerID]; ok {
+			return scoped
+		}
+		scoped := service.ForOwner(ownerID)
+		scoped.SetLogger(logger)
+		ownerServices[ownerID] = scoped
+		return scoped
+	}
+	findXOAuthService := func(state string) *knowledge.Service {
+		state = strings.TrimSpace(state)
+		ownerServicesMu.Lock()
+		for _, scoped := range ownerServices {
+			if scoped.HasXOAuthState(state) {
+				ownerServicesMu.Unlock()
+				return scoped
+			}
+		}
+		ownerServicesMu.Unlock()
+		return serviceForOwner(publicOwnerID)
+	}
+	resolveScope := func(w http.ResponseWriter, r *http.Request, requireAuth bool) (*requestScope, bool) {
+		authUser, hasBearer, err := readSupabaseAuthUser(r.Context(), cfg, r.Header.Get("Authorization"))
+		if err != nil {
+			httputil.Error(w, http.StatusUnauthorized, err.Error())
+			return nil, false
+		}
+		if !hasBearer {
+			if requireAuth {
+				httputil.Error(w, http.StatusUnauthorized, "Sign in with Supabase to use this action.")
+				return nil, false
+			}
+			return &requestScope{service: serviceForOwner(publicOwnerID), ownerID: publicOwnerID, publicOwner: true}, true
+		}
+		ownerID, err := service.ResolveOwnerForAuthUser(r.Context(), authUser.ID, authUser.Email, publicOwnerID, cfg.PublicOwnerEmail)
+		if err != nil {
+			logger.Error("resolve authenticated owner", "error", err)
+			httputil.Error(w, http.StatusUnauthorized, "Supabase user could not be mapped to a workspace.")
+			return nil, false
+		}
+		return &requestScope{
+			service:       serviceForOwner(ownerID),
+			ownerID:       ownerID,
+			authenticated: true,
+			publicOwner:   ownerID == publicOwnerID,
+		}, true
+	}
 
 	healthz := func(w http.ResponseWriter, r *http.Request) {
 		httputil.JSON(w, http.StatusOK, map[string]string{"status": "ok", "env": cfg.Env})
@@ -29,17 +104,25 @@ func NewRouter(cfg config.Config, service *knowledge.Service, logger *slog.Logge
 	mux.HandleFunc("GET /api/healthz", healthz)
 
 	readLatest := func(w http.ResponseWriter, r *http.Request) {
-		latest, err := service.ReadLatest(r.Context())
+		scope, ok := resolveScope(w, r, false)
+		if !ok {
+			return
+		}
+		latest, err := scope.service.ReadLatest(r.Context())
 		if err != nil {
 			logger.Error("read latest knowledge run", "error", err)
 			httputil.Error(w, http.StatusInternalServerError, "read latest knowledge run")
 			return
 		}
-		setReadModelCacheHeaders(w)
+		setReadModelCacheHeadersForScope(w, scope)
 		httputil.JSON(w, http.StatusOK, map[string]any{"latest": latest})
 	}
 
 	readAppState := func(w http.ResponseWriter, r *http.Request) {
+		scope, ok := resolveScope(w, r, false)
+		if !ok {
+			return
+		}
 		start := time.Now()
 		view := strings.TrimSpace(r.URL.Query().Get("view"))
 		limit := queryInt(r, "limit")
@@ -47,16 +130,16 @@ func NewRouter(cfg config.Config, service *knowledge.Service, logger *slog.Logge
 		var cacheStatus string
 		var err error
 		if view != "" {
-			state, cacheStatus, err = service.ReadAppStateView(r.Context(), view, limit)
+			state, cacheStatus, err = scope.service.ReadAppStateView(r.Context(), view, limit)
 		} else {
-			state, cacheStatus, err = service.ReadAppState(r.Context())
+			state, cacheStatus, err = scope.service.ReadAppState(r.Context())
 		}
 		if err != nil {
 			logger.Error("read app state", "error", err)
 			httputil.Error(w, http.StatusInternalServerError, "read app state")
 			return
 		}
-		w.Header().Set("Cache-Control", "public, max-age=30, s-maxage=300, stale-while-revalidate=1800")
+		setReadModelCacheHeadersForScope(w, scope)
 		w.Header().Set("Server-Timing", fmt.Sprintf(`appstate;dur=%d, cache;desc="%s"`, time.Since(start).Milliseconds(), cacheStatus))
 		if cacheStatus != "" {
 			w.Header().Set("X-Second-Brain-Cache", cacheStatus)
@@ -76,21 +159,33 @@ func NewRouter(cfg config.Config, service *knowledge.Service, logger *slog.Logge
 	}
 
 	runInbox := func(w http.ResponseWriter, r *http.Request) {
-		status := service.StartRefresh()
+		scope, ok := resolveScope(w, r, true)
+		if !ok {
+			return
+		}
+		status := scope.service.StartRefresh()
 		httputil.JSON(w, http.StatusAccepted, status)
 	}
 
 	readRefreshStatus := func(w http.ResponseWriter, r *http.Request) {
-		httputil.JSON(w, http.StatusOK, service.ReadRefreshStatus(r.Context()))
+		scope, ok := resolveScope(w, r, false)
+		if !ok {
+			return
+		}
+		httputil.JSON(w, http.StatusOK, scope.service.ReadRefreshStatus(r.Context()))
 	}
 
 	saveFeedback := func(w http.ResponseWriter, r *http.Request) {
+		scope, ok := resolveScope(w, r, true)
+		if !ok {
+			return
+		}
 		var event knowledge.FeedbackEvent
 		if err := json.NewDecoder(r.Body).Decode(&event); err != nil {
 			httputil.Error(w, http.StatusBadRequest, "invalid feedback payload")
 			return
 		}
-		if err := service.SaveFeedback(r.Context(), event); err != nil {
+		if err := scope.service.SaveFeedback(r.Context(), event); err != nil {
 			httputil.Error(w, http.StatusBadRequest, err.Error())
 			return
 		}
@@ -98,7 +193,11 @@ func NewRouter(cfg config.Config, service *knowledge.Service, logger *slog.Logge
 	}
 
 	generateDigest := func(w http.ResponseWriter, r *http.Request) {
-		digest, err := service.GenerateDigest(r.Context())
+		scope, ok := resolveScope(w, r, true)
+		if !ok {
+			return
+		}
+		digest, err := scope.service.GenerateDigest(r.Context())
 		if err != nil {
 			logger.Error("generate digest", "error", err)
 			httputil.Error(w, http.StatusInternalServerError, "generate digest")
@@ -108,23 +207,31 @@ func NewRouter(cfg config.Config, service *knowledge.Service, logger *slog.Logge
 	}
 
 	listDigests := func(w http.ResponseWriter, r *http.Request) {
-		digests, err := service.ReadDigests(r.Context(), 50)
+		scope, ok := resolveScope(w, r, false)
+		if !ok {
+			return
+		}
+		digests, err := scope.service.ReadDigests(r.Context(), 50)
 		if err != nil {
 			logger.Error("list digests", "error", err)
 			httputil.Error(w, http.StatusInternalServerError, "list digests")
 			return
 		}
-		setReadModelCacheHeaders(w)
+		setReadModelCacheHeadersForScope(w, scope)
 		httputil.JSON(w, http.StatusOK, map[string]any{"digests": digests})
 	}
 
 	readDigestIllustration := func(w http.ResponseWriter, r *http.Request) {
+		scope, ok := resolveScope(w, r, false)
+		if !ok {
+			return
+		}
 		digestID := strings.TrimSpace(r.PathValue("id"))
 		if digestID == "" {
 			httputil.Error(w, http.StatusNotFound, "digest illustration not found")
 			return
 		}
-		illustration, err := service.ReadDigestIllustration(r.Context(), digestID)
+		illustration, err := scope.service.ReadDigestIllustration(r.Context(), digestID)
 		if err != nil {
 			logger.Error("read digest illustration", "error", err)
 			httputil.Error(w, http.StatusInternalServerError, "read digest illustration")
@@ -160,6 +267,10 @@ func NewRouter(cfg config.Config, service *knowledge.Service, logger *slog.Logge
 	}
 
 	sendDigest := func(w http.ResponseWriter, r *http.Request) {
+		scope, ok := resolveScope(w, r, true)
+		if !ok {
+			return
+		}
 		var input knowledge.DigestSendRequest
 		if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 			httputil.Error(w, http.StatusBadRequest, "invalid digest delivery payload")
@@ -168,9 +279,9 @@ func NewRouter(cfg config.Config, service *knowledge.Service, logger *slog.Logge
 		var digest *knowledge.DigestIssue
 		var err error
 		if input.Digest != nil {
-			digest, err = service.SendProvidedDigest(r.Context(), input.RecipientEmail, *input.Digest)
+			digest, err = scope.service.SendProvidedDigest(r.Context(), input.RecipientEmail, *input.Digest)
 		} else {
-			digest, err = service.SendLatestDigest(r.Context(), input.RecipientEmail)
+			digest, err = scope.service.SendLatestDigest(r.Context(), input.RecipientEmail)
 		}
 		if err != nil {
 			logger.Error("send latest digest", "error", err)
@@ -181,12 +292,16 @@ func NewRouter(cfg config.Config, service *knowledge.Service, logger *slog.Logge
 	}
 
 	shareTweet := func(w http.ResponseWriter, r *http.Request) {
+		scope, ok := resolveScope(w, r, true)
+		if !ok {
+			return
+		}
 		var input knowledge.TweetShareRequest
 		if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 			httputil.Error(w, http.StatusBadRequest, "invalid tweet payload")
 			return
 		}
-		result, err := service.ShareTweet(r.Context(), input)
+		result, err := scope.service.ShareTweet(r.Context(), input)
 		if err != nil {
 			logger.Error("share tweet", "error", err)
 			httputil.Error(w, http.StatusBadRequest, err.Error())
@@ -196,12 +311,16 @@ func NewRouter(cfg config.Config, service *knowledge.Service, logger *slog.Logge
 	}
 
 	askSecondBrain := func(w http.ResponseWriter, r *http.Request) {
+		scope, ok := resolveScope(w, r, true)
+		if !ok {
+			return
+		}
 		var input knowledge.AskSecondBrainRequest
 		if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 			httputil.Error(w, http.StatusBadRequest, "invalid ask payload")
 			return
 		}
-		result, err := service.AskSecondBrain(r.Context(), input)
+		result, err := scope.service.AskSecondBrain(r.Context(), input)
 		if err != nil {
 			logger.Error("ask second brain", "error", err)
 			httputil.Error(w, http.StatusBadRequest, err.Error())
@@ -211,12 +330,16 @@ func NewRouter(cfg config.Config, service *knowledge.Service, logger *slog.Logge
 	}
 
 	readInsightGraph := func(w http.ResponseWriter, r *http.Request) {
+		scope, ok := resolveScope(w, r, false)
+		if !ok {
+			return
+		}
 		limit, err := knowledge.NormalizeInsightGraphLimit(r.URL.Query().Get("limit"))
 		if err != nil {
 			httputil.Error(w, http.StatusBadRequest, err.Error())
 			return
 		}
-		graph, err := service.ReadInsightGraph(r.Context(), limit)
+		graph, err := scope.service.ReadInsightGraph(r.Context(), limit)
 		if err != nil {
 			logger.Error("read insight graph", "error", err)
 			httputil.Error(w, http.StatusServiceUnavailable, err.Error())
@@ -227,12 +350,29 @@ func NewRouter(cfg config.Config, service *knowledge.Service, logger *slog.Logge
 	}
 
 	startXAuth := func(w http.ResponseWriter, r *http.Request) {
-		url, err := service.BeginXOAuth(r.Context())
+		scope, ok := resolveScope(w, r, false)
+		if !ok {
+			return
+		}
+		url, err := scope.service.BeginXOAuth(r.Context())
 		if err != nil {
 			httputil.Error(w, http.StatusBadRequest, err.Error())
 			return
 		}
 		http.Redirect(w, r, url, http.StatusFound)
+	}
+
+	startXAuthJSON := func(w http.ResponseWriter, r *http.Request) {
+		scope, ok := resolveScope(w, r, true)
+		if !ok {
+			return
+		}
+		url, err := scope.service.BeginXOAuth(r.Context())
+		if err != nil {
+			httputil.Error(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		httputil.JSON(w, http.StatusOK, map[string]string{"url": url})
 	}
 
 	completeXAuth := func(w http.ResponseWriter, r *http.Request) {
@@ -241,13 +381,15 @@ func NewRouter(cfg config.Config, service *knowledge.Service, logger *slog.Logge
 			httputil.Error(w, http.StatusBadRequest, strings.TrimSpace(oauthErr+" "+detail))
 			return
 		}
-		result, err := service.CompleteXOAuth(r.Context(), r.URL.Query().Get("state"), r.URL.Query().Get("code"))
+		state := r.URL.Query().Get("state")
+		xService := findXOAuthService(state)
+		result, err := xService.CompleteXOAuth(r.Context(), state, r.URL.Query().Get("code"))
 		if err != nil {
 			logger.Error("complete X OAuth", "error", err)
 			httputil.Error(w, http.StatusBadRequest, err.Error())
 			return
 		}
-		if err := setSessionCookie(w, cfg, result.Profile.ID); err != nil {
+		if err := setSessionCookie(w, cfg, xService.OwnerID(), result.Profile.ID); err != nil {
 			httputil.Error(w, http.StatusInternalServerError, err.Error())
 			return
 		}
@@ -257,12 +399,52 @@ func NewRouter(cfg config.Config, service *knowledge.Service, logger *slog.Logge
 	}
 
 	readXAuthStatus := func(w http.ResponseWriter, r *http.Request) {
-		httputil.JSON(w, http.StatusOK, service.XAuthStatus(r.Context()))
+		scope, ok := resolveScope(w, r, false)
+		if !ok {
+			return
+		}
+		httputil.JSON(w, http.StatusOK, scope.service.XAuthStatus(r.Context()))
+	}
+
+	readWorkspace := func(w http.ResponseWriter, r *http.Request) {
+		scope, ok := resolveScope(w, r, false)
+		if !ok {
+			return
+		}
+		status, err := scope.service.WorkspaceStatus(r.Context(), scope.authenticated)
+		if err != nil {
+			logger.Error("read workspace", "error", err)
+			httputil.Error(w, http.StatusInternalServerError, "read workspace")
+			return
+		}
+		httputil.JSON(w, http.StatusOK, status)
+	}
+
+	saveYouTubeConnection := func(w http.ResponseWriter, r *http.Request) {
+		scope, ok := resolveScope(w, r, true)
+		if !ok {
+			return
+		}
+		var input knowledge.YouTubePlaylistInput
+		if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+			httputil.Error(w, http.StatusBadRequest, "invalid YouTube playlist payload")
+			return
+		}
+		connection, err := scope.service.SaveYouTubePlaylist(r.Context(), input)
+		if err != nil {
+			logger.Error("save YouTube playlist", "error", err)
+			httputil.Error(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		httputil.JSON(w, http.StatusOK, connection)
 	}
 
 	mux.HandleFunc("GET /api/auth/x", startXAuth)
+	mux.HandleFunc("GET /api/auth/x/start", startXAuthJSON)
 	mux.HandleFunc("GET /api/auth/x/callback", completeXAuth)
 	mux.HandleFunc("GET /api/auth/x/status", readXAuthStatus)
+	mux.HandleFunc("GET /api/workspace", readWorkspace)
+	mux.HandleFunc("POST /api/source-connections/youtube", saveYouTubeConnection)
 	mux.HandleFunc("GET /api/app-state", readAppState)
 	mux.HandleFunc("GET /api/knowledge-runs/latest", readLatest)
 	mux.HandleFunc("GET /api/knowledge-runs/refresh", readRefreshStatus)
@@ -280,7 +462,7 @@ func NewRouter(cfg config.Config, service *knowledge.Service, logger *slog.Logge
 	return requestLogger(logger, cors(cfg.AllowedOrigins, mux))
 }
 
-func setSessionCookie(w http.ResponseWriter, cfg config.Config, xUserID string) error {
+func setSessionCookie(w http.ResponseWriter, cfg config.Config, ownerID string, xUserID string) error {
 	secret := strings.TrimSpace(cfg.XSessionSecret)
 	if secret == "" {
 		return fmt.Errorf("X_SESSION_SECRET is required to issue the backend session cookie")
@@ -288,7 +470,7 @@ func setSessionCookie(w http.ResponseWriter, cfg config.Config, xUserID string) 
 	now := time.Now().UTC()
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
 		"iss":       "second-brain",
-		"sub":       cfg.OwnerID,
+		"sub":       ownerID,
 		"x_user_id": xUserID,
 		"iat":       now.Unix(),
 		"exp":       now.Add(time.Hour).Unix(),
@@ -327,6 +509,58 @@ func queryInt(r *http.Request, key string) int {
 
 func setReadModelCacheHeaders(w http.ResponseWriter) {
 	w.Header().Set("Cache-Control", "public, max-age=30, s-maxage=300, stale-while-revalidate=1800")
+}
+
+func setReadModelCacheHeadersForScope(w http.ResponseWriter, scope *requestScope) {
+	if scope != nil && scope.authenticated {
+		w.Header().Set("Cache-Control", "private, no-store")
+		return
+	}
+	setReadModelCacheHeaders(w)
+}
+
+func readSupabaseAuthUser(ctx context.Context, cfg config.Config, authorization string) (supabaseAuthUser, bool, error) {
+	const bearerPrefix = "Bearer "
+	authorization = strings.TrimSpace(authorization)
+	if authorization == "" {
+		return supabaseAuthUser{}, false, nil
+	}
+	if !strings.HasPrefix(authorization, bearerPrefix) {
+		return supabaseAuthUser{}, true, fmt.Errorf("Authorization header must use a bearer token.")
+	}
+	token := strings.TrimSpace(strings.TrimPrefix(authorization, bearerPrefix))
+	if token == "" {
+		return supabaseAuthUser{}, true, fmt.Errorf("Authorization bearer token is empty.")
+	}
+	baseURL := strings.TrimRight(strings.TrimSpace(cfg.SupabaseURL), "/")
+	publishableKey := strings.TrimSpace(cfg.SupabasePublishableKey)
+	if baseURL == "" || publishableKey == "" {
+		return supabaseAuthUser{}, true, fmt.Errorf("Supabase auth is not configured.")
+	}
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, baseURL+"/auth/v1/user", nil)
+	if err != nil {
+		return supabaseAuthUser{}, true, err
+	}
+	request.Header.Set("Authorization", "Bearer "+token)
+	request.Header.Set("apikey", publishableKey)
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		return supabaseAuthUser{}, true, fmt.Errorf("Supabase auth validation failed.")
+	}
+	defer response.Body.Close()
+	if response.StatusCode < 200 || response.StatusCode >= 300 {
+		return supabaseAuthUser{}, true, fmt.Errorf("Supabase session is invalid or expired.")
+	}
+	var user supabaseAuthUser
+	if err := json.NewDecoder(response.Body).Decode(&user); err != nil {
+		return supabaseAuthUser{}, true, fmt.Errorf("Supabase auth response could not be decoded.")
+	}
+	user.ID = strings.TrimSpace(user.ID)
+	user.Email = strings.TrimSpace(user.Email)
+	if user.ID == "" {
+		return supabaseAuthUser{}, true, fmt.Errorf("Supabase auth response did not include a user id.")
+	}
+	return user, true, nil
 }
 
 func responseETag(parts ...any) string {

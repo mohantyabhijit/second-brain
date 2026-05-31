@@ -4,8 +4,9 @@ import { type FormEvent, type ReactNode, useEffect, useMemo, useRef, useState } 
 import Link from "next/link";
 import type { KnowledgeInboxPage } from "../KnowledgeInboxContainer";
 import type { ChatMessage } from "../model/useKnowledgeInboxController";
+import type { SupabaseAuthState } from "../model/useSupabaseAuth";
 import type { KnowledgeInboxViewModel, NavigationItemViewModel, SummaryCardViewModel } from "../presentation/viewModel";
-import type { DigestIssue, FeedbackSignal, ImportantTimeMarker, InsightGraphResponse, RefreshStatus } from "../contracts";
+import type { DigestIssue, FeedbackSignal, ImportantTimeMarker, InsightGraphResponse, RefreshStatus, WorkspaceStatus } from "../contracts";
 import { KnowledgeGraphView } from "./KnowledgeGraphView";
 type SecondBrainConsoleViewProps = {
   activePage: KnowledgeInboxPage;
@@ -15,8 +16,14 @@ type SecondBrainConsoleViewProps = {
   isDigesting: boolean;
   isLoading: boolean;
   insightGraph: InsightGraphResponse | null;
+  auth: SupabaseAuthState;
+  workspace: WorkspaceStatus | null;
   model: KnowledgeInboxViewModel;
   refreshStatus: RefreshStatus | null;
+  onSignIn: (email: string) => Promise<void>;
+  onSignOut: () => Promise<void>;
+  onConnectX: () => Promise<void>;
+  onSavePlaylist: (playlist: string) => Promise<void>;
   onAsk: (question: string, useLatest?: boolean) => Promise<void>;
   onDigest: () => void;
   onSendDigest: (recipientEmail: string) => Promise<DigestIssue>;
@@ -81,13 +88,17 @@ const initialVisibleCount = 25;
 const loadMoreCount = 25;
 const summaryPreviewLength = 220;
 const quotePreviewLength = 260;
+const themeStorageKey = "second-brain-theme";
 
-export function SecondBrainConsoleView({ activePage, chatMessages, digestIssues, insightGraph, isAsking, isDigesting, isLoading, model, refreshStatus, onAsk, onDigest, onSendDigest, onFeedback }: SecondBrainConsoleViewProps) {
+type ThemeMode = "light" | "dark";
+
+export function SecondBrainConsoleView({ activePage, auth, chatMessages, digestIssues, insightGraph, isAsking, isDigesting, isLoading, model, refreshStatus, workspace, onAsk, onConnectX, onDigest, onSavePlaylist, onSendDigest, onFeedback, onSignIn, onSignOut }: SecondBrainConsoleViewProps) {
   const [visibleCount, setVisibleCount] = useState(initialVisibleCount);
   const [copiedItems, setCopiedItems] = useState<Set<string>>(new Set());
   const [digestEmail, setDigestEmail] = useState("");
   const [digestSendMessage, setDigestSendMessage] = useState<string | null>(null);
   const [openSummaryItem, setOpenSummaryItem] = useState<FeedItem | null>(null);
+  const theme = useThemeMode();
   const sentinelRef = useRef<HTMLDivElement | null>(null);
   const page = pageCopy[activePage];
   const isSourceLoadingPage = isExternalSourcePage(activePage);
@@ -166,6 +177,8 @@ export function SecondBrainConsoleView({ activePage, chatMessages, digestIssues,
             <span className="section-label">{page.kicker}</span>
             <h1>{page.title}</h1>
           </div>
+          <ThemeToggle mode={theme.mode} onToggle={theme.toggle} />
+          <AuthControls auth={auth} workspace={workspace} onSignIn={onSignIn} onSignOut={onSignOut} />
           {activePage === "daily-newsletter" ? (
             <div className="digest-email-tools">
               <button className="secondary-action" disabled={isDigesting} onClick={onDigest} type="button">
@@ -192,6 +205,9 @@ export function SecondBrainConsoleView({ activePage, chatMessages, digestIssues,
         </header>
 
         {model.error && activePage !== "knowledge-graph" ? <div className="error-banner">{model.error}</div> : null}
+        {auth.isAuthenticated && workspace && !workspace.onboarding.complete ? (
+          <OnboardingPanel isXConnected={workspace.x.authorized} isYouTubeConnected={workspace.youtube.configured} playlistId={workspace.youtube.playlistId} onConnectX={onConnectX} onSavePlaylist={onSavePlaylist} />
+        ) : null}
         {model.header.isRunning || refreshStatus?.status === "running" ? (
           <RefreshProgress status={refreshStatus} />
         ) : null}
@@ -262,6 +278,120 @@ function EmptyFeedState({ activePage, emptyTitle }: { activePage: KnowledgeInbox
       <h2>{emptyTitle}</h2>
       <p>No sourced items are available for this view yet. Refresh the inbox after X or YouTube credentials are connected.</p>
     </div>
+  );
+}
+
+function useThemeMode() {
+  const [mode, setMode] = useState<ThemeMode>("light");
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    const frame = window.requestAnimationFrame(() => {
+      const stored = window.localStorage.getItem(themeStorageKey);
+      if (stored === "light" || stored === "dark") {
+        setMode(stored);
+        return;
+      }
+      setMode(window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, []);
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = mode;
+    window.localStorage.setItem(themeStorageKey, mode);
+  }, [mode]);
+
+  return {
+    mode,
+    toggle: () => setMode((current) => (current === "dark" ? "light" : "dark"))
+  };
+}
+
+function ThemeToggle({ mode, onToggle }: { mode: ThemeMode; onToggle: () => void }) {
+  return (
+    <button aria-label={`Switch to ${mode === "dark" ? "light" : "dark"} mode`} className="theme-toggle" onClick={onToggle} type="button">
+      <span aria-hidden="true">{mode === "dark" ? "L" : "D"}</span>
+    </button>
+  );
+}
+
+function AuthControls({ auth, workspace, onSignIn, onSignOut }: { auth: SupabaseAuthState; workspace: WorkspaceStatus | null; onSignIn: (email: string) => Promise<void>; onSignOut: () => Promise<void> }) {
+  const [email, setEmail] = useState("");
+  const [message, setMessage] = useState<string | null>(null);
+  const label = auth.isAuthenticated ? auth.email ?? "Signed in" : workspace?.profile.handle ? `@${workspace.profile.handle}` : "Public workspace";
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setMessage(null);
+    try {
+      await onSignIn(email);
+      setMessage("Check your email for the sign-in link.");
+      setEmail("");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Sign-in failed.");
+    }
+  }
+
+  if (!auth.configured) {
+    return <div className="auth-compact">{label}</div>;
+  }
+
+  if (auth.isAuthenticated) {
+    return (
+      <div className="auth-compact">
+        <span>{label}</span>
+        <button className="secondary-action" disabled={auth.isLoading} onClick={() => void onSignOut()} type="button">
+          Sign Out
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <form className="auth-form" onSubmit={submit}>
+      <span>{label}</span>
+      <input aria-label="Email address" onChange={(event) => setEmail(event.target.value)} placeholder="you@example.com" type="email" value={email} />
+      <button disabled={auth.isLoading} type="submit">
+        Sign In
+      </button>
+      {message ? <p role="status">{message}</p> : null}
+    </form>
+  );
+}
+
+function OnboardingPanel({ isXConnected, isYouTubeConnected, playlistId, onConnectX, onSavePlaylist }: { isXConnected: boolean; isYouTubeConnected: boolean; playlistId?: string; onConnectX: () => Promise<void>; onSavePlaylist: (playlist: string) => Promise<void> }) {
+  const [playlist, setPlaylist] = useState(playlistId ?? "");
+  const [message, setMessage] = useState<string | null>(null);
+
+  async function submitPlaylist(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setMessage(null);
+    try {
+      await onSavePlaylist(playlist);
+      setMessage("YouTube playlist saved.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "YouTube playlist could not be saved.");
+    }
+  }
+
+  return (
+    <section className="onboarding-band" aria-label="Workspace onboarding">
+      <div>
+        <span className={isXConnected ? "status-pill ready" : "status-pill"}>X</span>
+        <button className="secondary-action" disabled={isXConnected} onClick={() => void onConnectX()} type="button">
+          {isXConnected ? "X Connected" : "Connect X"}
+        </button>
+      </div>
+      <form onSubmit={submitPlaylist}>
+        <span className={isYouTubeConnected ? "status-pill ready" : "status-pill"}>YouTube</span>
+        <input aria-label="Public YouTube playlist URL or ID" onChange={(event) => setPlaylist(event.target.value)} placeholder="Playlist URL or ID" value={playlist} />
+        <button type="submit">{isYouTubeConnected ? "Update Playlist" : "Save Playlist"}</button>
+      </form>
+      {message ? <p role="status">{message}</p> : null}
+    </section>
   );
 }
 

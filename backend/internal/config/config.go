@@ -5,14 +5,22 @@ import (
 	"strings"
 )
 
-const defaultYouTubePlaylistID = "PLH_SZ1gwLn4gpQyZICprtx3nKRYGPKE7r"
+const (
+	DefaultOwnerID           = "00000000-0000-0000-0000-000000000001"
+	DefaultPublicOwnerHandle = "abhijitmohanty"
+	defaultYouTubePlaylistID = "PLH_SZ1gwLn4gpQyZICprtx3nKRYGPKE7r"
+)
 
 type Config struct {
 	Env                          string
 	Port                         string
 	OwnerID                      string
+	PublicOwnerID                string
+	PublicOwnerHandle            string
+	PublicOwnerEmail             string
 	SupabaseDatabaseURL          string
 	SupabaseURL                  string
+	SupabasePublishableKey       string
 	SupabaseStorageKey           string
 	SupabaseStorageBucket        string
 	AllowedOrigins               []string
@@ -75,9 +83,13 @@ func Load() Config {
 	return Config{
 		Env:                          value("APP_ENV", "development"),
 		Port:                         value("PORT", "8080"),
-		OwnerID:                      value("APP_USER_ID", "00000000-0000-0000-0000-000000000001"),
+		OwnerID:                      value("APP_USER_ID", value("PUBLIC_OWNER_ID", DefaultOwnerID)),
+		PublicOwnerID:                value("PUBLIC_OWNER_ID", DefaultOwnerID),
+		PublicOwnerHandle:            value("PUBLIC_OWNER_HANDLE", DefaultPublicOwnerHandle),
+		PublicOwnerEmail:             os.Getenv("PUBLIC_OWNER_EMAIL"),
 		SupabaseDatabaseURL:          os.Getenv("SUPABASE_DB_URL"),
 		SupabaseURL:                  os.Getenv("SUPABASE_URL"),
+		SupabasePublishableKey:       firstEnv("SUPABASE_PUBLISHABLE_KEY", "NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY"),
 		SupabaseStorageKey:           os.Getenv("SUPABASE_SERVICE_ROLE_KEY"),
 		SupabaseStorageBucket:        value("SUPABASE_STORAGE_BUCKET", "sources"),
 		AllowedOrigins:               csv(value("ALLOWED_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000")),

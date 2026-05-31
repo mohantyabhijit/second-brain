@@ -208,6 +208,46 @@ type SourceConnection struct {
 	SharedSignals []string `json:"sharedSignals"`
 }
 
+type SourceProviderConnection struct {
+	ID                string     `json:"id"`
+	Provider          string     `json:"provider"`
+	ProviderAccountID string     `json:"providerAccountId"`
+	Scopes            []string   `json:"scopes"`
+	TokenStatus       string     `json:"tokenStatus"`
+	LastValidatedAt   *time.Time `json:"lastValidatedAt,omitempty"`
+	UpdatedAt         time.Time  `json:"updatedAt"`
+}
+
+type WorkspaceProfile struct {
+	OwnerID       string `json:"ownerId"`
+	Handle        string `json:"handle"`
+	DisplayName   string `json:"displayName"`
+	Email         string `json:"email,omitempty"`
+	IsPublicOwner bool   `json:"isPublicOwner"`
+	Authenticated bool   `json:"authenticated"`
+}
+
+type YouTubeConnectionStatus struct {
+	Configured      bool       `json:"configured"`
+	PlaylistID      string     `json:"playlistId,omitempty"`
+	LastValidatedAt *time.Time `json:"lastValidatedAt,omitempty"`
+}
+
+type WorkspaceStatus struct {
+	Profile    WorkspaceProfile        `json:"profile"`
+	X          XAuthStatus             `json:"x"`
+	YouTube    YouTubeConnectionStatus `json:"youtube"`
+	Onboarding struct {
+		Complete bool     `json:"complete"`
+		Missing  []string `json:"missing"`
+	} `json:"onboarding"`
+}
+
+type YouTubePlaylistInput struct {
+	PlaylistID  string `json:"playlistId,omitempty"`
+	PlaylistURL string `json:"playlistUrl,omitempty"`
+}
+
 type DigestDelivery struct {
 	Provider          string     `json:"provider"`
 	Recipient         string     `json:"recipient"`

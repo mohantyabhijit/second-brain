@@ -31,12 +31,37 @@ type digestSourceReader interface {
 	ReadNewDigestSources(ctx context.Context, ownerID string, promptVersion string, model string) ([]DigestSourceRef, error)
 }
 
+type authOwnerResolver interface {
+	ResolveOwnerForAuthUser(ctx context.Context, authUserID string, email string, publicOwnerID string, publicOwnerEmail string) (string, error)
+}
+
+type ownerLatestReader interface {
+	ReadLatestForOwner(ctx context.Context, ownerID string) (*Result, error)
+}
+
 type readModelViewCache interface {
 	ReadAppViewState(ctx context.Context, ownerID string, view string, limit int) (*AppState, error)
 }
 
 type latestViewReader interface {
 	ReadLatestView(ctx context.Context, view string, limit int) (*Result, error)
+}
+
+type ownerLatestViewReader interface {
+	ReadLatestViewForOwner(ctx context.Context, ownerID string, view string, limit int) (*Result, error)
+}
+
+type ownerDigestReader interface {
+	ReadDigestsForOwner(ctx context.Context, ownerID string, limit int) ([]DigestIssue, error)
+}
+
+type ownerSynthesisCacheReader interface {
+	ReadCachedSynthesesForOwner(ctx context.Context, ownerID string, keys []SynthesisCacheKey) (map[string]SynthesisRecord, error)
+}
+
+type sourceProviderConnectionStore interface {
+	ReadSourceProviderConnections(ctx context.Context, ownerID string) ([]SourceProviderConnection, error)
+	SaveYouTubePlaylistConnection(ctx context.Context, ownerID string, playlistID string) (*SourceProviderConnection, error)
 }
 
 type readModelSnapshotStore interface {
@@ -75,6 +100,15 @@ func NewService(cfg config.Config, store Store, client *http.Client) *Service {
 	if client == nil {
 		client = http.DefaultClient
 	}
+	if strings.TrimSpace(cfg.OwnerID) == "" {
+		cfg.OwnerID = config.DefaultOwnerID
+	}
+	if strings.TrimSpace(cfg.PublicOwnerID) == "" {
+		cfg.PublicOwnerID = config.DefaultOwnerID
+	}
+	if strings.TrimSpace(cfg.PublicOwnerHandle) == "" {
+		cfg.PublicOwnerHandle = config.DefaultPublicOwnerHandle
+	}
 	return &Service{
 		cfg:              cfg,
 		store:            store,
@@ -83,6 +117,106 @@ func NewService(cfg config.Config, store Store, client *http.Client) *Service {
 		appStateViewMemo: map[string]cachedAppStateView{},
 		xOAuthStates:     map[string]xOAuthState{},
 	}
+}
+
+func (s *Service) OwnerID() string {
+	return s.cfg.OwnerID
+}
+
+func (s *Service) ForOwner(ownerID string) *Service {
+	ownerID = strings.TrimSpace(ownerID)
+	if ownerID == "" || ownerID == s.cfg.OwnerID {
+		return s
+	}
+	cfg := s.cfg
+	cfg.OwnerID = ownerID
+	if strings.TrimSpace(cfg.PublicOwnerID) != "" && ownerID != cfg.PublicOwnerID {
+		cfg.XExpectedUsername = ""
+	}
+	ownerService := NewService(cfg, s.store, s.client)
+	ownerService.SetLogger(s.logger)
+	ownerService.SetReadModelCache(s.cache)
+	return ownerService
+}
+
+func (s *Service) ResolveOwnerForAuthUser(ctx context.Context, authUserID string, email string, publicOwnerID string, publicOwnerEmail string) (string, error) {
+	authUserID = strings.TrimSpace(authUserID)
+	if authUserID == "" {
+		return "", fmt.Errorf("authenticated Supabase user id is required")
+	}
+	if resolver, ok := s.store.(authOwnerResolver); ok {
+		return resolver.ResolveOwnerForAuthUser(ctx, authUserID, email, publicOwnerID, publicOwnerEmail)
+	}
+	return authUserID, nil
+}
+
+func (s *Service) WorkspaceStatus(ctx context.Context, authenticated bool) (WorkspaceStatus, error) {
+	status := WorkspaceStatus{
+		Profile: WorkspaceProfile{
+			OwnerID:       s.cfg.OwnerID,
+			Handle:        s.cfg.PublicOwnerHandle,
+			DisplayName:   s.cfg.PublicOwnerHandle,
+			Email:         "",
+			IsPublicOwner: s.isPublicOwner(),
+			Authenticated: authenticated,
+		},
+		X: s.XAuthStatus(ctx),
+	}
+	if !status.Profile.IsPublicOwner {
+		status.Profile.Handle = ""
+		status.Profile.DisplayName = "Your Second Brain"
+	}
+	playlistID := s.ownerYouTubePlaylistID(ctx)
+	if playlistID != "" {
+		status.YouTube.Configured = true
+		status.YouTube.PlaylistID = playlistID
+	}
+	if connections, err := s.readSourceProviderConnections(ctx); err == nil {
+		for _, connection := range connections {
+			if connection.Provider != "youtube" {
+				continue
+			}
+			status.YouTube.Configured = true
+			status.YouTube.PlaylistID = connection.ProviderAccountID
+			if connection.LastValidatedAt != nil {
+				value := connection.LastValidatedAt.UTC()
+				status.YouTube.LastValidatedAt = &value
+			}
+			break
+		}
+	} else {
+		return status, err
+	}
+	if !status.X.Authorized {
+		status.Onboarding.Missing = append(status.Onboarding.Missing, "x")
+	}
+	if !status.YouTube.Configured {
+		status.Onboarding.Missing = append(status.Onboarding.Missing, "youtube")
+	}
+	status.Onboarding.Complete = len(status.Onboarding.Missing) == 0
+	return status, nil
+}
+
+func (s *Service) SaveYouTubePlaylist(ctx context.Context, input YouTubePlaylistInput) (*SourceProviderConnection, error) {
+	playlistID := normalizeYouTubePlaylistID(input.PlaylistID, input.PlaylistURL)
+	if playlistID == "" {
+		return nil, fmt.Errorf("public YouTube playlist URL or playlist ID is required")
+	}
+	if _, err := s.fetchPlaylistItems(ctx, playlistID, 1); err != nil {
+		return nil, err
+	}
+	if store, ok := s.store.(sourceProviderConnectionStore); ok {
+		return store.SaveYouTubePlaylistConnection(ctx, s.cfg.OwnerID, playlistID)
+	}
+	now := time.Now().UTC()
+	return &SourceProviderConnection{
+		ID:                "youtube:" + playlistID,
+		Provider:          "youtube",
+		ProviderAccountID: playlistID,
+		TokenStatus:       "active",
+		LastValidatedAt:   &now,
+		UpdatedAt:         now,
+	}, nil
 }
 
 func (s *Service) SetLogger(logger *slog.Logger) {
@@ -125,7 +259,13 @@ func (s *Service) ReadLatest(ctx context.Context) (*Result, error) {
 }
 
 func (s *Service) readLatestCanonical(ctx context.Context) (*Result, error) {
-	latest, err := s.store.ReadLatest(ctx)
+	var latest *Result
+	var err error
+	if reader, ok := s.store.(ownerLatestReader); ok {
+		latest, err = reader.ReadLatestForOwner(ctx, s.cfg.OwnerID)
+	} else {
+		latest, err = s.store.ReadLatest(ctx)
+	}
 	if err != nil || latest == nil {
 		return latest, err
 	}
@@ -134,6 +274,37 @@ func (s *Service) readLatestCanonical(ctx context.Context) (*Result, error) {
 		s.annotateDigestIllustration(latest.Digest)
 	}
 	return latest, nil
+}
+
+func (s *Service) isPublicOwner() bool {
+	publicOwnerID := strings.TrimSpace(s.cfg.PublicOwnerID)
+	if publicOwnerID == "" {
+		publicOwnerID = config.DefaultOwnerID
+	}
+	return strings.TrimSpace(s.cfg.OwnerID) == publicOwnerID
+}
+
+func (s *Service) readSourceProviderConnections(ctx context.Context) ([]SourceProviderConnection, error) {
+	if store, ok := s.store.(sourceProviderConnectionStore); ok {
+		return store.ReadSourceProviderConnections(ctx, s.cfg.OwnerID)
+	}
+	return []SourceProviderConnection{}, nil
+}
+
+func (s *Service) ownerYouTubePlaylistID(ctx context.Context) string {
+	if connections, err := s.readSourceProviderConnections(ctx); err == nil {
+		for _, connection := range connections {
+			if connection.Provider == "youtube" && strings.TrimSpace(connection.ProviderAccountID) != "" {
+				return strings.TrimSpace(connection.ProviderAccountID)
+			}
+		}
+	} else if s.logger != nil {
+		s.logger.Warn("read youtube source connection failed", "owner_id", s.cfg.OwnerID, "error", err)
+	}
+	if s.isPublicOwner() {
+		return strings.TrimSpace(s.cfg.YouTubePlaylistID)
+	}
+	return ""
 }
 
 func (s *Service) ReadAppState(ctx context.Context) (*AppState, string, error) {
@@ -267,6 +438,15 @@ func appStateViewMemoKey(view string, limit int) string {
 func (s *Service) readLatestViewCanonical(ctx context.Context, view string, limit int) (*Result, error) {
 	if strings.TrimSpace(view) == "knowledge-graph" {
 		return s.readLatestCanonical(ctx)
+	}
+	if reader, ok := s.store.(ownerLatestViewReader); ok {
+		latest, err := reader.ReadLatestViewForOwner(ctx, s.cfg.OwnerID, view, NormalizePageStateLimit(limit))
+		if err == nil {
+			normalizeResultInsightEngine(latest)
+			normalizeResultCollections(latest)
+			return latest, nil
+		}
+		s.logger.Warn("view-scoped latest fallback", "view", view, "error", err)
 	}
 	if reader, ok := s.store.(latestViewReader); ok {
 		latest, err := reader.ReadLatestView(ctx, view, NormalizePageStateLimit(limit))
@@ -407,15 +587,16 @@ func (s *Service) RunCycle(ctx context.Context) (RunOutcome, error) {
 		xFetch <- xFetchResult{items: items, err: err, duration: time.Since(xStart)}
 	}()
 
-	if s.cfg.YouTubePlaylistID == "" {
+	youtubePlaylistID := s.ownerYouTubePlaylistID(ctx)
+	if youtubePlaylistID == "" {
 		youtubeFetch <- youtubeFetchResult{
-			err:     fmt.Errorf("YOUTUBE_PLAYLIST_ID is missing. Use a dedicated Second Brain Inbox playlist because Watch Later is blocked by the YouTube API."),
+			err:     fmt.Errorf("public YouTube playlist is missing. Add a public playlist during onboarding because Watch Later is blocked by the YouTube API."),
 			blocked: true,
 		}
 	} else {
 		go func() {
 			youtubeStart := time.Now()
-			items, err := s.fetchPlaylistItems(ctx, s.cfg.YouTubePlaylistID, 5)
+			items, err := s.fetchPlaylistItems(ctx, youtubePlaylistID, 5)
 			youtubeFetch <- youtubeFetchResult{items: items, err: err, blocked: err != nil, duration: time.Since(youtubeStart)}
 		}()
 	}
@@ -546,7 +727,7 @@ func (s *Service) RunCycle(ctx context.Context) (RunOutcome, error) {
 		result.SourceStatus.YouTube = SourceBlocked
 	case len(youtubeItems) > 0:
 		result.SourceStatus.YouTube = SourceReady
-	case s.cfg.YouTubePlaylistID != "":
+	case youtubePlaylistID != "":
 		result.SourceStatus.YouTube = SourcePartial
 	}
 
@@ -1052,7 +1233,13 @@ func (s *Service) ReadDigests(ctx context.Context, limit int) ([]DigestIssue, er
 }
 
 func (s *Service) readDigestsCanonical(ctx context.Context, limit int) ([]DigestIssue, error) {
-	digests, err := s.store.ReadDigests(ctx, limit)
+	var digests []DigestIssue
+	var err error
+	if reader, ok := s.store.(ownerDigestReader); ok {
+		digests, err = reader.ReadDigestsForOwner(ctx, s.cfg.OwnerID, limit)
+	} else {
+		digests, err = s.store.ReadDigests(ctx, limit)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -1168,13 +1355,13 @@ func (s *Service) processSourceCandidates(ctx context.Context, candidates []sour
 			Model:         model,
 		})
 	}
-	cached, err := s.store.ReadCachedSyntheses(ctx, keys)
+	cached, err := s.readCachedSyntheses(ctx, keys)
 	blockers := []string{}
 	if err != nil {
 		blockers = append(blockers, "synthesis cache lookup failed: "+err.Error())
 		cached = map[string]SynthesisRecord{}
 	}
-	sourceCached, err := s.store.ReadCachedSyntheses(ctx, sourceKeys)
+	sourceCached, err := s.readCachedSyntheses(ctx, sourceKeys)
 	if err != nil {
 		blockers = append(blockers, "source cache lookup failed: "+err.Error())
 		sourceCached = map[string]SynthesisRecord{}
@@ -1210,6 +1397,13 @@ func (s *Service) processSourceCandidates(ctx context.Context, candidates []sour
 	close(jobs)
 	wg.Wait()
 	return processed, blockers
+}
+
+func (s *Service) readCachedSyntheses(ctx context.Context, keys []SynthesisCacheKey) (map[string]SynthesisRecord, error) {
+	if reader, ok := s.store.(ownerSynthesisCacheReader); ok {
+		return reader.ReadCachedSynthesesForOwner(ctx, s.cfg.OwnerID, keys)
+	}
+	return s.store.ReadCachedSyntheses(ctx, keys)
 }
 
 func (s *Service) processSourceCandidate(ctx context.Context, candidate sourceCandidate, captureHash string, cached map[string]SynthesisRecord, sourceCached map[string]SynthesisRecord) ProcessedSource {
