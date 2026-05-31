@@ -21,10 +21,10 @@ const routes = [
 
 const apiRoutes = [
   { name: "app-state-full", path: "/api/app-state" },
-  { name: "app-state-insights", path: "/api/app-state?view=insights&limit=25" },
+  { name: "app-state-insights", path: "/api/app-state?view=insights&limit=20" },
   { name: "app-state-newsletter", path: "/api/app-state?view=daily-newsletter&limit=10" },
-  { name: "app-state-x", path: "/api/app-state?view=original-x-posts&limit=25" },
-  { name: "app-state-youtube", path: "/api/app-state?view=original-youtube-posts&limit=25" },
+  { name: "app-state-x", path: "/api/app-state?view=original-x-posts&limit=15" },
+  { name: "app-state-youtube", path: "/api/app-state?view=original-youtube-posts&limit=15" },
   { name: "graph", path: "/api/knowledge-graph/insights?limit=180" },
   { name: "digests", path: "/api/digests" },
   { name: "latest", path: "/api/knowledge-runs/latest" }

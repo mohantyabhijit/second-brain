@@ -37,7 +37,7 @@ export function useKnowledgeInboxController(activePage: KnowledgeInboxPage = "in
 
   useEffect(() => {
     let ignore = false;
-    readAppState(activePage)
+    readAppState(activePage, appStateLimitForPage(activePage))
       .then((state) => {
         if (!ignore) {
           applyAppState(state);
@@ -69,7 +69,7 @@ export function useKnowledgeInboxController(activePage: KnowledgeInboxPage = "in
         return;
       }
       if (status.status === "completed") {
-        const state = await readAppState(activePage).catch(() => null);
+        const state = await readAppState(activePage, appStateLimitForPage(activePage)).catch(() => null);
         if (!ignore && state) {
           applyAppState(state);
         }
@@ -107,7 +107,7 @@ export function useKnowledgeInboxController(activePage: KnowledgeInboxPage = "in
       if (status.status === "failed") {
         throw new Error(status.error || "Knowledge inbox validation failed.");
       }
-      const state = await readAppState(activePage).catch(() => null);
+      const state = await readAppState(activePage, appStateLimitForPage(activePage)).catch(() => null);
       if (state) {
         applyAppState(state);
       } else {
@@ -243,4 +243,18 @@ function delay(ms: number) {
   return new Promise((resolve) => {
     window.setTimeout(resolve, ms);
   });
+}
+
+function appStateLimitForPage(page: KnowledgeInboxPage) {
+  switch (page) {
+    case "daily-newsletter":
+      return 10;
+    case "original-x-posts":
+    case "original-youtube-posts":
+      return 15;
+    case "knowledge-graph":
+      return 1;
+    default:
+      return 20;
+  }
 }
