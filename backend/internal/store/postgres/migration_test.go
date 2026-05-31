@@ -86,3 +86,28 @@ func TestDigestSourceLedgerMigrationDefinesDigestMembership(t *testing.T) {
 		}
 	}
 }
+
+func TestReadModelSnapshotMigrationDefinesPrecomputedPayloadStore(t *testing.T) {
+	raw, err := os.ReadFile("../../../../supabase/migrations/202605310001_read_model_snapshots.sql")
+	if err != nil {
+		t.Fatalf("read migration: %v", err)
+	}
+	sql := string(raw)
+
+	requiredFragments := []string{
+		"create table if not exists public.read_model_snapshots",
+		"owner_id uuid not null references public.user_profiles(id) on delete cascade",
+		"schema_version text not null",
+		"run_id text not null",
+		"payload jsonb not null",
+		"unique (owner_id, run_id)",
+		"alter table public.read_model_snapshots enable row level security",
+		`create policy "read_model_snapshots_no_browser_access"`,
+		"on public.read_model_snapshots (owner_id, schema_version, published_at desc)",
+	}
+	for _, fragment := range requiredFragments {
+		if !strings.Contains(sql, fragment) {
+			t.Fatalf("migration missing fragment %q", fragment)
+		}
+	}
+}

@@ -51,11 +51,13 @@ func main() {
 		} else if outcome.ok {
 			logger.Info("worker graph sync skipped", "reason", outcome.skippedReason)
 		}
+		publishReadModels(ctx, service, logger, "post_refresh_precompute")
 	}
 	runDigest := func(reason string) {
 		runLock.Lock()
 		defer runLock.Unlock()
 		generateDigest(ctx, service, logger, reason)
+		publishReadModels(ctx, service, logger, "daily_precompute")
 	}
 
 	runCycle("startup")
@@ -113,6 +115,17 @@ func generateDigest(ctx context.Context, service *knowledge.Service, logger *slo
 		return
 	}
 	logger.Info("worker digest completed", "reason", reason, "date", digest.DigestDate, "status", digest.Status, "subject", digest.Subject)
+}
+
+func publishReadModels(ctx context.Context, service *knowledge.Service, logger *slog.Logger, reason string) {
+	precomputeCtx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+	defer cancel()
+	state, err := service.PublishReadModels(precomputeCtx, reason)
+	if err != nil {
+		logger.Warn("worker precompute failed", "reason", reason, "error", err)
+		return
+	}
+	logger.Info("worker precompute completed", "reason", reason, "run_id", state.Manifest.RunID, "etag", state.Manifest.ETag)
 }
 
 func runGraphSync(ctx context.Context, cfg config.Config, logger *slog.Logger) {

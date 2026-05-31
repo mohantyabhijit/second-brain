@@ -1,7 +1,9 @@
 package httpapi
 
 import (
+	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -151,6 +153,47 @@ func TestRouterServesAppStateFallback(t *testing.T) {
 	}
 }
 
+func BenchmarkAppStateRepeatFetchTransfer(b *testing.B) {
+	router := benchmarkRouter(b)
+	prime := httptest.NewRecorder()
+	router.ServeHTTP(prime, httptest.NewRequest(http.MethodGet, "/api/app-state?view=insights&limit=20", nil))
+	if prime.Code != http.StatusOK {
+		b.Fatalf("prime app-state status %d: %s", prime.Code, prime.Body.String())
+	}
+	etag := prime.Header().Get("ETag")
+	if etag == "" {
+		b.Fatal("expected app-state ETag")
+	}
+
+	b.Run("no-conditional-request", func(b *testing.B) {
+		var responseBytes int64
+		for i := 0; i < b.N; i++ {
+			response := httptest.NewRecorder()
+			router.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/api/app-state?view=insights&limit=20", nil))
+			if response.Code != http.StatusOK {
+				b.Fatalf("expected app-state 200, got %d", response.Code)
+			}
+			responseBytes += int64(response.Body.Len())
+		}
+		b.ReportMetric(float64(responseBytes)/float64(b.N), "response_bytes/op")
+	})
+
+	b.Run("if-none-match-304", func(b *testing.B) {
+		var responseBytes int64
+		for i := 0; i < b.N; i++ {
+			request := httptest.NewRequest(http.MethodGet, "/api/app-state?view=insights&limit=20", nil)
+			request.Header.Set("If-None-Match", etag)
+			response := httptest.NewRecorder()
+			router.ServeHTTP(response, request)
+			if response.Code != http.StatusNotModified {
+				b.Fatalf("expected app-state 304, got %d", response.Code)
+			}
+			responseBytes += int64(response.Body.Len())
+		}
+		b.ReportMetric(float64(responseBytes)/float64(b.N), "response_bytes/op")
+	})
+}
+
 func TestMemoryProfilingRoutesRequireOptInAndToken(t *testing.T) {
 	router := testRouter(t)
 
@@ -247,6 +290,60 @@ func newTestRouter(t *testing.T, cfg config.Config) http.Handler {
 	return NewRouter(cfg, service, logger)
 }
 
+func benchmarkRouter(b *testing.B) http.Handler {
+	b.Helper()
+	clearProviderEnvForBenchmark(b)
+	cfg := config.Config{
+		Env:                    "test",
+		AllowedOrigins:         []string{"http://localhost:3000"},
+		OneCLIBin:              filepath.Join(b.TempDir(), "missing-onecli"),
+		KnowledgeRunPath:       filepath.Join(b.TempDir(), "latest-knowledge-run.json"),
+		YouTubePlaylistID:      "",
+		SupabaseStorageBucket:  "sources",
+		OpenAITranslationModel: "gpt-4o-mini",
+		OpenAISynthesisModel:   "gpt-4o-mini",
+	}
+	store := localfile.New(cfg.KnowledgeRunPath)
+	now := time.Date(2026, 5, 31, 6, 0, 0, 0, time.UTC)
+	result := knowledge.Result{
+		GeneratedAt: now,
+		Summaries:   []knowledge.Summary{},
+		Insights:    []knowledge.Insight{},
+		Validation:  []knowledge.ValidationItem{{Label: "ok", Status: "pass", Detail: "seeded benchmark run"}},
+		Blockers:    []string{},
+	}
+	result.SourceStatus.X = knowledge.SourceReady
+	result.SourceStatus.YouTube = knowledge.SourceReady
+	result.SourceStatus.OneCLI = knowledge.SourceReady
+	for i := 0; i < 100; i++ {
+		sourceID := fmt.Sprintf("source-%03d", i)
+		result.Summaries = append(result.Summaries, knowledge.Summary{
+			ID:         sourceID,
+			Source:     "x",
+			Title:      fmt.Sprintf("Seed summary %03d", i),
+			SourceURL:  "https://x.example/" + sourceID,
+			Summary:    "A benchmark summary with enough text to behave like a real app-state payload.",
+			Confidence: "high",
+		})
+		result.Insights = append(result.Insights, knowledge.Insight{
+			ID:         fmt.Sprintf("insight-%03d", i),
+			Source:     "x",
+			SourceID:   sourceID,
+			Title:      fmt.Sprintf("Seed insight %03d", i),
+			Insight:    "A benchmark insight that stands in for the rendered feed payload.",
+			Evidence:   "Source-backed evidence for the benchmark insight.",
+			SourceURL:  "https://x.example/" + sourceID,
+			Confidence: "high",
+		})
+	}
+	if err := store.SaveRun(context.Background(), result, nil); err != nil {
+		b.Fatalf("seed benchmark store: %v", err)
+	}
+	service := knowledge.NewService(cfg, store, http.DefaultClient)
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	return NewRouter(cfg, service, logger)
+}
+
 func clearProviderEnv(t *testing.T) {
 	t.Helper()
 	for _, key := range []string{
@@ -258,6 +355,20 @@ func clearProviderEnv(t *testing.T) {
 		"ONECLI_GATEWAY",
 	} {
 		t.Setenv(key, "")
+	}
+}
+
+func clearProviderEnvForBenchmark(b *testing.B) {
+	b.Helper()
+	for _, key := range []string{
+		"X_USER_ACCESS_TOKEN",
+		"YOUTUBE_API_KEY",
+		"YOUTUBE_ACCESS_TOKEN",
+		"SUPADATA_API_KEY",
+		"OPENAI_API_KEY",
+		"ONECLI_GATEWAY",
+	} {
+		b.Setenv(key, "")
 	}
 }
 

@@ -20,7 +20,6 @@ import {
   unionCanvasRects,
   zoomViewportAtScreenPoint
 } from "../graph/canvasViewport";
-import { readInsightGraph } from "../api/knowledgeRuns";
 import type { InsightGraphResponse } from "../contracts";
 import { createInsightGraphLayout, fallbackGraphLabelMeasure, type GraphLayoutNode } from "../graph/graphLayout";
 import { measurePretextGraphLabel } from "../graph/pretextMeasure";
@@ -134,22 +133,42 @@ type DragState =
       moved: boolean;
     };
 
-const graphLimit = 180;
 const initialViewport: CanvasViewport = { x: 96, y: 76, zoom: 1 };
 const historyLimit = 60;
 const moveThreshold = 3;
 const shapeColor = "#17201c";
+const emptyGraph: InsightGraphResponse = {
+  nodes: [],
+  edges: [],
+  stats: {
+    totalInsights: 0,
+    returnedInsights: 0,
+    returnedEdges: 0
+  }
+};
 
-export function KnowledgeGraphView() {
-  const [graph, setGraph] = useState<InsightGraphResponse | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+function graphIdentity(graph: InsightGraphResponse) {
+  const first = graph.nodes[0]?.id ?? "none";
+  const last = graph.nodes.at(-1)?.id ?? "none";
+  return `${graph.stats.totalInsights}:${graph.stats.returnedInsights}:${graph.stats.returnedEdges}:${first}:${last}`;
+}
+
+function initialGraphSelection(graph: InsightGraphResponse): SelectionId[] {
+  return graph.nodes[0] ? [nodeSelectionId(graph.nodes[0].id)] : [];
+}
+
+export function KnowledgeGraphView({ graph, isLoading = false }: { graph: InsightGraphResponse | null; isLoading?: boolean }) {
+  const precomputedGraph = graph ?? emptyGraph;
+  return <KnowledgeGraphCanvas key={graphIdentity(precomputedGraph)} graph={precomputedGraph} isLoading={isLoading} />;
+}
+
+function KnowledgeGraphCanvas({ graph: precomputedGraph, isLoading }: { graph: InsightGraphResponse; isLoading: boolean }) {
   const [tool, setTool] = useState<CanvasTool>("select");
   const [isSpacePanning, setIsSpacePanning] = useState(false);
   const [viewport, setViewport] = useState<CanvasViewport>(initialViewport);
   const [canvasState, setCanvasState] = useState<CanvasState>({ nodePositions: {}, shapes: [] });
   const [history, setHistory] = useState<CanvasHistory>({ past: [], future: [] });
-  const [selectionIds, setSelectionIds] = useState<SelectionId[]>([]);
+  const [selectionIds, setSelectionIds] = useState<SelectionId[]>(() => initialGraphSelection(precomputedGraph));
   const [drag, setDrag] = useState<DragState | null>(null);
   const viewportElementRef = useRef<HTMLDivElement | null>(null);
   const svgRef = useRef<SVGSVGElement | null>(null);
@@ -170,33 +189,9 @@ export function KnowledgeGraphView() {
     selectionRef.current = selectionIds;
   }, [selectionIds]);
 
-  useEffect(() => {
-    let cancelled = false;
-    readInsightGraph(graphLimit)
-      .then((payload) => {
-        if (cancelled) return;
-        setGraph(payload);
-        setError(null);
-        setSelectionIds(payload.nodes[0] ? [nodeSelectionId(payload.nodes[0].id)] : []);
-        setCanvasState({ nodePositions: {}, shapes: [] });
-        setHistory({ past: [], future: [] });
-      })
-      .catch((requestError: unknown) => {
-        if (cancelled) return;
-        setError(requestError instanceof Error ? requestError.message : "Unable to load the insight graph.");
-      })
-      .finally(() => {
-        if (!cancelled) setIsLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
   const layout = useMemo(() => {
-    if (!graph) return null;
-    return createInsightGraphLayout(graph, safePretextMeasure);
-  }, [graph]);
+    return createInsightGraphLayout(precomputedGraph, safePretextMeasure);
+  }, [precomputedGraph]);
 
   const nodes = useMemo(() => {
     if (!layout) return [];
@@ -610,9 +605,9 @@ export function KnowledgeGraphView() {
     <section className="knowledge-graph-panel" aria-label="Insight knowledge graph">
       <div className="graph-toolbar">
         <div className="graph-stats" aria-label="Graph statistics">
-          <span>{graph?.stats.returnedInsights ?? 0} insights</span>
-          <span>{graph?.stats.returnedEdges ?? 0} links</span>
-          <span>{graph?.stats.totalInsights ?? 0} total</span>
+          <span>{precomputedGraph.stats.returnedInsights} insights</span>
+          <span>{precomputedGraph.stats.returnedEdges} links</span>
+          <span>{precomputedGraph.stats.totalInsights} total</span>
         </div>
         <div className="graph-toolset" aria-label="Canvas tools">
           <ToolButton active={effectiveTool === "select"} icon="select" label="Select" onClick={() => setTool("select")} />
@@ -647,15 +642,14 @@ export function KnowledgeGraphView() {
         </div>
       </div>
 
-      {error ? <div className="error-banner">{error}</div> : null}
       {isLoading ? (
         <div className="loading-strip" role="status">
           <span className="loading-spinner" aria-hidden="true" />
-          Loading Neo4j insight graph
+          Loading precomputed insight graph
         </div>
       ) : null}
 
-      {layout && !error ? (
+      {layout ? (
         <div className="graph-stage">
           <div
             ref={viewportElementRef}

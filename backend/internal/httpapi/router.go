@@ -33,6 +33,7 @@ func NewRouter(cfg config.Config, service *knowledge.Service, logger *slog.Logge
 			httputil.Error(w, http.StatusInternalServerError, "read latest knowledge run")
 			return
 		}
+		setReadModelCacheHeaders(w)
 		httputil.JSON(w, http.StatusOK, map[string]any{"latest": latest})
 	}
 
@@ -111,6 +112,7 @@ func NewRouter(cfg config.Config, service *knowledge.Service, logger *slog.Logge
 			httputil.Error(w, http.StatusInternalServerError, "list digests")
 			return
 		}
+		setReadModelCacheHeaders(w)
 		httputil.JSON(w, http.StatusOK, map[string]any{"digests": digests})
 	}
 
@@ -218,6 +220,7 @@ func NewRouter(cfg config.Config, service *knowledge.Service, logger *slog.Logge
 			httputil.Error(w, http.StatusServiceUnavailable, err.Error())
 			return
 		}
+		setReadModelCacheHeaders(w)
 		httputil.JSON(w, http.StatusOK, graph)
 	}
 
@@ -318,6 +321,10 @@ func queryInt(r *http.Request, key string) int {
 		return 0
 	}
 	return value
+}
+
+func setReadModelCacheHeaders(w http.ResponseWriter) {
+	w.Header().Set("Cache-Control", "public, max-age=30, s-maxage=300, stale-while-revalidate=1800")
 }
 
 func responseETag(parts ...any) string {

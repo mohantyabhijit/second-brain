@@ -25,6 +25,7 @@ const apiRoutes = [
   { name: "app-state-newsletter", path: "/api/app-state?view=daily-newsletter&limit=10" },
   { name: "app-state-x", path: "/api/app-state?view=original-x-posts&limit=15" },
   { name: "app-state-youtube", path: "/api/app-state?view=original-youtube-posts&limit=15" },
+  { name: "app-state-graph", path: "/api/app-state?view=knowledge-graph&limit=180" },
   { name: "graph", path: "/api/knowledge-graph/insights?limit=180" },
   { name: "digests", path: "/api/digests" },
   { name: "latest", path: "/api/knowledge-runs/latest" }

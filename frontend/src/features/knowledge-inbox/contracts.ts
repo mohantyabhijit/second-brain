@@ -326,6 +326,7 @@ export type AppStateGraph = {
   themes: ThemeCluster[];
   insightClusters: InsightCluster[];
   connections: SourceConnection[];
+  insightGraph?: InsightGraphResponse;
 };
 
 export type AppStateAskContext = {

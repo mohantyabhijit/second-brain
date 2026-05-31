@@ -38,6 +38,8 @@ The app uses five storage surfaces with separate responsibilities:
 
 Supabase remains the canonical source of truth. Neo4j is a derived graph index that can be rebuilt from Postgres records and source artifacts when needed. Redis read models can be rebuilt after each refresh from Supabase, Supabase Storage, pgvector, and Neo4j-derived state. The detailed Redis plan lives in `docs/redis-read-model-plan.md`.
 
+Normal frontend routes render from precomputed page view models, not request-time Supabase joins or Neo4j traversal. The current route-to-view contract, cache/versioning strategy, and remaining runtime exceptions are documented in `docs/precomputed-view-models.md`.
+
 ## Relational Database
 
 The first migration creates `public.knowledge_runs`, storing each refresh result as JSONB. The normalized source model now sits beside that audit log so the app can avoid recomputing work it has already done.

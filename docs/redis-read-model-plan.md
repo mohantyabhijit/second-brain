@@ -58,6 +58,7 @@ Redis stores derived read models, not canonical data.
 | `sb:v1:{owner}:view:{run_id}:original-x-bookmarks` | string JSON | X bookmark page read model | 30 days |
 | `sb:v1:{owner}:view:{run_id}:original-youtube-posts` | string JSON | YouTube page read model | 30 days |
 | `sb:v1:{owner}:digests:{run_id}:list` | string JSON | Precomputed digest list for `/api/digests` | 30 days |
+| `sb:v1:{owner}:graph:{run_id}:read-model` | string JSON | Precomputed knowledge graph canvas payload | 30 days |
 | `sb:v1:{owner}:refresh:status` | string JSON | Shared refresh status and progress message | 24 hours |
 | `sb:v1:{owner}:source-materials` | hash | Derived source-material states keyed by `{source_type}:{external_id}:{prompt_version}:{model}` so scheduled refreshes can skip already processed captures before expensive provider/model work | 30 days |
 | `sb:v1:{owner}:graph:{run_id}:read-model` | string JSON | Themes, source connections, graph-derived cards, graph sync metadata | 30 days |
@@ -162,7 +163,7 @@ sb:v1:{owner}:view:{run_id}:original-x-bookmarks:page:2
 - graph outbox pending/processed counts if available
 - graph-derived cards for the UI
 
-The graph read model should be generated after graph sync or from the latest processed result if Neo4j is unavailable. A failed Neo4j sync should not block publishing a usable app-state snapshot; it should mark `graphStatus` as `stale` or `skipped`.
+The graph read model is generated ahead of time from the latest processed result and stored under `graph.insightGraph`. Page render must not traverse Neo4j. A failed Neo4j sync should not block publishing a usable app-state snapshot; it should mark `graphStatus` as `stale` or `skipped`.
 
 ### Ask Context
 

@@ -16,6 +16,8 @@ RUN_LIGHTHOUSE=1 LIGHTHOUSE_BIN="npx --yes lighthouse@13.3.0" npm run perf:measu
 
 The script measures public pages plus the full and view-scoped API boot payloads. It writes response bodies and optional Lighthouse JSON under `/tmp/second-brain-performance` by default.
 
+The page-to-view-model contract is documented in `docs/precomputed-view-models.md`. Regressions to page-time compute should be treated as performance bugs.
+
 ## Cloudflare Caching
 
 The origin now emits cache headers that Cloudflare can honor:
@@ -25,21 +27,26 @@ The origin now emits cache headers that Cloudflare can honor:
 - View-scoped app state under `/second-brain/api/app-state?view=...`: short browser TTL, CDN `s-maxage`, and `stale-while-revalidate`.
 - Digest illustrations under `/second-brain/api/digests/{id}/illustration`: long immutable TTL.
 
-Recommended Cloudflare Cache Rules:
+Cloudflare routes `abhijitmohanty.com/second-brain*` and `www.abhijitmohanty.com/second-brain*` through `second-brain-edge-cache`, whose source lives at `cloudflare/second-brain-edge-cache-worker.mjs`. The Worker caches:
 
-1. Cache `/second-brain/_next/static/*` with Edge TTL of one year and browser TTL respecting origin.
-2. Cache `/second-brain/api/digests/*/illustration` with Edge TTL of one year.
-3. Cache `GET /second-brain/api/app-state*` with Edge TTL of five minutes and stale-while-revalidate enabled.
-4. Cache `/second-brain/*` HTML with Edge TTL of five minutes unless request method is not `GET` or the request carries the backend session cookie.
-5. Bypass cache for `/second-brain/api/auth/*`, `/second-brain/api/debug/*`, and all mutation endpoints.
+1. `/second-brain/_next/static/*` with an Edge TTL of one year.
+2. `/second-brain/api/digests/*/illustration` with an Edge TTL of one year.
+3. `GET /second-brain/api/app-state*` with an Edge TTL of five minutes.
+4. `GET /second-brain/api/digests` and `GET /second-brain/api/knowledge-graph/insights` as compatibility read-model APIs.
+5. `/second-brain/*` HTML with an Edge TTL of five minutes.
+6. It bypasses non-`GET` requests, requests with `Authorization` or `Cookie`, `/second-brain/api/auth/*`, `/second-brain/api/debug/*`, and mutation endpoints.
 
-Purge Cloudflare cache after a successful deploy or refresh publish for:
+Deploy Worker changes with `npm run edge-cache:deploy`. The runtime cache-purge token is not enough for this command; Worker deploys need a Cloudflare token with account-level Workers edit permission and zone-level Workers routes edit permission, or an authenticated Cloudflare connector/session.
+
+The backend purges Cloudflare automatically after successful refresh, digest, and precompute read-model publishes when `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ZONE_ID` are configured. If automatic purge is unavailable, manually purge:
 
 - `/second-brain/`
 - `/second-brain/insights/`
 - `/second-brain/daily-newsletter/`
 - `/second-brain/original-x-bookmarks/`
+- `/second-brain/original-x-posts/`
 - `/second-brain/original-youtube-videos/`
+- `/second-brain/original-youtube-posts/`
 - `/second-brain/knowledge-graph/`
 - `/second-brain/api/app-state*`
 
@@ -49,4 +56,3 @@ Purge Cloudflare cache after a successful deploy or refresh publish for:
 - `X-Second-Brain-Cache: hit` on `/api/app-state?view=...` in production.
 - View-scoped boot JSON under 100 KB uncompressed for normal feed pages.
 - Server timing under 75 ms from Redis for app-state handlers.
-

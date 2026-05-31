@@ -7,9 +7,6 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"time"
-
-	"github.com/neo4j/neo4j-go-driver/v5/neo4j"
 )
 
 const (
@@ -55,6 +52,10 @@ type InsightGraphStats struct {
 	ReturnedEdges    int `json:"returnedEdges"`
 }
 
+type insightGraphReadModelCache interface {
+	ReadInsightGraph(ctx context.Context, ownerID string, limit int) (InsightGraphResponse, error)
+}
+
 func NormalizeInsightGraphLimit(raw string) (int, error) {
 	trimmed := strings.TrimSpace(raw)
 	if trimmed == "" {
@@ -77,110 +78,87 @@ func (s *Service) ReadInsightGraph(ctx context.Context, limit int) (InsightGraph
 	if limit > MaxInsightGraphLimit {
 		limit = MaxInsightGraphLimit
 	}
-	if strings.TrimSpace(s.cfg.Neo4jURI) == "" || strings.TrimSpace(s.cfg.Neo4jUsername) == "" || strings.TrimSpace(s.cfg.Neo4jPassword) == "" {
-		if s.cache != nil {
-			latest, err := s.cache.ReadLatest(ctx, s.cfg.OwnerID)
-			if err == nil && latest != nil && len(latest.Insights) > 0 {
-				s.logger.Info("read model cache hit", "surface", "insight-graph")
-				return buildInsightGraphFromResult(latest, limit), nil
-			}
-			if err != nil && !errors.Is(err, ErrReadModelCacheMiss) {
-				s.logger.Warn("read model cache fallback", "surface", "insight-graph", "error", err)
-			}
+	if graphCache, ok := s.cache.(insightGraphReadModelCache); ok {
+		graph, err := graphCache.ReadInsightGraph(ctx, s.cfg.OwnerID, limit)
+		if err == nil {
+			s.logger.Info("read model cache hit", "surface", "insight-graph")
+			return graph, nil
 		}
-		latest, err := s.readLatestCanonical(ctx)
-		if err == nil && latest != nil && len(latest.Insights) > 0 {
-			return buildInsightGraphFromResult(latest, limit), nil
+		if !errors.Is(err, ErrReadModelCacheMiss) {
+			s.logger.Warn("read model cache fallback", "surface", "insight-graph", "error", err)
 		}
-		return InsightGraphResponse{}, fmt.Errorf("NEO4J_URI, NEO4J_USERNAME, and NEO4J_PASSWORD are required for the insight graph")
 	}
-
-	queryCtx, cancel := context.WithTimeout(ctx, 8*time.Second)
-	defer cancel()
-
-	driver, err := neo4j.NewDriverWithContext(s.cfg.Neo4jURI, neo4j.BasicAuth(s.cfg.Neo4jUsername, s.cfg.Neo4jPassword, ""))
+	if state, ok := s.readAppStateSnapshot(ctx); ok && state.Graph.InsightGraph != nil {
+		return LimitInsightGraphResponse(*state.Graph.InsightGraph, limit), nil
+	}
+	latest, err := s.readLatestCanonical(ctx)
 	if err != nil {
-		return InsightGraphResponse{}, fmt.Errorf("connect neo4j: %w", err)
+		return InsightGraphResponse{}, err
 	}
-	defer driver.Close(queryCtx)
+	if latest == nil {
+		return emptyInsightGraph(), nil
+	}
+	return buildInsightGraphFromResult(latest, limit), nil
+}
 
-	session := driver.NewSession(queryCtx, neo4j.SessionConfig{DatabaseName: s.cfg.Neo4jDatabase})
-	defer session.Close(queryCtx)
+func LimitInsightGraphResponsePointer(graph *InsightGraphResponse, limit int) *InsightGraphResponse {
+	if graph == nil {
+		return nil
+	}
+	limited := LimitInsightGraphResponse(*graph, limit)
+	return &limited
+}
 
-	graph, err := neo4j.ExecuteRead(queryCtx, session, func(tx neo4j.ManagedTransaction) (InsightGraphResponse, error) {
-		countResult, err := tx.Run(queryCtx, `match (insight:Insight) return count(insight) as total`, nil)
-		if err != nil {
-			return InsightGraphResponse{}, err
+func LimitInsightGraphResponse(graph InsightGraphResponse, limit int) InsightGraphResponse {
+	if limit <= 0 {
+		limit = DefaultInsightGraphLimit
+	}
+	if limit > MaxInsightGraphLimit {
+		limit = MaxInsightGraphLimit
+	}
+	nodes := graph.Nodes
+	if nodes == nil {
+		nodes = []InsightGraphNode{}
+	}
+	edges := graph.Edges
+	if edges == nil {
+		edges = []InsightGraphEdge{}
+	}
+	total := graph.Stats.TotalInsights
+	if total == 0 {
+		total = len(nodes)
+	}
+	if len(nodes) > limit {
+		nodes = nodes[:limit]
+		allowed := map[string]bool{}
+		for _, node := range nodes {
+			allowed[node.ID] = true
 		}
-		countRecord, err := countResult.Single(queryCtx)
-		if err != nil {
-			return InsightGraphResponse{}, err
-		}
-
-		rows, err := tx.Run(queryCtx, `
-			match (capture:Capture)-[:YIELDED_INSIGHT]->(insight:Insight)
-			optional match (source:Source)-[:HAS_CAPTURE]->(capture)
-			with insight,
-			     collect(distinct capture.id) as captureIds,
-			     collect(distinct source.url) as sourceUrls
-			return coalesce(insight.id, elementId(insight)) as id,
-			       coalesce(insight.title, insight.canonical, insight.text, 'Insight') as label,
-			       coalesce(insight.canonical, '') as canonicalInsight,
-			       coalesce(insight.mechanism, '') as mechanism,
-			       coalesce(insight.domain, '') as domain,
-			       coalesce(insight.type, '') as type,
-			       coalesce(insight.topics, []) as topics,
-			       coalesce(insight.confidence, '') as confidence,
-			       coalesce(sourceUrls[0], '') as sourceUrl,
-			       coalesce(insight.importanceScore, insight.score, 0.0) as score,
-			       captureIds as captureIds
-			order by label asc
-			limit $limit
-		`, map[string]any{"limit": limit})
-		if err != nil {
-			return InsightGraphResponse{}, err
-		}
-
-		nodes := []InsightGraphNode{}
-		for rows.Next(queryCtx) {
-			record := rows.Record()
-			id := strings.TrimSpace(stringRecordValue(record, "id"))
-			if id == "" {
-				continue
+		filteredEdges := make([]InsightGraphEdge, 0, len(edges))
+		for _, edge := range edges {
+			if allowed[edge.Source] && allowed[edge.Target] {
+				filteredEdges = append(filteredEdges, edge)
 			}
-			nodes = append(nodes, InsightGraphNode{
-				ID:               id,
-				Label:            fallback(stringRecordValue(record, "label"), "Insight"),
-				CanonicalInsight: stringRecordValue(record, "canonicalInsight"),
-				Mechanism:        stringRecordValue(record, "mechanism"),
-				Domain:           stringRecordValue(record, "domain"),
-				Type:             stringRecordValue(record, "type"),
-				Topics:           normalizedGraphTopics(stringSliceRecordValue(record, "topics")),
-				Confidence:       stringRecordValue(record, "confidence"),
-				SourceURL:        stringRecordValue(record, "sourceUrl"),
-				Score:            floatRecordValue(record, "score"),
-				CaptureIDs:       normalizedGraphTopics(stringSliceRecordValue(record, "captureIds")),
-			})
 		}
-		if err := rows.Err(); err != nil {
-			return InsightGraphResponse{}, err
-		}
-
-		edges := buildInsightGraphEdges(nodes)
-		return InsightGraphResponse{
-			Nodes: nodes,
-			Edges: edges,
-			Stats: InsightGraphStats{
-				TotalInsights:    int(floatRecordValue(countRecord, "total")),
-				ReturnedInsights: len(nodes),
-				ReturnedEdges:    len(edges),
-			},
-		}, nil
-	})
-	if err != nil {
-		return InsightGraphResponse{}, fmt.Errorf("read insight graph: %w", err)
+		edges = filteredEdges
 	}
-	return graph, nil
+	return InsightGraphResponse{
+		Nodes: nodes,
+		Edges: edges,
+		Stats: InsightGraphStats{
+			TotalInsights:    total,
+			ReturnedInsights: len(nodes),
+			ReturnedEdges:    len(edges),
+		},
+	}
+}
+
+func emptyInsightGraph() InsightGraphResponse {
+	return InsightGraphResponse{
+		Nodes: []InsightGraphNode{},
+		Edges: []InsightGraphEdge{},
+		Stats: InsightGraphStats{},
+	}
 }
 
 func buildInsightGraphFromResult(result *Result, limit int) InsightGraphResponse {
