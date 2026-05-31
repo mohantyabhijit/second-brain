@@ -1,7 +1,7 @@
 "use client";
 
 import { startTransition, useCallback, useEffect, useState } from "react";
-import { askSecondBrain, generateDailyDigest, readAppState, readDigestIssues, readKnowledgeRefreshStatus, readLatestKnowledgeRun, saveKnowledgeFeedback, sendLatestDigest, shareInsightToX, startKnowledgeInboxRefresh } from "../api/knowledgeRuns";
+import { askSecondBrain, generateDailyDigest, readAppState, readKnowledgeRefreshStatus, saveKnowledgeFeedback, sendLatestDigest, shareInsightToX, startKnowledgeInboxRefresh } from "../api/knowledgeRuns";
 import type { KnowledgeInboxPage } from "../KnowledgeInboxContainer";
 import type { AppState, AskSecondBrainResponse, DigestIssue, FeedbackSignal, InsightGraphResponse, KnowledgeRunResult, RefreshStatus } from "../contracts";
 import { initialKnowledgeRun } from "./initialKnowledgeRun";
@@ -109,17 +109,8 @@ export function useKnowledgeInboxController(activePage: KnowledgeInboxPage = "in
       if (status.status === "failed") {
         throw new Error(status.error || "Knowledge inbox validation failed.");
       }
-      const state = await readAppState(activePage, appStateLimitForPage(activePage)).catch(() => null);
-      if (state) {
-        applyAppState(state);
-      } else {
-        const latest = await readLatestKnowledgeRun();
-        if (latest) {
-          startTransition(() => setRun(latest));
-        }
-        const digests = await readDigestIssues().catch(() => []);
-        startTransition(() => setDigestIssues(digests));
-      }
+      const state = await readAppState(activePage, appStateLimitForPage(activePage));
+      applyAppState(state);
     } catch (runError) {
       setError(runError instanceof Error ? runError.message : "Knowledge inbox validation failed.");
     } finally {
