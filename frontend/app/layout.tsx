@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import localFont from "next/font/local";
+import { GoogleAnalytics } from "./GoogleAnalytics";
 import "./globals.css";
 
 const inter = localFont({
@@ -18,6 +19,19 @@ const inter = localFont({
   display: "swap",
   variable: "--font-inter"
 });
+
+const googleAnalyticsMeasurementId = process.env.NEXT_PUBLIC_GA_MEASUREMENT_ID;
+const googleAnalyticsScript = googleAnalyticsMeasurementId
+  ? `
+      window.dataLayer = window.dataLayer || [];
+      function gtag(){window.dataLayer.push(arguments);}
+      window.gtag = gtag;
+      window.gtag('js', new Date());
+      window.gtag('config', ${JSON.stringify(googleAnalyticsMeasurementId)}, {
+        page_path: window.location.pathname + window.location.search
+      });
+    `
+  : undefined;
 
 export const metadata: Metadata = {
   metadataBase: new URL("https://abhijitmohanty.com"),
@@ -61,7 +75,16 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html data-scroll-behavior="smooth" lang="en">
-      <body className={inter.variable}>{children}</body>
+      {googleAnalyticsMeasurementId && googleAnalyticsScript ? (
+        <head>
+          <script async src={`https://www.googletagmanager.com/gtag/js?id=${googleAnalyticsMeasurementId}`} />
+          <script dangerouslySetInnerHTML={{ __html: googleAnalyticsScript }} />
+        </head>
+      ) : null}
+      <body className={inter.variable}>
+        {googleAnalyticsMeasurementId ? <GoogleAnalytics measurementId={googleAnalyticsMeasurementId} /> : null}
+        {children}
+      </body>
     </html>
   );
 }

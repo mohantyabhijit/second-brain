@@ -22,6 +22,7 @@ env:
   GO_VERSION: "1.23.x"
   SECOND_BRAIN_BASE_PATH: /second-brain
   SECOND_BRAIN_API_BASE_URL: /second-brain
+  SECOND_BRAIN_GA_MEASUREMENT_ID: G-EN1K2EMJ7X
 
 jobs:
   build:
@@ -55,6 +56,7 @@ jobs:
           NEXT_OUTPUT: export
           NEXT_PUBLIC_BASE_PATH: ${{ env.SECOND_BRAIN_BASE_PATH }}
           NEXT_PUBLIC_API_BASE_URL: ${{ env.SECOND_BRAIN_API_BASE_URL }}
+          NEXT_PUBLIC_GA_MEASUREMENT_ID: ${{ env.SECOND_BRAIN_GA_MEASUREMENT_ID }}
         run: npm --prefix frontend run build
 
       - name: Build Linux API binaries
