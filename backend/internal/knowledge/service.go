@@ -958,10 +958,23 @@ func (s *Service) GenerateDigest(ctx context.Context) (*DigestIssue, error) {
 	if latest == nil {
 		return nil, fmt.Errorf("no knowledge run is available for digest generation")
 	}
+	if isSentDigestForDate(latest.Digest, digestDateFor(s.cfg.DigestTimezone, s.cfg.DigestTime, time.Now().UTC())) {
+		return latest.Digest, nil
+	}
 	if !hasDigestInputs(latest.Summaries, latest.Insights) {
 		return nil, fmt.Errorf("no source-grounded digest inputs are available")
 	}
 	sourceRefs, summaries, insights, themes, insightClusters, connections, err := s.digestInputsForLatest(ctx, latest)
+	if errors.Is(err, ErrNoNewDigestSources) {
+		s.logger.Info("no new digest source refs; composing continuity digest from latest run")
+		sourceRefs = nil
+		summaries = latest.Summaries
+		insights = latest.Insights
+		themes = latest.Themes
+		insightClusters = latest.InsightClusters
+		connections = latest.Connections
+		err = nil
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -993,6 +1006,19 @@ func (s *Service) GenerateDigest(ctx context.Context) (*DigestIssue, error) {
 		}
 	}
 	return saved, nil
+}
+
+func digestDateFor(timezone string, digestTime string, generatedAt time.Time) string {
+	return buildDigestIssue(timezone, digestTime, generatedAt, nil, nil, nil, nil, nil).DigestDate
+}
+
+func isSentDigestForDate(digest *DigestIssue, digestDate string) bool {
+	if digest == nil {
+		return false
+	}
+	return digest.DigestDate == digestDate &&
+		strings.EqualFold(strings.TrimSpace(digest.Status), "sent") &&
+		strings.TrimSpace(digest.BodyMarkdown) != ""
 }
 
 func (s *Service) digestInputsForLatest(ctx context.Context, latest *Result) ([]DigestSourceRef, []Summary, []Insight, []ThemeCluster, []InsightCluster, []SourceConnection, error) {
