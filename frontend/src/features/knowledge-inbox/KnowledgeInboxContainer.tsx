@@ -25,8 +25,6 @@ export default function KnowledgeInboxContainer({ initialPage = "insights" }: Kn
     chatMessages,
     workspace,
     error,
-    signIn,
-    signOut,
     connectX,
     savePlaylist,
     saveFeedback,
@@ -49,8 +47,6 @@ export default function KnowledgeInboxContainer({ initialPage = "insights" }: Kn
       workspace={workspace}
       model={model}
       chatMessages={chatMessages}
-      onSignIn={signIn}
-      onSignOut={signOut}
       onConnectX={connectX}
       onSavePlaylist={savePlaylist}
       onAsk={askBrain}

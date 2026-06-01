@@ -104,6 +104,169 @@ p {
   margin-top: 0;
 }
 
+.landing-shell {
+  position: relative;
+  min-height: 100vh;
+  display: grid;
+  align-items: end;
+  overflow: hidden;
+  background: #16211d;
+  color: #fff;
+}
+
+.landing-media {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center top;
+  opacity: 0.58;
+  filter: saturate(0.92) contrast(0.96);
+}
+
+.landing-overlay {
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(90deg, rgba(8, 16, 14, 0.92), rgba(8, 16, 14, 0.64) 46%, rgba(8, 16, 14, 0.2)),
+    linear-gradient(0deg, rgba(8, 16, 14, 0.62), rgba(8, 16, 14, 0.04) 42%);
+}
+
+.landing-content {
+  position: relative;
+  z-index: 1;
+  width: min(1080px, calc(100% - 40px));
+  min-height: 100vh;
+  display: grid;
+  align-content: center;
+  gap: 30px;
+  padding: 38px 0 46px;
+  margin: 0 auto;
+}
+
+.landing-brand {
+  position: absolute;
+  top: 28px;
+  left: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  color: rgba(255, 255, 255, 0.94);
+  font-size: 0.92rem;
+  font-weight: 850;
+}
+
+.landing-brand span {
+  width: 38px;
+  height: 38px;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(255, 255, 255, 0.38);
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.13);
+  backdrop-filter: blur(12px);
+}
+
+.landing-copy {
+  max-width: 650px;
+}
+
+.landing-kicker {
+  display: block;
+  margin-bottom: 12px;
+  color: #8ed9bb;
+  font-size: 0.78rem;
+  font-weight: 860;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.landing-copy h1 {
+  margin-bottom: 16px;
+  font-size: clamp(3.6rem, 9vw, 8.4rem);
+  line-height: 0.9;
+  color: #fff;
+}
+
+.landing-copy p {
+  max-width: 590px;
+  margin-bottom: 0;
+  color: rgba(255, 255, 255, 0.86);
+  font-size: clamp(1.02rem, 1.4vw, 1.22rem);
+  line-height: 1.6;
+}
+
+.landing-actions {
+  max-width: 720px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+
+.landing-auth-form {
+  display: flex;
+  min-width: min(100%, 520px);
+  border: 1px solid rgba(255, 255, 255, 0.26);
+  border-radius: 8px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.13);
+  box-shadow: 0 22px 44px rgba(0, 0, 0, 0.22);
+  backdrop-filter: blur(18px);
+}
+
+.landing-auth-form input {
+  min-width: 0;
+  flex: 1;
+  min-height: 52px;
+  border: 0;
+  padding: 0 16px;
+  background: rgba(255, 255, 255, 0.92);
+  color: #14211c;
+  font: inherit;
+  outline: none;
+}
+
+.landing-auth-form button,
+.landing-secondary-action {
+  min-height: 52px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  padding: 0 18px;
+  color: #fff;
+  font-weight: 850;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.landing-auth-form button {
+  background: var(--blue);
+}
+
+.landing-auth-form button:disabled {
+  cursor: wait;
+  opacity: 0.72;
+}
+
+.landing-secondary-action {
+  border: 1px solid rgba(255, 255, 255, 0.32);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.12);
+  backdrop-filter: blur(18px);
+}
+
+.landing-status,
+.landing-message {
+  flex-basis: 100%;
+  margin: 0;
+  color: rgba(255, 255, 255, 0.78);
+  font-size: 0.9rem;
+  font-weight: 720;
+}
+
 .wall-shell {
   min-height: 100vh;
   display: grid;
@@ -314,6 +477,14 @@ h1 {
   color: var(--ink-soft);
   font-size: 0.86rem;
   font-weight: 760;
+}
+
+.user-badge {
+  min-width: max-content;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 0 12px;
+  background: var(--surface);
 }
 
 .auth-form {
@@ -1584,6 +1755,25 @@ blockquote {
 }
 
 @media (max-width: 860px) {
+  .landing-content {
+    width: min(100% - 28px, 720px);
+    align-content: end;
+  }
+
+  .landing-overlay {
+    background:
+      linear-gradient(0deg, rgba(8, 16, 14, 0.9), rgba(8, 16, 14, 0.42)),
+      linear-gradient(90deg, rgba(8, 16, 14, 0.86), rgba(8, 16, 14, 0.22));
+  }
+
+  .landing-auth-form {
+    width: 100%;
+  }
+
+  .landing-secondary-action {
+    width: 100%;
+  }
+
   .wall-shell {
     grid-template-columns: 1fr;
   }
@@ -1630,6 +1820,10 @@ blockquote {
   .auth-compact,
   .auth-form {
     justify-content: stretch;
+  }
+
+  .user-badge {
+    justify-content: center;
   }
 
   .auth-form input,
@@ -1778,6 +1972,19 @@ blockquote {
 }
 
 @media (max-width: 480px) {
+  .landing-copy h1 {
+    font-size: 3.4rem;
+  }
+
+  .landing-auth-form {
+    display: grid;
+  }
+
+  .landing-auth-form input,
+  .landing-auth-form button {
+    width: 100%;
+  }
+
   .wall-workspace {
     padding: 14px;
   }

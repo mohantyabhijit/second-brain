@@ -8,6 +8,7 @@ import type { SupabaseAuthState } from "../model/useSupabaseAuth";
 import type { KnowledgeInboxViewModel, NavigationItemViewModel, SummaryCardViewModel } from "../presentation/viewModel";
 import type { DigestIssue, FeedbackSignal, ImportantTimeMarker, InsightGraphResponse, RefreshStatus, WorkspaceStatus } from "../contracts";
 import { KnowledgeGraphView } from "./KnowledgeGraphView";
+import { displayUsername } from "./authDisplay";
 type SecondBrainConsoleViewProps = {
   activePage: KnowledgeInboxPage;
   chatMessages: ChatMessage[];
@@ -20,8 +21,6 @@ type SecondBrainConsoleViewProps = {
   workspace: WorkspaceStatus | null;
   model: KnowledgeInboxViewModel;
   refreshStatus: RefreshStatus | null;
-  onSignIn: (email: string) => Promise<void>;
-  onSignOut: () => Promise<void>;
   onConnectX: () => Promise<void>;
   onSavePlaylist: (playlist: string) => Promise<void>;
   onAsk: (question: string, useLatest?: boolean) => Promise<void>;
@@ -92,7 +91,7 @@ const themeStorageKey = "second-brain-theme";
 
 type ThemeMode = "light" | "dark";
 
-export function SecondBrainConsoleView({ activePage, auth, chatMessages, digestIssues, insightGraph, isAsking, isDigesting, isLoading, model, refreshStatus, workspace, onAsk, onConnectX, onDigest, onSavePlaylist, onSendDigest, onFeedback, onSignIn, onSignOut }: SecondBrainConsoleViewProps) {
+export function SecondBrainConsoleView({ activePage, auth, chatMessages, digestIssues, insightGraph, isAsking, isDigesting, isLoading, model, refreshStatus, workspace, onAsk, onConnectX, onDigest, onSavePlaylist, onSendDigest, onFeedback }: SecondBrainConsoleViewProps) {
   const [visibleCount, setVisibleCount] = useState(initialVisibleCount);
   const [copiedItems, setCopiedItems] = useState<Set<string>>(new Set());
   const [digestEmail, setDigestEmail] = useState("");
@@ -178,7 +177,7 @@ export function SecondBrainConsoleView({ activePage, auth, chatMessages, digestI
             <h1>{page.title}</h1>
           </div>
           <ThemeToggle mode={theme.mode} onToggle={theme.toggle} />
-          <AuthControls auth={auth} workspace={workspace} onSignIn={onSignIn} onSignOut={onSignOut} />
+          <IdentityBadge auth={auth} workspace={workspace} />
           {activePage === "daily-newsletter" ? (
             <div className="digest-email-tools">
               <button className="secondary-action" disabled={isDigesting} onClick={onDigest} type="button">
@@ -330,47 +329,11 @@ function ThemeToggle({ mode, onToggle }: { mode: ThemeMode; onToggle: () => void
   );
 }
 
-function AuthControls({ auth, workspace, onSignIn, onSignOut }: { auth: SupabaseAuthState; workspace: WorkspaceStatus | null; onSignIn: (email: string) => Promise<void>; onSignOut: () => Promise<void> }) {
-  const [email, setEmail] = useState("");
-  const [message, setMessage] = useState<string | null>(null);
-  const label = auth.isAuthenticated ? auth.email ?? "Signed in" : workspace?.profile.handle ? `@${workspace.profile.handle}` : "Public workspace";
-
-  async function submit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setMessage(null);
-    try {
-      await onSignIn(email);
-      setMessage("Check your email for the sign-in link.");
-      setEmail("");
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Sign-in failed.");
-    }
-  }
-
-  if (!auth.configured) {
-    return <div className="auth-compact">{label}</div>;
-  }
-
-  if (auth.isAuthenticated) {
-    return (
-      <div className="auth-compact">
-        <span>{label}</span>
-        <button className="secondary-action" disabled={auth.isLoading} onClick={() => void onSignOut()} type="button">
-          Sign Out
-        </button>
-      </div>
-    );
-  }
-
+export function IdentityBadge({ auth, workspace }: { auth: SupabaseAuthState; workspace: WorkspaceStatus | null }) {
   return (
-    <form className="auth-form" onSubmit={submit}>
-      <span>{label}</span>
-      <input aria-label="Email address" onChange={(event) => setEmail(event.target.value)} placeholder="you@example.com" type="email" value={email} />
-      <button disabled={auth.isLoading} type="submit">
-        Sign In
-      </button>
-      {message ? <p role="status">{message}</p> : null}
-    </form>
+    <div aria-label="Current workspace user" className="auth-compact user-badge">
+      {displayUsername(auth, workspace)}
+    </div>
   );
 }
 
