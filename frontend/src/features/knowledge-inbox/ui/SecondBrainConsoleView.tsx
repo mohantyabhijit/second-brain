@@ -311,9 +311,21 @@ function useThemeMode() {
 }
 
 function ThemeToggle({ mode, onToggle }: { mode: ThemeMode; onToggle: () => void }) {
+  const nextMode = mode === "dark" ? "light" : "dark";
+
   return (
-    <button aria-label={`Switch to ${mode === "dark" ? "light" : "dark"} mode`} className="theme-toggle" onClick={onToggle} type="button">
-      <span aria-hidden="true">{mode === "dark" ? "L" : "D"}</span>
+    <button
+      aria-label={`Switch to ${nextMode} mode`}
+      className={`theme-toggle ${mode === "dark" ? "is-lit" : ""}`}
+      onClick={onToggle}
+      title={`Switch to ${nextMode} mode`}
+      type="button"
+    >
+      <svg aria-hidden="true" className="theme-toggle-icon" viewBox="0 0 24 24">
+        <path d="M9 18h6" />
+        <path d="M10 21h4" />
+        <path d="M8.7 14.7c-1.2-.9-2-2.4-2-4.1C6.7 7.7 9.1 5.3 12 5.3s5.3 2.4 5.3 5.3c0 1.7-.8 3.2-2 4.1-.8.6-1.2 1.2-1.4 2.1h-3.8c-.2-.9-.6-1.5-1.4-2.1Z" />
+      </svg>
     </button>
   );
 }
