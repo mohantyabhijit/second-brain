@@ -34,29 +34,39 @@ jobs:
       - name: Check public API snapshot
         run: |
           set -euo pipefail
+          expected_digest_date="$(TZ=Asia/Singapore date +%Y-%m-%d)"
+          if [[ "$(TZ=Asia/Singapore date +%H%M)" < "1800" ]]; then
+            expected_digest_date="$(TZ=Asia/Singapore date -d 'yesterday' +%Y-%m-%d)"
+          fi
+          expected_scheduled_for="$(TZ=Asia/Singapore date -d "$expected_digest_date 18:00" -u +%Y-%m-%dT%H:%M:%SZ)"
           for attempt in $(seq 1 30); do
             curl -fsS https://abhijitmohanty.com/second-brain/api/knowledge-runs/latest > latest.json
-            jq -r --arg attempt "$attempt" '
+            jq -r --arg attempt "$attempt" --arg expectedDigestDate "$expected_digest_date" --arg expectedScheduledFor "$expected_scheduled_for" '
               .latest as $latest
               | {
                   attempt: $attempt,
+                  expectedDigestDate: $expectedDigestDate,
+                  expectedScheduledFor: $expectedScheduledFor,
                   generatedAt: $latest.generatedAt,
                   xBookmarks: ($latest.xBookmarks | length),
                   youtube: (($latest.youtubeItems // $latest.youtube // []) | length),
                   summaries: ($latest.summaries | length),
                   insights: ($latest.insights | length),
+                  digestDate: $latest.digest.digestDate,
                   digestStatus: $latest.digest.status,
                   digestScheduledFor: $latest.digest.scheduledFor,
                   blockers: ($latest.blockers | length)
                 }
             ' latest.json
-            if jq -e '
+            if jq -e --arg expectedDigestDate "$expected_digest_date" --arg expectedScheduledFor "$expected_scheduled_for" '
               .latest
               | (.xBookmarks | length) > 0
               and ((.youtubeItems // .youtube // []) | length) > 0
               and (.summaries | length) > 0
               and (.insights | length) > 0
               and (.digest.status == "sent")
+              and (.digest.digestDate == $expectedDigestDate)
+              and (.digest.scheduledFor == $expectedScheduledFor)
               and ((.blockers | length) == 0)
             ' latest.json >/dev/null; then
               exit 0

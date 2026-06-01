@@ -263,6 +263,135 @@ func (s digestSourceStore) ReadNewDigestSources(ctx context.Context, ownerID str
 	return s.refs, nil
 }
 
+type noNewDigestSourceStore struct {
+	cacheStore
+	latest       *Result
+	saved        *DigestIssue
+	readNewCalls int
+}
+
+func (s *noNewDigestSourceStore) ReadLatest(ctx context.Context) (*Result, error) {
+	return s.latest, nil
+}
+
+func (s *noNewDigestSourceStore) ReadNewDigestSources(ctx context.Context, ownerID string, promptVersion string, model string) ([]DigestSourceRef, error) {
+	s.readNewCalls++
+	return nil, nil
+}
+
+func (s *noNewDigestSourceStore) SaveDigest(ctx context.Context, digest DigestIssue) (*DigestIssue, error) {
+	s.saved = &digest
+	return &digest, nil
+}
+
+func TestGenerateDigestFallsBackToLatestRunWhenNoNewDigestSources(t *testing.T) {
+	t.Setenv("OPENAI_API_KEY", "openai-key")
+	t.Setenv("RESEND_API_KEY", "resend-key")
+	store := &noNewDigestSourceStore{latest: &Result{
+		GeneratedAt: time.Now().UTC().Add(-time.Hour),
+		Summaries: []Summary{{
+			ID:         "source-1",
+			Source:     "x",
+			Title:      "Saved source",
+			SourceURL:  "https://x.com/example/status/source-1",
+			Summary:    "A useful saved idea.",
+			Confidence: "high",
+		}},
+		Insights: []Insight{{
+			ID:         "insight-1",
+			Source:     "x",
+			SourceID:   "source-1",
+			Title:      "Saved insight",
+			Insight:    "A reusable insight from the saved source.",
+			Evidence:   "The source supports it.",
+			SourceURL:  "https://x.com/example/status/source-1",
+			Confidence: "high",
+		}},
+		Digest: &DigestIssue{
+			DigestDate:   "2026-05-31",
+			ScheduledFor: time.Date(2026, 5, 31, 10, 0, 0, 0, time.UTC),
+			Status:       "sent",
+			BodyMarkdown: "# Previous digest",
+		},
+	}}
+	requests := []string{}
+	client := &http.Client{Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
+		requests = append(requests, request.URL.String())
+		switch request.URL.String() {
+		case "https://api.openai.com/v1/responses":
+			return jsonResponse(`{"output_text":"{\"subject\":\"Continuity digest\",\"body_markdown\":\"# Continuity digest\\n\\nUse the latest saved inputs.\"}"}`), nil
+		case "https://api.openai.com/v1/images/generations":
+			return jsonResponse(`{"data":[{"b64_json":"aGVsbG8="}]}`), nil
+		case "https://api.resend.com/emails":
+			return jsonResponse(`{"id":"email-continuity"}`), nil
+		default:
+			t.Fatalf("unexpected URL: %s", request.URL.String())
+			return nil, nil
+		}
+	})}
+	service := NewService(config.Config{
+		DigestEmailFrom:      "Second Brain <digest@example.com>",
+		DigestEmailTo:        "abhijit@example.com",
+		DigestTimezone:       "UTC",
+		DigestTime:           "18:00",
+		OpenAISynthesisModel: "gpt-5.5",
+		OpenAIImageModel:     "gpt-image-1",
+		ResendAPIKey:         "resend-key",
+	}, store, client)
+
+	digest, err := service.GenerateDigest(context.Background())
+	if err != nil {
+		t.Fatalf("generate digest: %v", err)
+	}
+	if digest.Status != "sent" || digest.Subject != "Continuity digest" {
+		t.Fatalf("expected sent continuity digest, got %#v", digest)
+	}
+	if store.saved == nil {
+		t.Fatal("expected digest to be saved")
+	}
+	if len(store.saved.SourceRefs) != 0 {
+		t.Fatalf("expected continuity digest not to claim new source refs, got %#v", store.saved.SourceRefs)
+	}
+	if !slices.Contains(requests, "https://api.openai.com/v1/responses") ||
+		!slices.Contains(requests, "https://api.openai.com/v1/images/generations") ||
+		!slices.Contains(requests, "https://api.resend.com/emails") {
+		t.Fatalf("expected synthesis, illustration, and delivery requests, got %#v", requests)
+	}
+}
+
+func TestGenerateDigestDoesNotResendAlreadySentDigestForToday(t *testing.T) {
+	digestDate := digestDateFor("UTC", "18:00", time.Now().UTC())
+	store := &noNewDigestSourceStore{latest: &Result{
+		GeneratedAt: time.Now().UTC(),
+		Digest: &DigestIssue{
+			ID:           "digest-today",
+			DigestDate:   digestDate,
+			Status:       "sent",
+			Subject:      "Already sent",
+			BodyMarkdown: "# Already sent",
+		},
+	}}
+	client := &http.Client{Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
+		t.Fatalf("expected already-sent digest to avoid outbound request, got %s", request.URL.String())
+		return nil, nil
+	})}
+	service := NewService(config.Config{DigestTimezone: "UTC", DigestTime: "18:00"}, store, client)
+
+	digest, err := service.GenerateDigest(context.Background())
+	if err != nil {
+		t.Fatalf("generate digest: %v", err)
+	}
+	if digest.ID != "digest-today" {
+		t.Fatalf("expected existing digest, got %#v", digest)
+	}
+	if store.saved != nil {
+		t.Fatal("expected no duplicate save for already-sent digest")
+	}
+	if store.readNewCalls != 0 {
+		t.Fatalf("expected no new-source lookup, got %d", store.readNewCalls)
+	}
+}
+
 func TestDigestInputsUseOnlyNewSourceRefs(t *testing.T) {
 	generatedAt := time.Date(2026, 5, 28, 9, 0, 0, 0, time.UTC)
 	service := NewService(config.Config{}, digestSourceStore{refs: []DigestSourceRef{{
