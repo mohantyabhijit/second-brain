@@ -17,7 +17,6 @@ export default function KnowledgeInboxContainer({ initialPage = "insights" }: Kn
     run,
     isLoading,
     isRunning,
-    isDigesting,
     isAsking,
     refreshStatus,
     digestIssues,
@@ -28,8 +27,6 @@ export default function KnowledgeInboxContainer({ initialPage = "insights" }: Kn
     connectX,
     savePlaylist,
     saveFeedback,
-    generateDigest,
-    sendDigest,
     askBrain
   } = useKnowledgeInboxController(initialPage);
   const model = useMemo(() => toKnowledgeInboxViewModel(run, isRunning, error), [run, isRunning, error]);
@@ -37,7 +34,6 @@ export default function KnowledgeInboxContainer({ initialPage = "insights" }: Kn
   return (
     <SecondBrainConsoleView
       activePage={initialPage}
-      isDigesting={isDigesting}
       isAsking={isAsking}
       isLoading={isLoading}
       refreshStatus={refreshStatus}
@@ -50,8 +46,6 @@ export default function KnowledgeInboxContainer({ initialPage = "insights" }: Kn
       onConnectX={connectX}
       onSavePlaylist={savePlaylist}
       onAsk={askBrain}
-      onDigest={generateDigest}
-      onSendDigest={sendDigest}
       onFeedback={saveFeedback}
     />
   );

@@ -64,96 +64,10 @@ func TestDeliverDigestUsesResendIdempotencyHeader(t *testing.T) {
 		ResendAPIKey:    "resend-key",
 	}, cacheStore{}, client)
 
-	delivery := service.deliverDigest(context.Background(), digest, "")
+	delivery := service.deliverDigest(context.Background(), digest)
 
 	if delivery.Status != "sent" || delivery.ProviderMessageID != "email-1" {
 		t.Fatalf("expected sent delivery, got %#v", delivery)
-	}
-}
-
-func TestDeliverDigestUsesRecipientOverride(t *testing.T) {
-	t.Setenv("RESEND_API_KEY", "resend-key")
-	digest := DigestIssue{
-		DigestDate:     "2026-05-23",
-		ScheduledFor:   time.Date(2026, 5, 23, 9, 0, 0, 0, time.UTC),
-		IdempotencyKey: "daily:2026-05-23",
-		Subject:        "Second Brain digest",
-		BodyMarkdown:   "# Digest",
-		Status:         "generated",
-	}
-	client := &http.Client{Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
-		idempotencyKey := request.Header.Get("Idempotency-Key")
-		if idempotencyKey == digest.IdempotencyKey || !strings.Contains(idempotencyKey, ":manual:") {
-			t.Fatalf("expected one-off manual idempotency key, got %q", idempotencyKey)
-		}
-		raw, err := io.ReadAll(request.Body)
-		if err != nil {
-			t.Fatalf("read request body: %v", err)
-		}
-		var payload struct {
-			To   []string `json:"to"`
-			HTML string   `json:"html"`
-			Text string   `json:"text"`
-		}
-		if err := json.Unmarshal(raw, &payload); err != nil {
-			t.Fatalf("decode request body: %v", err)
-		}
-		if !slices.Equal(payload.To, []string{"reader@example.com"}) {
-			t.Fatalf("expected override recipient, got %#v", payload.To)
-		}
-		if !strings.Contains(payload.HTML, "This is a newsletter from Abhijit&#39;s Second Brain") {
-			t.Fatalf("expected custom-recipient newsletter intro in HTML, got %s", payload.HTML)
-		}
-		if !strings.Contains(payload.Text, "This is a newsletter from Abhijit's Second Brain") {
-			t.Fatalf("expected custom-recipient newsletter intro in text, got %s", payload.Text)
-		}
-		return jsonResponse(`{"id":"email-2"}`), nil
-	})}
-	service := NewService(config.Config{
-		DigestEmailFrom: "Second Brain <digest@example.com>",
-		ResendAPIKey:    "resend-key",
-	}, cacheStore{}, client)
-
-	delivery := service.deliverDigest(context.Background(), digest, "reader@example.com")
-
-	if delivery.Status != "sent" || delivery.Recipient != "reader@example.com" {
-		t.Fatalf("expected sent override delivery, got %#v", delivery)
-	}
-}
-
-func TestSendProvidedDigestDoesNotRequireStoreRead(t *testing.T) {
-	t.Setenv("RESEND_API_KEY", "resend-key")
-	client := &http.Client{Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
-		var payload struct {
-			To []string `json:"to"`
-		}
-		raw, err := io.ReadAll(request.Body)
-		if err != nil {
-			t.Fatalf("read request body: %v", err)
-		}
-		if err := json.Unmarshal(raw, &payload); err != nil {
-			t.Fatalf("decode request body: %v", err)
-		}
-		if !slices.Equal(payload.To, []string{"reader@example.com"}) {
-			t.Fatalf("expected provided digest recipient, got %#v", payload.To)
-		}
-		return jsonResponse(`{"id":"email-provided"}`), nil
-	})}
-	service := NewService(config.Config{
-		DigestEmailFrom: "Second Brain <digest@example.com>",
-		ResendAPIKey:    "resend-key",
-	}, cacheStore{}, client)
-
-	digest, err := service.SendProvidedDigest(context.Background(), "reader@example.com", DigestIssue{
-		DigestDate:   "2026-05-24",
-		Subject:      "Displayed digest",
-		BodyMarkdown: "# Displayed digest",
-	})
-	if err != nil {
-		t.Fatalf("send provided digest: %v", err)
-	}
-	if digest.Status != "sent" || len(digest.Deliveries) != 1 || digest.Deliveries[0].ProviderMessageID != "email-provided" {
-		t.Fatalf("expected sent provided digest, got %#v", digest)
 	}
 }
 

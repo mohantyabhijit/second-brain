@@ -991,7 +991,7 @@ func (s *Service) GenerateDigest(ctx context.Context) (*DigestIssue, error) {
 		return nil, err
 	}
 	s.annotateDigestIllustration(&digest)
-	digest.Deliveries = append(digest.Deliveries, s.deliverDigest(ctx, digest, ""))
+	digest.Deliveries = append(digest.Deliveries, s.deliverDigest(ctx, digest))
 	if len(digest.Deliveries) > 0 {
 		digest.Status = digest.Deliveries[0].Status
 	}
@@ -1277,83 +1277,6 @@ func (s *Service) readDigestsCanonical(ctx context.Context, limit int) ([]Digest
 
 func (s *Service) ReadDigestIllustration(ctx context.Context, digestID string) (*DigestIllustration, error) {
 	return s.store.ReadDigestIllustration(ctx, s.cfg.OwnerID, digestID)
-}
-
-func (s *Service) SendLatestDigest(ctx context.Context, recipientEmail string) (*DigestIssue, error) {
-	recipient, err := normalizeDigestRecipient(recipientEmail)
-	if err != nil {
-		return nil, err
-	}
-	latest, err := s.readLatestCanonical(ctx)
-	if err != nil {
-		return nil, err
-	}
-	if latest == nil {
-		return nil, fmt.Errorf("no knowledge run is available for digest delivery")
-	}
-	var digest DigestIssue
-	if latest.Digest != nil && strings.TrimSpace(latest.Digest.BodyMarkdown) != "" {
-		digest = *latest.Digest
-	} else {
-		if !hasDigestInputs(latest.Summaries, latest.Insights) {
-			return nil, fmt.Errorf("no source-grounded digest inputs are available")
-		}
-		sourceRefs, summaries, insights, themes, insightClusters, connections, err := s.digestInputsForLatest(ctx, latest)
-		if err != nil {
-			return nil, err
-		}
-		if !hasDigestInputs(summaries, insights) {
-			return nil, ErrNoNewDigestSources
-		}
-		digest, err = s.composeDigestIssue(ctx, time.Now().UTC(), summaries, insights, themes, insightClusters, connections)
-		if err != nil {
-			return nil, err
-		}
-		digest.SourceRefs = sourceRefs
-	}
-	digest.OwnerID = s.cfg.OwnerID
-	if err := ensureDigestID(&digest); err != nil {
-		return nil, err
-	}
-	s.annotateDigestIllustration(&digest)
-	delivery := s.deliverDigest(ctx, digest, recipient)
-	digest.Deliveries = []DigestDelivery{delivery}
-	digest.Status = delivery.Status
-	saved, err := s.store.SaveDigest(ctx, digest)
-	if err != nil {
-		return nil, err
-	}
-	if saved != nil {
-		latest.Digest = saved
-		if err := s.publishAppStateForResult(ctx, *latest, "", "digest_publish"); err != nil {
-			s.logger.Warn("digest delivery saved but read model cache publish failed", "digest_id", saved.ID, "error", err)
-		}
-	}
-	return saved, nil
-}
-
-func (s *Service) SendProvidedDigest(ctx context.Context, recipientEmail string, digest DigestIssue) (*DigestIssue, error) {
-	recipient, err := normalizeDigestRecipient(recipientEmail)
-	if err != nil {
-		return nil, err
-	}
-	digest.Subject = strings.TrimSpace(digest.Subject)
-	digest.BodyMarkdown = strings.TrimSpace(digest.BodyMarkdown)
-	if digest.Subject == "" || digest.BodyMarkdown == "" {
-		return nil, fmt.Errorf("displayed digest is not available for delivery")
-	}
-	if digest.DigestDate == "" {
-		digest.DigestDate = time.Now().UTC().Format("2006-01-02")
-	}
-	if strings.TrimSpace(digest.IdempotencyKey) == "" {
-		digest.IdempotencyKey = "manual:" + digest.DigestDate + ":" + digestBodyFingerprint(digest.BodyMarkdown)
-	}
-	digest.OwnerID = s.cfg.OwnerID
-	s.annotateDigestIllustration(&digest)
-	delivery := s.deliverDigest(ctx, digest, recipient)
-	digest.Deliveries = []DigestDelivery{delivery}
-	digest.Status = delivery.Status
-	return &digest, nil
 }
 
 func (s *Service) processSourceCandidates(ctx context.Context, candidates []sourceCandidate) ([]ProcessedSource, []string) {

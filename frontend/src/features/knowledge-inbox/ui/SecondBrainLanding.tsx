@@ -7,7 +7,6 @@ import { useSupabaseAuth } from "../model/useSupabaseAuth";
 import { formatUsername, publicOwnerHandle } from "./authDisplay";
 
 const appEntryPath = "insights";
-const allowedRedirectPaths = new Set(["insights", "daily-newsletter", "original-x-bookmarks", "original-youtube-videos", "knowledge-graph"]);
 const landingPreviewImage = `${process.env.NEXT_PUBLIC_BASE_PATH ?? ""}/second-brain-wall-final-chrome.png`;
 
 export function SecondBrainLanding() {
@@ -38,8 +37,7 @@ export function LandingAuthPanel({ configured, currentUsername, isLoading, onSig
     event.preventDefault();
     setMessage(null);
     try {
-      const redirectPath = typeof window === "undefined" ? appEntryPath : landingAuthRedirectPath(window.location.search);
-      await onSignIn(email, redirectPath);
+      await onSignIn(email, appEntryPath);
       setEmail("");
       setMessage("Check your email for the sign-in link.");
     } catch (error) {
@@ -93,9 +91,4 @@ export function LandingAuthPanel({ configured, currentUsername, isLoading, onSig
       </section>
     </main>
   );
-}
-
-export function landingAuthRedirectPath(search: string) {
-  const requestedPath = new URLSearchParams(search).get("redirect")?.trim().replace(/^\/+|\/+$/g, "");
-  return requestedPath && allowedRedirectPaths.has(requestedPath) ? requestedPath : appEntryPath;
 }

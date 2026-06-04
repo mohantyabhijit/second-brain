@@ -299,11 +299,6 @@ type DigestIllustration struct {
 	Base64   string
 }
 
-type DigestSendRequest struct {
-	RecipientEmail string       `json:"recipientEmail"`
-	Digest         *DigestIssue `json:"digest,omitempty"`
-}
-
 type FeedbackEvent struct {
 	OwnerID    string `json:"-"`
 	TargetType string `json:"targetType"`

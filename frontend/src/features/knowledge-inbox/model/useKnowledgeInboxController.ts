@@ -1,7 +1,7 @@
 "use client";
 
 import { startTransition, useCallback, useEffect, useState } from "react";
-import { askSecondBrain, clearAppStateCache, generateDailyDigest, readAppState, readKnowledgeRefreshStatus, readWorkspaceStatus, saveKnowledgeFeedback, saveYouTubePlaylist, sendLatestDigest, shareInsightToX, startKnowledgeInboxRefresh, startXAuth } from "../api/knowledgeRuns";
+import { askSecondBrain, clearAppStateCache, readAppState, readKnowledgeRefreshStatus, readWorkspaceStatus, saveKnowledgeFeedback, saveYouTubePlaylist, shareInsightToX, startKnowledgeInboxRefresh, startXAuth } from "../api/knowledgeRuns";
 import type { KnowledgeInboxPage } from "../KnowledgeInboxContainer";
 import type { AppState, AskSecondBrainResponse, DigestIssue, FeedbackSignal, InsightGraphResponse, KnowledgeRunResult, RefreshStatus, WorkspaceStatus } from "../contracts";
 import { initialKnowledgeRun } from "./initialKnowledgeRun";
@@ -20,7 +20,6 @@ export function useKnowledgeInboxController(activePage: KnowledgeInboxPage = "in
   const [run, setRun] = useState<KnowledgeRunResult>(() => initialKnowledgeRun);
   const [isLoading, setIsLoading] = useState(true);
   const [isRunning, setIsRunning] = useState(false);
-  const [isDigesting, setIsDigesting] = useState(false);
   const [isAsking, setIsAsking] = useState(false);
   const [refreshStatus, setRefreshStatus] = useState<RefreshStatus | null>(null);
   const [digestIssues, setDigestIssues] = useState<DigestIssue[]>([]);
@@ -137,38 +136,6 @@ export function useKnowledgeInboxController(activePage: KnowledgeInboxPage = "in
     }
   }, []);
 
-  const generateDigest = useCallback(async () => {
-    setIsDigesting(true);
-    setError(null);
-    try {
-      const digest = await generateDailyDigest();
-      startTransition(() => setRun((current) => ({ ...current, digest })));
-      startTransition(() => setDigestIssues((current) => upsertDigestIssue(current, digest)));
-    } catch (digestError) {
-      setError(digestError instanceof Error ? digestError.message : "Digest generation failed.");
-    } finally {
-      setIsDigesting(false);
-    }
-  }, []);
-
-  const sendDigest = useCallback(async (recipientEmail: string) => {
-    setIsDigesting(true);
-    setError(null);
-    try {
-      const currentDigest = run.digest;
-      const digest = await sendLatestDigest({ recipientEmail, digest: currentDigest });
-      startTransition(() => setRun((current) => ({ ...current, digest })));
-      startTransition(() => setDigestIssues((current) => upsertDigestIssue(current, digest)));
-      return digest;
-    } catch (digestError) {
-      const message = digestError instanceof Error ? digestError.message : "Digest delivery failed.";
-      setError(message);
-      throw digestError;
-    } finally {
-      setIsDigesting(false);
-    }
-  }, [run.digest]);
-
   const shareTweet = useCallback(async (targetType: string, targetId: string, text: string, sourceUrl?: string) => {
     setError(null);
     try {
@@ -261,7 +228,6 @@ export function useKnowledgeInboxController(activePage: KnowledgeInboxPage = "in
     run,
     isLoading,
     isRunning,
-    isDigesting,
     isAsking,
     refreshStatus,
     digestIssues,
@@ -275,17 +241,9 @@ export function useKnowledgeInboxController(activePage: KnowledgeInboxPage = "in
     savePlaylist,
     runValidation,
     saveFeedback,
-    generateDigest,
-    sendDigest,
     shareTweet,
     askBrain
   };
-}
-
-function upsertDigestIssue(current: DigestIssue[], digest: DigestIssue) {
-  const key = digest.id || digest.idempotencyKey || digest.digestDate;
-  const withoutDigest = current.filter((item) => (item.id || item.idempotencyKey || item.digestDate) !== key);
-  return [digest, ...withoutDigest];
 }
 
 function delay(ms: number) {
