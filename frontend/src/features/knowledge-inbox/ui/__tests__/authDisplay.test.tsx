@@ -1,9 +1,11 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import type { WorkspaceStatus } from "../../contracts";
+import { initialKnowledgeRun } from "../../model/initialKnowledgeRun";
 import type { SupabaseAuthState } from "../../model/useSupabaseAuth";
-import { IdentityBadge } from "../SecondBrainConsoleView";
-import { LandingAuthPanel } from "../SecondBrainLanding";
+import { toKnowledgeInboxViewModel } from "../../presentation/viewModel";
+import { IdentityBadge, SecondBrainConsoleView } from "../SecondBrainConsoleView";
+import { LandingAuthPanel, landingAuthRedirectPath } from "../SecondBrainLanding";
 
 describe("auth display surfaces", () => {
   it("renders only a username in the console topbar for signed-in users", () => {
@@ -30,6 +32,41 @@ describe("auth display surfaces", () => {
     expect(html).toContain("Sign Up / Sign In");
     expect(html).toContain("Continue as abhijitmohanty");
     expect(html).toContain('href="/insights"');
+  });
+
+  it("replaces protected digest actions with a Supabase sign-in link for public viewers", () => {
+    const html = renderToStaticMarkup(
+      <SecondBrainConsoleView
+        activePage="daily-newsletter"
+        auth={authState()}
+        chatMessages={[]}
+        digestIssues={[]}
+        insightGraph={null}
+        isAsking={false}
+        isDigesting={false}
+        isLoading={false}
+        model={toKnowledgeInboxViewModel(initialKnowledgeRun, false, null)}
+        onAsk={vi.fn()}
+        onConnectX={vi.fn()}
+        onDigest={vi.fn()}
+        onFeedback={vi.fn()}
+        onSavePlaylist={vi.fn()}
+        onSendDigest={vi.fn()}
+        refreshStatus={null}
+        workspace={workspaceStatus()}
+      />
+    );
+
+    expect(html).toContain("Sign in to Generate Digest");
+    expect(html).toContain('href="/?redirect=daily-newsletter"');
+    expect(html).not.toContain(">Generate Digest<");
+    expect(html).not.toContain(">Send Latest<");
+  });
+
+  it("returns magic-link sign-ins to an allowed protected page", () => {
+    expect(landingAuthRedirectPath("?redirect=daily-newsletter")).toBe("daily-newsletter");
+    expect(landingAuthRedirectPath("?redirect=https://attacker.example")).toBe("insights");
+    expect(landingAuthRedirectPath("")).toBe("insights");
   });
 });
 

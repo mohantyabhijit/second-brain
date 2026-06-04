@@ -178,7 +178,23 @@ export function SecondBrainConsoleView({ activePage, auth, chatMessages, digestI
           </div>
           <ThemeToggle mode={theme.mode} onToggle={theme.toggle} />
           <IdentityBadge auth={auth} workspace={workspace} />
-          {activePage === "daily-newsletter" ? (
+          {activePage === "daily-newsletter" && auth.isLoading ? (
+            <div className="digest-email-tools">
+              <button className="secondary-action" disabled type="button">
+                <span className="button-spinner" aria-hidden="true" />
+                Checking Supabase session
+              </button>
+            </div>
+          ) : null}
+          {activePage === "daily-newsletter" && !auth.isLoading && !auth.isAuthenticated ? (
+            <div className="digest-email-tools">
+              <Link className="secondary-action" href="/?redirect=daily-newsletter">
+                Sign in to Generate Digest
+              </Link>
+              <p>Public viewers can read existing issues. Sign in with Supabase to generate or send digests.</p>
+            </div>
+          ) : null}
+          {activePage === "daily-newsletter" && auth.isAuthenticated ? (
             <div className="digest-email-tools">
               <button className="secondary-action" disabled={isDigesting} onClick={onDigest} type="button">
                 {isDigesting ? <span className="button-spinner" aria-hidden="true" /> : null}
