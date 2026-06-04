@@ -17,7 +17,7 @@ Second Brain is deployed by GitHub Actions from this repository to the same VPS 
 GitHub Actions stores only deploy/runtime secrets needed outside OneCLI:
 
 - `DO_HOST`, `DO_PORT`, `DO_USER`, `DO_SSH_KEY`: SSH deployment to the VPS.
-- `DATABASE_URL`: required by the API and migration binary for Postgres. `SUPABASE_DB_URL` is only a legacy fallback.
+- `DATABASE_URL`: required by the API and migration binary for the DigitalOcean Postgres database.
 - `OBJECT_STORAGE_BACKEND`, `OBJECT_STORAGE_ROOT`, `OBJECT_STORAGE_BUCKET`: backend object storage settings. Production uses `filesystem`, `/srv/second-brain/object-storage`, and `sources`.
 - `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`: required by the Go API to validate Supabase Auth sessions. Supabase Auth is the only authentication provider.
 - `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`: required by the static frontend for Supabase magic-link sign-in.
@@ -36,3 +36,5 @@ Provider API credentials stay in OneCLI instead of GitHub Secrets where possible
 - OpenAI API key.
 
 The frontend receives only the public Supabase Auth configuration. It does not receive provider secrets, Redis credentials, database credentials, or object-storage credentials.
+
+Do not configure `SUPABASE_DB_URL`, `SUPABASE_SERVICE_ROLE_KEY`, or `SUPABASE_STORAGE_BUCKET`. Supabase is an Auth-only dependency, and the backend intentionally does not support Supabase Database or Storage fallbacks.

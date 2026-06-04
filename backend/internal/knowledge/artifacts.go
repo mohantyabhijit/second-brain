@@ -1,14 +1,11 @@
 package knowledge
 
 import (
-	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"net/http"
-	"net/url"
 	"os"
 	pathpkg "path"
 	"path/filepath"
@@ -67,8 +64,6 @@ func (s *Service) writeStorageArtifact(ctx context.Context, artifact SourceArtif
 	switch s.objectStorageBackend() {
 	case "filesystem", "file", "local":
 		return s.writeFilesystemStorageArtifact(ctx, artifact, raw, label, start)
-	case "supabase":
-		return s.writeSupabaseStorageArtifact(ctx, artifact, raw, label, start)
 	case "", "none":
 		artifact.Error = "Object storage backend is not configured; metadata recorded without object upload."
 	default:
@@ -94,17 +89,11 @@ func (s *Service) objectStorageBackend() string {
 	if strings.TrimSpace(s.cfg.ObjectStorageRoot) != "" {
 		return "filesystem"
 	}
-	if strings.TrimSpace(s.cfg.SupabaseURL) != "" || strings.TrimSpace(s.cfg.SupabaseStorageKey) != "" || s.cfg.OneCLIGateway {
-		return "supabase"
-	}
 	return "none"
 }
 
 func (s *Service) objectStorageBucket() string {
 	if bucket := strings.TrimSpace(s.cfg.ObjectStorageBucket); bucket != "" {
-		return bucket
-	}
-	if bucket := strings.TrimSpace(s.cfg.SupabaseStorageBucket); bucket != "" {
 		return bucket
 	}
 	return "sources"
@@ -184,74 +173,6 @@ func safeStoragePathPart(value string, allowNested bool) (string, error) {
 	return strings.TrimPrefix(pathpkg.Clean("/"+value), "/"), nil
 }
 
-func (s *Service) writeSupabaseStorageArtifact(ctx context.Context, artifact SourceArtifact, raw []byte, label string, start time.Time) SourceArtifact {
-	if strings.TrimSpace(s.cfg.SupabaseURL) == "" || (strings.TrimSpace(s.cfg.SupabaseStorageKey) == "" && !s.cfg.OneCLIGateway) {
-		artifact.Error = "Supabase Storage credentials missing; metadata recorded without object upload."
-		s.logger.Warn(
-			label+" upload skipped",
-			"source", artifact.Source,
-			"source_id", artifact.SourceID,
-			"bucket", artifact.Bucket,
-			"path", artifact.Path,
-			"byte_size", artifact.ByteSize,
-			"reason", artifact.Error,
-		)
-		return artifact
-	}
-
-	objectURL := strings.TrimRight(s.cfg.SupabaseURL, "/") + "/storage/v1/object/" + escapeObjectPath(artifact.Bucket) + "/" + escapeObjectPath(artifact.Path)
-	var response *http.Response
-	var err error
-	for attempt := 1; attempt <= 3; attempt++ {
-		response, err = s.putStorageArtifact(ctx, objectURL, artifact.ContentType, raw)
-		if err == nil && response != nil && response.StatusCode >= 200 && response.StatusCode < 300 {
-			break
-		}
-		if response != nil {
-			response.Body.Close()
-			if response.StatusCode < 500 {
-				break
-			}
-		}
-		if attempt < 3 {
-			select {
-			case <-ctx.Done():
-				artifact.Error = fmt.Sprintf("Supabase Storage upload failed: %v", ctx.Err())
-				return artifact
-			case <-time.After(time.Duration(attempt) * 500 * time.Millisecond):
-			}
-		}
-	}
-	if err != nil {
-		artifact.Error = fmt.Sprintf("Supabase Storage upload failed: %v", err)
-		s.logger.Warn(label+" upload failed", "source", artifact.Source, "source_id", artifact.SourceID, "bucket", artifact.Bucket, "path", artifact.Path, "duration_ms", time.Since(start).Milliseconds(), "error", err)
-		return artifact
-	}
-	defer response.Body.Close()
-	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		artifact.Error = fmt.Sprintf("Supabase Storage upload failed: %s", response.Status)
-		s.logger.Warn(label+" upload rejected", "source", artifact.Source, "source_id", artifact.SourceID, "bucket", artifact.Bucket, "path", artifact.Path, "duration_ms", time.Since(start).Milliseconds(), "status", response.Status)
-		return artifact
-	}
-	artifact.Stored = true
-	s.logger.Info(label+" stored", "source", artifact.Source, "source_id", artifact.SourceID, "bucket", artifact.Bucket, "path", artifact.Path, "byte_size", artifact.ByteSize, "duration_ms", time.Since(start).Milliseconds())
-	return artifact
-}
-
-func (s *Service) putStorageArtifact(ctx context.Context, objectURL string, contentType string, raw []byte) (*http.Response, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodPut, objectURL, bytes.NewReader(raw))
-	if err != nil {
-		return nil, err
-	}
-	if s.cfg.SupabaseStorageKey != "" {
-		req.Header.Set("Authorization", "Bearer "+s.cfg.SupabaseStorageKey)
-		req.Header.Set("apikey", s.cfg.SupabaseStorageKey)
-	}
-	req.Header.Set("Content-Type", contentType)
-	req.Header.Set("x-upsert", "true")
-	return s.client.Do(req)
-}
-
 func synthesisStoragePath(candidate sourceCandidate, captureHash string, record SynthesisRecord) string {
 	return strings.Join([]string{
 		"artifacts",
@@ -273,12 +194,4 @@ func storagePathSegment(value string) string {
 	value = strings.ReplaceAll(value, "\\", "_")
 	value = strings.ReplaceAll(value, " ", "-")
 	return value
-}
-
-func escapeObjectPath(path string) string {
-	segments := strings.Split(path, "/")
-	for i, segment := range segments {
-		segments[i] = url.PathEscape(segment)
-	}
-	return strings.Join(segments, "/")
 }

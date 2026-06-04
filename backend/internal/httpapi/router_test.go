@@ -526,7 +526,7 @@ func testConfig(t *testing.T) config.Config {
 		OneCLIBin:              filepath.Join(t.TempDir(), "missing-onecli"),
 		KnowledgeRunPath:       filepath.Join(t.TempDir(), "latest-knowledge-run.json"),
 		YouTubePlaylistID:      "",
-		SupabaseStorageBucket:  "sources",
+		ObjectStorageBucket:    "sources",
 		OpenAITranslationModel: "gpt-4o-mini",
 		OpenAISynthesisModel:   "gpt-4o-mini",
 	}
@@ -554,7 +554,7 @@ func benchmarkRouter(b *testing.B) http.Handler {
 		OneCLIBin:              filepath.Join(b.TempDir(), "missing-onecli"),
 		KnowledgeRunPath:       filepath.Join(b.TempDir(), "latest-knowledge-run.json"),
 		YouTubePlaylistID:      "",
-		SupabaseStorageBucket:  "sources",
+		ObjectStorageBucket:    "sources",
 		OpenAITranslationModel: "gpt-4o-mini",
 		OpenAISynthesisModel:   "gpt-4o-mini",
 	}

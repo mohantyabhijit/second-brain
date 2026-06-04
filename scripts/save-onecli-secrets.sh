@@ -95,8 +95,6 @@ create_param_secret YOUTUBE_API_KEY "Second Brain YouTube API key" "www.googleap
 create_secret SUPADATA_API_KEY "Second Brain Supadata API key" "api.supadata.ai" "x-api-key" "{value}"
 create_secret OPENAI_API_KEY "Second Brain OpenAI synthesis key" "api.openai.com"
 create_secret EXA_API_KEY "Second Brain Exa search key" "api.exa.ai" "x-api-key" "{value}"
-create_secret SUPABASE_SERVICE_ROLE_KEY "Second Brain Supabase service role key" "*.supabase.co" "Authorization" "Bearer {value}"
-create_secret SUPABASE_SERVICE_ROLE_KEY "Second Brain Supabase service role apikey" "*.supabase.co" "apikey" "{value}"
 create_secret RESEND_API_KEY "Second Brain Resend API key" "api.resend.com"
 
 echo "Done. Run: $ONECLI secrets list --project $PROJECT"

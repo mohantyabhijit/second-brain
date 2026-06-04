@@ -36,13 +36,13 @@ func TestLoadAppliesDefaultsAndParsesCSV(t *testing.T) {
 	if cfg.Env != "test" || cfg.Port != "9090" || cfg.OneCLIBin != "/tmp/onecli" || !cfg.OneCLIGateway {
 		t.Fatalf("unexpected basic config: %#v", cfg)
 	}
-	if cfg.DatabaseURL != "postgres://primary" || cfg.SupabaseDatabaseURL != "postgres://primary" {
+	if cfg.DatabaseURL != "postgres://primary" {
 		t.Fatalf("unexpected database config: %#v", cfg)
 	}
-	if cfg.SupabaseURL != "https://supabase.example" || cfg.SupabaseStorageKey != "service-role" {
+	if cfg.SupabaseURL != "https://supabase.example" {
 		t.Fatalf("unexpected Supabase config: %#v", cfg)
 	}
-	if cfg.SupabaseStorageBucket != "sources" || cfg.ObjectStorageBucket != "sources" || cfg.ObjectStorageBackend != "filesystem" || cfg.ObjectStorageRoot != "/srv/second-brain/object-storage" {
+	if cfg.ObjectStorageBucket != "sources" || cfg.ObjectStorageBackend != "filesystem" || cfg.ObjectStorageRoot != "/srv/second-brain/object-storage" {
 		t.Fatalf("unexpected object storage config: %#v", cfg)
 	}
 	if cfg.KnowledgeRunPath != "/tmp/latest.json" {
@@ -74,7 +74,7 @@ func TestLoadAppliesDefaultsAndParsesCSV(t *testing.T) {
 func TestLoadFallsBackForBlankValues(t *testing.T) {
 	t.Setenv("APP_ENV", "")
 	t.Setenv("PORT", "")
-	t.Setenv("SUPABASE_STORAGE_BUCKET", "")
+	t.Setenv("OBJECT_STORAGE_BUCKET", "")
 	t.Setenv("ALLOWED_ORIGINS", "")
 	t.Setenv("ONECLI_BIN", "")
 	t.Setenv("X_BOOKMARK_LIMIT", "")
@@ -90,9 +90,6 @@ func TestLoadFallsBackForBlankValues(t *testing.T) {
 
 	if cfg.Env != "development" || cfg.Port != "8080" {
 		t.Fatalf("expected env/port defaults, got %#v", cfg)
-	}
-	if cfg.SupabaseStorageBucket != "sources" {
-		t.Fatalf("expected default storage bucket, got %q", cfg.SupabaseStorageBucket)
 	}
 	if cfg.DatabaseURL != "" || cfg.ObjectStorageBucket != "sources" || cfg.ObjectStorageBackend != "none" || cfg.ObjectStorageRoot != "" {
 		t.Fatalf("unexpected default database/object storage config: %#v", cfg)
@@ -111,16 +108,23 @@ func TestLoadFallsBackForBlankValues(t *testing.T) {
 	}
 }
 
-func TestLoadRequiresExplicitSupabaseStorageBackend(t *testing.T) {
+func TestLoadIgnoresLegacySupabaseDataAndStorageVariables(t *testing.T) {
+	t.Setenv("DATABASE_URL", "")
+	t.Setenv("SUPABASE_DB_URL", "postgres://legacy-supabase")
 	t.Setenv("SUPABASE_URL", "https://supabase.example")
 	t.Setenv("SUPABASE_PUBLISHABLE_KEY", "publishable-key")
 	t.Setenv("SUPABASE_SERVICE_ROLE_KEY", "legacy-storage-key")
+	t.Setenv("SUPABASE_STORAGE_BUCKET", "legacy-bucket")
 	t.Setenv("OBJECT_STORAGE_BACKEND", "")
 	t.Setenv("OBJECT_STORAGE_ROOT", "")
+	t.Setenv("OBJECT_STORAGE_BUCKET", "")
 
 	cfg := Load()
 
-	if cfg.ObjectStorageBackend != "none" {
-		t.Fatalf("expected Supabase Storage to require an explicit backend, got %q", cfg.ObjectStorageBackend)
+	if cfg.DatabaseURL != "" || cfg.ObjectStorageBackend != "none" || cfg.ObjectStorageBucket != "sources" {
+		t.Fatalf("expected legacy Supabase data/storage variables to be ignored, got %#v", cfg)
+	}
+	if cfg.SupabaseURL != "https://supabase.example" || cfg.SupabasePublishableKey != "publishable-key" {
+		t.Fatalf("expected Supabase Auth variables to remain configured, got %#v", cfg)
 	}
 }
