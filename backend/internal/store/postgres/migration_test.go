@@ -136,3 +136,23 @@ func TestSupabaseAuthPublicOwnerMigrationDefinesWorkspaceMapping(t *testing.T) {
 		}
 	}
 }
+
+func TestExternalSupabaseAuthIdentityMigrationDropsLocalAuthForeignKey(t *testing.T) {
+	raw, err := os.ReadFile("../../../../supabase/migrations/202606040001_external_supabase_auth_identity.sql")
+	if err != nil {
+		t.Fatalf("read migration: %v", err)
+	}
+	sql := string(raw)
+
+	requiredFragments := []string{
+		"r.relname = 'user_profiles'",
+		"c.contype = 'f'",
+		"FOREIGN KEY (auth_user_id) REFERENCES auth.users",
+		"alter table public.user_profiles drop constraint",
+	}
+	for _, fragment := range requiredFragments {
+		if !strings.Contains(sql, fragment) {
+			t.Fatalf("migration missing fragment %q", fragment)
+		}
+	}
+}

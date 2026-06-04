@@ -1,6 +1,5 @@
 import { tryCreateClient } from "../../../utils/supabase/client";
 import type { AppState, AskSecondBrainResponse, DigestIssue, FeedbackSignal, InsightGraphResponse, KnowledgeRunResult, RefreshStatus, SourceProviderConnection, WorkspaceStatus } from "../contracts";
-import { readLocalAdminToken } from "../model/adminToken";
 
 export type AppStateView = "insights" | "daily-newsletter" | "original-x-posts" | "original-youtube-posts" | "knowledge-graph";
 
@@ -143,10 +142,6 @@ export async function saveYouTubePlaylist(input: { playlistId?: string; playlist
 }
 
 async function getAuthHeaders(): Promise<Record<string, string>> {
-  const adminToken = readLocalAdminToken();
-  if (adminToken) {
-    return { Authorization: `Bearer ${adminToken}` };
-  }
   if (typeof window === "undefined") {
     return {};
   }

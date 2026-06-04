@@ -8,7 +8,8 @@ required=(
   DEPLOY_SSH_KEY
   ONECLI_API_KEY
   DATABASE_URL
-  ADMIN_API_TOKEN
+  SUPABASE_URL
+  SUPABASE_PUBLISHABLE_KEY
 )
 
 for name in "${required[@]}"; do

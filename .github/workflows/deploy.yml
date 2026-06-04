@@ -112,7 +112,8 @@ jobs:
       OBJECT_STORAGE_BACKEND: filesystem
       OBJECT_STORAGE_ROOT: /srv/second-brain/object-storage
       OBJECT_STORAGE_BUCKET: sources
-      ADMIN_API_TOKEN: ${{ secrets.ADMIN_API_TOKEN }}
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_PUBLISHABLE_KEY: ${{ secrets.SUPABASE_PUBLISHABLE_KEY }}
       REDIS_URL: ${{ secrets.REDIS_URL }}
       REDIS_CACHE_ENABLED: ${{ secrets.REDIS_CACHE_ENABLED }}
       REDIS_CACHE_TTL: ${{ secrets.REDIS_CACHE_TTL }}
@@ -170,7 +171,8 @@ jobs:
           write_var OBJECT_STORAGE_BACKEND "${OBJECT_STORAGE_BACKEND:-filesystem}"
           write_var OBJECT_STORAGE_ROOT "${OBJECT_STORAGE_ROOT:-/srv/second-brain/object-storage}"
           write_var OBJECT_STORAGE_BUCKET "${OBJECT_STORAGE_BUCKET:-sources}"
-          write_var ADMIN_API_TOKEN "$ADMIN_API_TOKEN"
+          write_var SUPABASE_URL "$SUPABASE_URL"
+          write_var SUPABASE_PUBLISHABLE_KEY "$SUPABASE_PUBLISHABLE_KEY"
           write_var PUBLIC_OWNER_ID "${PUBLIC_OWNER_ID:-00000000-0000-0000-0000-000000000001}"
           write_var PUBLIC_OWNER_HANDLE "${PUBLIC_OWNER_HANDLE:-abhijitmohanty}"
           write_var PUBLIC_OWNER_EMAIL "$PUBLIC_OWNER_EMAIL"

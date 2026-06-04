@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { Session, User } from "@supabase/supabase-js";
 import { isSupabaseConfigured, tryCreateClient } from "../../../utils/supabase/client";
-import { clearLocalAdminToken, readLocalAdminToken } from "./adminToken";
 
 export type SupabaseAuthState = {
   configured: boolean;
@@ -17,16 +16,11 @@ export type SupabaseAuthState = {
 };
 
 export function useSupabaseAuth(): SupabaseAuthState {
-  const [adminToken, setAdminToken] = useState(() => readLocalAdminToken());
   const [session, setSession] = useState<Session | null>(null);
-  const [isLoading, setIsLoading] = useState(() => isSupabaseConfigured && readLocalAdminToken() === "");
+  const [isLoading, setIsLoading] = useState(() => isSupabaseConfigured);
   const [authVersion, setAuthVersion] = useState(0);
 
   useEffect(() => {
-    const currentAdminToken = readLocalAdminToken();
-    if (currentAdminToken) {
-      return undefined;
-    }
     const supabase = tryCreateClient();
     if (!supabase) {
       return undefined;
@@ -73,12 +67,6 @@ export function useSupabaseAuth(): SupabaseAuthState {
   }, []);
 
   const signOut = useCallback(async () => {
-    if (readLocalAdminToken()) {
-      clearLocalAdminToken();
-      setAdminToken("");
-      setAuthVersion((version) => version + 1);
-      return;
-    }
     const supabase = tryCreateClient();
     if (!supabase) {
       return;
@@ -91,16 +79,16 @@ export function useSupabaseAuth(): SupabaseAuthState {
 
   return useMemo(
     () => ({
-      configured: Boolean(adminToken) || isSupabaseConfigured,
+      configured: isSupabaseConfigured,
       isLoading,
-      isAuthenticated: Boolean(adminToken) || Boolean(session),
+      isAuthenticated: Boolean(session),
       email: session?.user.email ?? null,
-      username: adminToken ? "admin" : usernameFromUser(session?.user),
+      username: usernameFromUser(session?.user),
       authVersion,
       signIn,
       signOut
     }),
-    [adminToken, authVersion, isLoading, session, signIn, signOut]
+    [authVersion, isLoading, session, signIn, signOut]
   );
 }
 

@@ -16,7 +16,6 @@ func TestLoadAppliesDefaultsAndParsesCSV(t *testing.T) {
 	t.Setenv("OBJECT_STORAGE_BACKEND", "filesystem")
 	t.Setenv("OBJECT_STORAGE_ROOT", "/srv/second-brain/object-storage")
 	t.Setenv("OBJECT_STORAGE_BUCKET", "sources")
-	t.Setenv("ADMIN_API_TOKEN", "admin-token")
 	t.Setenv("ALLOWED_ORIGINS", " https://app.example, ,http://localhost:3000 ")
 	t.Setenv("ONECLI_BIN", "/tmp/onecli")
 	t.Setenv("ONECLI_GATEWAY", "true")
@@ -46,7 +45,7 @@ func TestLoadAppliesDefaultsAndParsesCSV(t *testing.T) {
 	if cfg.SupabaseStorageBucket != "sources" || cfg.ObjectStorageBucket != "sources" || cfg.ObjectStorageBackend != "filesystem" || cfg.ObjectStorageRoot != "/srv/second-brain/object-storage" {
 		t.Fatalf("unexpected object storage config: %#v", cfg)
 	}
-	if cfg.AdminAPIToken != "admin-token" || cfg.KnowledgeRunPath != "/tmp/latest.json" {
+	if cfg.KnowledgeRunPath != "/tmp/latest.json" {
 		t.Fatalf("unexpected storage/run config: %#v", cfg)
 	}
 	if cfg.XBookmarkLimit != 250 {
@@ -109,5 +108,19 @@ func TestLoadFallsBackForBlankValues(t *testing.T) {
 	}
 	if cfg.PublicBaseURL != "http://localhost:8080" {
 		t.Fatalf("expected local public base URL default, got %#v", cfg)
+	}
+}
+
+func TestLoadRequiresExplicitSupabaseStorageBackend(t *testing.T) {
+	t.Setenv("SUPABASE_URL", "https://supabase.example")
+	t.Setenv("SUPABASE_PUBLISHABLE_KEY", "publishable-key")
+	t.Setenv("SUPABASE_SERVICE_ROLE_KEY", "legacy-storage-key")
+	t.Setenv("OBJECT_STORAGE_BACKEND", "")
+	t.Setenv("OBJECT_STORAGE_ROOT", "")
+
+	cfg := Load()
+
+	if cfg.ObjectStorageBackend != "none" {
+		t.Fatalf("expected Supabase Storage to require an explicit backend, got %q", cfg.ObjectStorageBackend)
 	}
 }

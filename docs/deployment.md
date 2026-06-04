@@ -19,8 +19,8 @@ GitHub Actions stores only deploy/runtime secrets needed outside OneCLI:
 - `DO_HOST`, `DO_PORT`, `DO_USER`, `DO_SSH_KEY`: SSH deployment to the VPS.
 - `DATABASE_URL`: required by the API and migration binary for Postgres. `SUPABASE_DB_URL` is only a legacy fallback.
 - `OBJECT_STORAGE_BACKEND`, `OBJECT_STORAGE_ROOT`, `OBJECT_STORAGE_BUCKET`: backend object storage settings. Production uses `filesystem`, `/srv/second-brain/object-storage`, and `sources`.
-- `ADMIN_API_TOKEN`: static bearer token for protected single-owner admin actions after Supabase Auth is removed. In the browser, store it under `localStorage["second-brain-admin-token"]`.
-- `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`: optional legacy Supabase Auth fallback while the old project still exists.
+- `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`: required by the Go API to validate Supabase Auth sessions. Supabase Auth is the only authentication provider.
+- `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`: required by the static frontend for Supabase magic-link sign-in.
 - `REDIS_URL`: optional backend-only Redis read-model cache override. When absent, deploy provisions Redis on the VPS and uses `redis://127.0.0.1:6379/0`; deploy enables `REDIS_CACHE_ENABLED=true`.
 - `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ZONE_ID`, `CLOUDFLARE_CACHE_PURGE_ENABLED`: optional edge-cache purge credentials. When present, successful refresh and digest read-model publishes purge the static pages and app-state URLs that Cloudflare caches.
 - `MEMORY_PROFILING_ENABLED`, `MEMORY_PROFILE_TOKEN`: optional backend profiling controls. When enabled in production, call `/second-brain/api/debug/memory` or `/second-brain/api/debug/pprof/heap?debug=1` with `Authorization: Bearer $MEMORY_PROFILE_TOKEN`.
@@ -35,4 +35,4 @@ Provider API credentials stay in OneCLI instead of GitHub Secrets where possible
 - Supadata API key.
 - OpenAI API key.
 
-The frontend does not receive provider secrets, Redis credentials, database credentials, or object-storage credentials.
+The frontend receives only the public Supabase Auth configuration. It does not receive provider secrets, Redis credentials, database credentials, or object-storage credentials.

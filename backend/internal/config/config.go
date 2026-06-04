@@ -27,7 +27,6 @@ type Config struct {
 	ObjectStorageBackend         string
 	ObjectStorageRoot            string
 	ObjectStorageBucket          string
-	AdminAPIToken                string
 	AllowedOrigins               []string
 	OneCLIBin                    string
 	OneCLIGateway                bool
@@ -103,7 +102,6 @@ func Load() Config {
 		ObjectStorageBackend:         value("OBJECT_STORAGE_BACKEND", defaultObjectStorageBackend()),
 		ObjectStorageRoot:            os.Getenv("OBJECT_STORAGE_ROOT"),
 		ObjectStorageBucket:          storageBucket,
-		AdminAPIToken:                os.Getenv("ADMIN_API_TOKEN"),
 		AllowedOrigins:               csv(value("ALLOWED_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000")),
 		OneCLIBin:                    value("ONECLI_BIN", "/Users/abhijitmohanty/.local/bin/onecli"),
 		OneCLIGateway:                os.Getenv("ONECLI_GATEWAY") == "true",
@@ -164,9 +162,6 @@ func Load() Config {
 func defaultObjectStorageBackend() string {
 	if strings.TrimSpace(os.Getenv("OBJECT_STORAGE_ROOT")) != "" {
 		return "filesystem"
-	}
-	if strings.TrimSpace(os.Getenv("SUPABASE_URL")) != "" || strings.TrimSpace(os.Getenv("SUPABASE_SERVICE_ROLE_KEY")) != "" {
-		return "supabase"
 	}
 	return "none"
 }
