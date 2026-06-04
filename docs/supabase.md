@@ -1,6 +1,8 @@
 # Postgres and Supabase Auth Setup
 
-The app uses Supabase only for Auth. Product data lives in DigitalOcean Postgres, and objects live on the VPS filesystem.
+The app uses Supabase only for Auth. Product data lives in self-hosted
+PostgreSQL on the `codex-crapbox` DigitalOcean droplet, and objects live on the
+`ubuntu-sgp` VPS filesystem.
 
 Production setup:
 
@@ -11,7 +13,7 @@ Production setup:
 5. Configure object storage with `OBJECT_STORAGE_BACKEND=filesystem`, `OBJECT_STORAGE_ROOT`, and `OBJECT_STORAGE_BUCKET`.
 6. Configure only `SUPABASE_URL` and `SUPABASE_PUBLISHABLE_KEY` for backend Auth validation, plus their `NEXT_PUBLIC_` equivalents for browser sign-in.
 
-The app stores complete refresh payloads in `knowledge_runs.payload` as an audit log. It also writes normalized `source_items`, `source_captures`, `source_objects`, and `knowledge_syntheses` rows so source identity, content captures, Storage objects, and AI processing caches stay separately deduplicated. Scheduled refreshes use those tables as the canonical source-material list before fetching expensive transcripts or running model synthesis again.
+The app stores complete refresh payloads in `knowledge_runs.payload` as an audit log. It also writes normalized `source_items`, `source_captures`, `source_objects`, and `knowledge_syntheses` rows so source identity, content captures, Storage objects, and AI processing caches stay separately deduplicated. `youtube_transcript_requests` is a durable one-request-per-video ledger with a monthly request ceiling. Scheduled refreshes use those tables before fetching expensive transcripts or running model synthesis again.
 
 ## Responsibilities
 

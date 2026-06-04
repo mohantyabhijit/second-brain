@@ -156,3 +156,26 @@ func TestExternalSupabaseAuthIdentityMigrationDropsLocalAuthForeignKey(t *testin
 		}
 	}
 }
+
+func TestYouTubeTranscriptRequestLedgerMigrationDefinesOneRequestPerVideo(t *testing.T) {
+	raw, err := os.ReadFile("../../../../supabase/migrations/202606040002_youtube_transcript_request_ledger.sql")
+	if err != nil {
+		t.Fatalf("read migration: %v", err)
+	}
+	sql := string(raw)
+
+	requiredFragments := []string{
+		"create table if not exists public.youtube_transcript_requests",
+		"primary key (owner_id, video_id)",
+		"alter table public.youtube_transcript_requests enable row level security",
+		`create policy "youtube_transcript_requests_no_browser_access"`,
+		"from public.source_items",
+		"jsonb_array_elements",
+		"on conflict (owner_id, video_id) do nothing",
+	}
+	for _, fragment := range requiredFragments {
+		if !strings.Contains(sql, fragment) {
+			t.Fatalf("migration missing fragment %q", fragment)
+		}
+	}
+}

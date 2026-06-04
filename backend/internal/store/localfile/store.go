@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -16,6 +17,13 @@ type Store struct {
 	path        string
 	mu          sync.Mutex
 	connections map[string][]knowledge.SourceProviderConnection
+}
+
+type transcriptRequestRecord struct {
+	Status      string    `json:"status"`
+	Detail      string    `json:"detail,omitempty"`
+	AttemptedAt time.Time `json:"attemptedAt"`
+	CompletedAt time.Time `json:"completedAt,omitempty"`
 }
 
 func New(path string) *Store {
@@ -313,4 +321,114 @@ func (s *Store) SaveYouTubePlaylistConnection(ctx context.Context, ownerID strin
 	}
 	s.connections[ownerID] = append(others, connection)
 	return &connection, nil
+}
+
+func (s *Store) ClaimYouTubeTranscriptRequest(ctx context.Context, ownerID string, videoID string, monthlyLimit int) (bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if err := ctx.Err(); err != nil {
+		return false, err
+	}
+	key, err := transcriptRequestKey(ownerID, videoID)
+	if err != nil {
+		return false, err
+	}
+	records, err := s.readTranscriptRequests()
+	if err != nil {
+		return false, err
+	}
+	if _, exists := records[key]; exists {
+		return false, nil
+	}
+	now := time.Now().UTC()
+	monthStart := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC)
+	requestsThisMonth := 0
+	for _, record := range records {
+		if !record.AttemptedAt.Before(monthStart) {
+			requestsThisMonth++
+		}
+	}
+	if monthlyLimit <= 0 || requestsThisMonth >= monthlyLimit {
+		return false, nil
+	}
+	records[key] = transcriptRequestRecord{
+		Status:      "claimed",
+		Detail:      "Supadata request claimed before provider call.",
+		AttemptedAt: now,
+	}
+	if err := s.writeTranscriptRequests(records); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+func (s *Store) CompleteYouTubeTranscriptRequest(ctx context.Context, ownerID string, videoID string, status string, detail string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	key, err := transcriptRequestKey(ownerID, videoID)
+	if err != nil {
+		return err
+	}
+	records, err := s.readTranscriptRequests()
+	if err != nil {
+		return err
+	}
+	record, exists := records[key]
+	if !exists {
+		return errors.New("youtube transcript request was not claimed")
+	}
+	record.Status = strings.TrimSpace(status)
+	if record.Status == "" {
+		record.Status = "completed"
+	}
+	record.Detail = detail
+	record.CompletedAt = time.Now().UTC()
+	records[key] = record
+	return s.writeTranscriptRequests(records)
+}
+
+func transcriptRequestKey(ownerID string, videoID string) (string, error) {
+	ownerID = strings.TrimSpace(ownerID)
+	videoID = strings.TrimSpace(videoID)
+	if ownerID == "" || videoID == "" {
+		return "", errors.New("owner id and youtube video id are required")
+	}
+	return ownerID + ":" + videoID, nil
+}
+
+func (s *Store) readTranscriptRequests() (map[string]transcriptRequestRecord, error) {
+	records := map[string]transcriptRequestRecord{}
+	raw, err := os.ReadFile(s.path + ".youtube-transcript-requests.json")
+	if errors.Is(err, os.ErrNotExist) {
+		return records, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	if err := json.Unmarshal(raw, &records); err != nil {
+		return nil, err
+	}
+	return records, nil
+}
+
+func (s *Store) writeTranscriptRequests(records map[string]transcriptRequestRecord) error {
+	raw, err := json.MarshalIndent(records, "", "  ")
+	if err != nil {
+		return err
+	}
+	raw = append(raw, '\n')
+	path := s.path + ".youtube-transcript-requests.json"
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	tempPath := path + ".tmp"
+	if err := os.WriteFile(tempPath, raw, 0o600); err != nil {
+		return err
+	}
+	return os.Rename(tempPath, path)
 }

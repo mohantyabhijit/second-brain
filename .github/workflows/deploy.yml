@@ -194,6 +194,7 @@ jobs:
           write_var ONECLI_X_REFRESH_SECRET_ID 78842398-70d0-47cc-b517-8909e26e76ff
           write_var YOUTUBE_PLAYLIST_ID "$YOUTUBE_PLAYLIST_ID"
           write_var YOUTUBE_TRANSCRIPT_TEST_VIDEO_ID "$YOUTUBE_TRANSCRIPT_TEST_VIDEO_ID"
+          write_var SUPADATA_MONTHLY_REQUEST_LIMIT 100
           write_var OPENAI_TRANSLATION_MODEL gpt-4o-mini
           write_var OPENAI_SYNTHESIS_MODEL gpt-5.5
           write_var OPENAI_CHAT_MODEL gpt-5.5

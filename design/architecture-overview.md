@@ -1,47 +1,110 @@
-# Second Brain Architecture Overview
+# Second Brain Production Architecture
+
+Audited on 2026-06-04.
 
 ```mermaid
 flowchart TB
-  W[Two-hour self-organizing worker] --> X[X bookmarks]
-  W --> Y[YouTube playlist metadata]
-  X --> A[Source adapter seam]
-  Y --> A
+  subgraph Sources["Source and provider APIs"]
+    X["X API bookmarks and OAuth"]
+    Y["YouTube Data API"]
+    T["Supadata transcripts"]
+    AI["OpenAI synthesis, Ask, embeddings, digest"]
+    EX["Exa optional live search"]
+    EM["Resend email delivery"]
+  end
 
-  A --> B{Source material already processed?}
-  R[(Redis source-material cache)] --> B
-  D[(Supabase canonical ledger)] --> B
-  B -->|same source type, external ID, prompt, model, capture hash| Z[Skip re-ingestion and expensive processing]
-  B -->|new or changed material| C[Evidence artifact module]
+  subgraph App["ubuntu-sgp - shared 1 GB DigitalOcean droplet"]
+    NX["nginx"]
+    UI["Static Next.js frontend"]
+    API["Go API :8090"]
+    W["Go refresh and digest worker"]
+    R[("Local Redis read models")]
+    FS[("Filesystem object storage")]
+  end
 
-  Z --> Q[Digest generation from latest saved run]
-  C --> T[Transcript and body fetch]
-  T --> E[(Supabase Storage)]
-  T --> S[Prompt synthesis module]
-  S --> D
-  S --> F[(pgvector embeddings)]
-  S --> G[Graph sync outbox]
-  G --> H[(Neo4j derived index)]
+  subgraph Data["codex-crapbox - shared 1 GB DigitalOcean droplet"]
+    PG[("PostgreSQL 17 plus pgvector")]
+  end
 
-  D --> M[Redis read-model publisher]
-  Q --> M
-  M --> N[(Redis app-state, views, digests)]
-  N --> I[Go API Redis-first reads]
-  D --> I
-  H --> I
-  I --> J[Next.js UI]
-  Q --> K[Resend email digest]
+  CF["Cloudflare Free CDN and edge cache"]
+  AUTH["Supabase Auth only"]
+  NEO[("Neo4j Aura derived graph")]
+  ONE["OneCLI secret and provider gateway"]
+  BROWSER["Browser"]
 
-  classDef deep fill:#0f172a,color:#fff,stroke:#0f172a,stroke-width:2px;
-  class A,B,C,I,M,Q,S,T deep;
+  BROWSER --> CF
+  CF --> NX
+  NX --> UI
+  NX --> API
+  BROWSER --> AUTH
+  API --> AUTH
+
+  ONE --> API
+  ONE --> W
+  W --> X
+  W --> Y
+  W --> T
+  W --> AI
+  API --> AI
+  API --> EX
+  API --> X
+
+  W -->|"DigitalOcean private VPC"| PG
+  API -->|"DigitalOcean private VPC"| PG
+  W --> FS
+  API --> FS
+  W --> R
+  API --> R
+  W --> NEO
+  W --> EM
 ```
 
-Supabase Postgres is the canonical source of truth for source identity,
-capture hashes, synthesis cache rows, digest records, and artifact metadata.
-Redis stores derived source-material and read-model state so scheduled refreshes
-can skip already processed captures before transcript fetches, synthesis,
-embeddings, storage rewrites, and graph sync.
+## Ownership Boundaries
 
-Supabase Storage holds raw and derived text artifacts such as X article bodies
-and YouTube transcripts. `pgvector` and Neo4j are derived indexes fed after
-source-grounded records exist in Supabase. Digest generation remains active even
-when refresh work is skipped because there is no new source material.
+- PostgreSQL plus filesystem object storage is the canonical source of truth.
+- PostgreSQL runs on `codex-crapbox` and is reachable from `ubuntu-sgp` only over
+  the DigitalOcean private VPC.
+- Redis on `ubuntu-sgp` stores rebuildable source-material indexes and
+  precomputed frontend read models.
+- Neo4j Aura is a rebuildable derived graph index. The application can continue
+  serving canonical and vector-backed data when graph sync is unavailable.
+- Supabase provides Auth only. Supabase Database and Storage are not runtime
+  fallbacks.
+- Cloudflare provides the public CDN and edge cache on its Free plan. nginx can
+  still serve the application directly if Cloudflare caching is unavailable.
+- OneCLI currently injects provider credentials and fronts provider calls. The
+  Go services can use direct environment credentials instead.
+
+## Runtime Flow
+
+The worker fetches X bookmarks and YouTube metadata, obtains transcripts, and
+uses AI providers when configured. It persists canonical records and vectors to
+PostgreSQL, writes source artifacts to the private filesystem, best-effort
+syncs Neo4j, and publishes Redis read models. Cloudflare caches the public
+static frontend and cacheable app-state responses.
+
+Normal page loads use:
+
+```text
+Cloudflare -> nginx -> Go API -> Redis read model -> PostgreSQL fallback
+```
+
+Protected operator actions use a Supabase Auth bearer session. Digest email
+delivery uses Resend after the digest has already been persisted.
+
+## Current Operational Risks
+
+- Both droplets have only 1 GB RAM and are shared with other workloads.
+  `ubuntu-sgp` already uses swap, and Redis has no memory ceiling. Do not add
+  PostgreSQL to that host.
+- `codex-crapbox` is both the production database host and a remote development
+  box. Development activity can affect database availability.
+- Database dumps and filesystem archives currently live on `ubuntu-sgp`, the
+  same host as the object store. There is no recurring offsite backup.
+- Filesystem object storage is a single-host dependency. Losing the
+  `ubuntu-sgp` disk loses objects that are not in a separate backup.
+- Removing OneCLI without first moving its provider secrets and X token
+  rotation path will stop refresh/provider calls.
+
+See [the service exit plan](../docs/service-exit-plan.md) before shutting down
+or replacing any provider.

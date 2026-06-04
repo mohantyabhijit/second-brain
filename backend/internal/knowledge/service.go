@@ -64,6 +64,11 @@ type sourceProviderConnectionStore interface {
 	SaveYouTubePlaylistConnection(ctx context.Context, ownerID string, playlistID string) (*SourceProviderConnection, error)
 }
 
+type youtubeTranscriptRequestStore interface {
+	ClaimYouTubeTranscriptRequest(ctx context.Context, ownerID string, videoID string, monthlyLimit int) (bool, error)
+	CompleteYouTubeTranscriptRequest(ctx context.Context, ownerID string, videoID string, status string, detail string) error
+}
+
 type readModelSnapshotStore interface {
 	ReadLatestReadModelSnapshot(ctx context.Context, ownerID string) (*AppState, error)
 	SaveReadModelSnapshot(ctx context.Context, ownerID string, state AppState) error
