@@ -19,11 +19,8 @@ type Config struct {
 	PublicOwnerHandle            string
 	PublicOwnerEmail             string
 	DatabaseURL                  string
-	SupabaseDatabaseURL          string
 	SupabaseURL                  string
 	SupabasePublishableKey       string
-	SupabaseStorageKey           string
-	SupabaseStorageBucket        string
 	ObjectStorageBackend         string
 	ObjectStorageRoot            string
 	ObjectStorageBucket          string
@@ -84,8 +81,6 @@ type Config struct {
 }
 
 func Load() Config {
-	databaseURL := firstEnv("DATABASE_URL", "SUPABASE_DB_URL")
-	storageBucket := value("OBJECT_STORAGE_BUCKET", value("SUPABASE_STORAGE_BUCKET", "sources"))
 	return Config{
 		Env:                          value("APP_ENV", "development"),
 		Port:                         value("PORT", "8080"),
@@ -93,15 +88,12 @@ func Load() Config {
 		PublicOwnerID:                value("PUBLIC_OWNER_ID", DefaultOwnerID),
 		PublicOwnerHandle:            value("PUBLIC_OWNER_HANDLE", DefaultPublicOwnerHandle),
 		PublicOwnerEmail:             os.Getenv("PUBLIC_OWNER_EMAIL"),
-		DatabaseURL:                  databaseURL,
-		SupabaseDatabaseURL:          databaseURL,
+		DatabaseURL:                  os.Getenv("DATABASE_URL"),
 		SupabaseURL:                  os.Getenv("SUPABASE_URL"),
 		SupabasePublishableKey:       firstEnv("SUPABASE_PUBLISHABLE_KEY", "NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY"),
-		SupabaseStorageKey:           os.Getenv("SUPABASE_SERVICE_ROLE_KEY"),
-		SupabaseStorageBucket:        storageBucket,
 		ObjectStorageBackend:         value("OBJECT_STORAGE_BACKEND", defaultObjectStorageBackend()),
 		ObjectStorageRoot:            os.Getenv("OBJECT_STORAGE_ROOT"),
-		ObjectStorageBucket:          storageBucket,
+		ObjectStorageBucket:          value("OBJECT_STORAGE_BUCKET", "sources"),
 		AllowedOrigins:               csv(value("ALLOWED_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000")),
 		OneCLIBin:                    value("ONECLI_BIN", "/Users/abhijitmohanty/.local/bin/onecli"),
 		OneCLIGateway:                os.Getenv("ONECLI_GATEWAY") == "true",

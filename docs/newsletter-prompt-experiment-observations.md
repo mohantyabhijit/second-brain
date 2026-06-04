@@ -52,7 +52,7 @@ Run a local experiment that creates a newsletter, scores it with a smaller LLM j
 
 ## Prod-data rerun
 
-- The eval wrapper was updated to load `SUPABASE_DB_URL` from macOS Keychain service `second-brain/SUPABASE_DB_URL`, matching the production refresh and digest runners.
+- The eval wrapper loaded the production database URL from macOS Keychain for this historical rerun. Current runners use only `DATABASE_URL`; Supabase remains an Auth-only dependency.
 - `npm run newsletter:eval -- -inspect-inputs` confirmed the Supabase-backed latest run before the rerun.
 - Prod latest run timestamp: `2026-05-24T14:06:57Z`.
 - Prod input counts: 299 X bookmarks, 5 YouTube items, 55 summaries, 166 insights, 8 themes, 1 insight cluster, 9 connections, 0 blockers.

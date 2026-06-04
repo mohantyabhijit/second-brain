@@ -16,14 +16,9 @@ fi
 if [[ -z "${DATABASE_URL:-}" ]]; then
   if DATABASE_URL="$(security find-generic-password -a "$USER" -s "second-brain/DATABASE_URL" -w 2>/dev/null)"; then
     export DATABASE_URL
-  elif DATABASE_URL="$(security find-generic-password -a "$USER" -s "second-brain/SUPABASE_DB_URL" -w 2>/dev/null)"; then
-    export DATABASE_URL
   else
     unset DATABASE_URL
   fi
-fi
-if [[ -z "${SUPABASE_DB_URL:-}" && -n "${DATABASE_URL:-}" ]]; then
-  export SUPABASE_DB_URL="$DATABASE_URL"
 fi
 
 for key in OBJECT_STORAGE_BACKEND OBJECT_STORAGE_ROOT OBJECT_STORAGE_BUCKET; do
@@ -33,30 +28,6 @@ for key in OBJECT_STORAGE_BACKEND OBJECT_STORAGE_ROOT OBJECT_STORAGE_BUCKET; do
     fi
   fi
 done
-
-if [[ -z "${SUPABASE_URL:-}" ]]; then
-  if SUPABASE_URL="$(security find-generic-password -a "$USER" -s "second-brain/SUPABASE_URL" -w 2>/dev/null)"; then
-    export SUPABASE_URL
-  else
-    unset SUPABASE_URL
-  fi
-fi
-
-if [[ -z "${SUPABASE_SERVICE_ROLE_KEY:-}" ]]; then
-  if SUPABASE_SERVICE_ROLE_KEY="$(security find-generic-password -a "$USER" -s "second-brain/SUPABASE_SERVICE_ROLE_KEY" -w 2>/dev/null)"; then
-    export SUPABASE_SERVICE_ROLE_KEY
-  else
-    unset SUPABASE_SERVICE_ROLE_KEY
-  fi
-fi
-
-if [[ -z "${SUPABASE_STORAGE_BUCKET:-}" ]]; then
-  if SUPABASE_STORAGE_BUCKET="$(security find-generic-password -a "$USER" -s "second-brain/SUPABASE_STORAGE_BUCKET" -w 2>/dev/null)"; then
-    export SUPABASE_STORAGE_BUCKET
-  else
-    unset SUPABASE_STORAGE_BUCKET
-  fi
-fi
 
 if [[ -z "${REDIS_URL:-}" ]]; then
   if REDIS_URL="$(security find-generic-password -a "$USER" -s "second-brain/REDIS_URL" -w 2>/dev/null)"; then

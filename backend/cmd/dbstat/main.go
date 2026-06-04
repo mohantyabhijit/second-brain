@@ -12,9 +12,6 @@ import (
 func main() {
 	databaseURL := os.Getenv("DATABASE_URL")
 	if databaseURL == "" {
-		databaseURL = os.Getenv("SUPABASE_DB_URL")
-	}
-	if databaseURL == "" {
 		fmt.Fprintln(os.Stderr, "DATABASE_URL is required")
 		os.Exit(1)
 	}

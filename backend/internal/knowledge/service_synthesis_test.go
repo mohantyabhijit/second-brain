@@ -95,7 +95,7 @@ func TestProcessSourceCandidatesUsesCachedSynthesis(t *testing.T) {
 			},
 		},
 	}}
-	service := NewService(config.Config{SupabaseStorageBucket: "sources"}, store, http.DefaultClient)
+	service := NewService(config.Config{ObjectStorageBucket: "sources"}, store, http.DefaultClient)
 
 	processed, blockers := service.processSourceCandidates(context.Background(), []sourceCandidate{candidate})
 	if len(blockers) != 0 {
@@ -159,7 +159,7 @@ func TestProcessSourceCandidateDoesNotUseSourceCacheForYouTubeTranscript(t *test
 			},
 		},
 	}
-	service := NewService(config.Config{SupabaseStorageBucket: "sources"}, cacheStore{}, http.DefaultClient)
+	service := NewService(config.Config{ObjectStorageBucket: "sources"}, cacheStore{}, http.DefaultClient)
 
 	processed := service.processSourceCandidate(context.Background(), candidate, captureHash, map[string]SynthesisRecord{}, sourceCached)
 
@@ -263,7 +263,7 @@ func TestFallbackSynthesisBuildsFirstClassInsightFields(t *testing.T) {
 		artifactKind: "tweet",
 		contentType:  "text/plain; charset=utf-8",
 	}
-	service := NewService(config.Config{SupabaseStorageBucket: "sources"}, cacheStore{}, http.DefaultClient)
+	service := NewService(config.Config{ObjectStorageBucket: "sources"}, cacheStore{}, http.DefaultClient)
 
 	record := service.synthesizeCandidate(context.Background(), candidate, candidate.captureHash(), "generated")
 	if len(record.Insights) == 0 {

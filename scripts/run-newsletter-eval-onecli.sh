@@ -16,16 +16,10 @@ fi
 if [[ -z "${DATABASE_URL:-}" ]]; then
   if DATABASE_URL="$(security find-generic-password -a "$USER" -s "second-brain/DATABASE_URL" -w 2>/dev/null)"; then
     export DATABASE_URL
-  elif DATABASE_URL="$(security find-generic-password -a "$USER" -s "second-brain/SUPABASE_DB_URL" -w 2>/dev/null)"; then
-    export DATABASE_URL
   else
     unset DATABASE_URL
   fi
 fi
-if [[ -z "${SUPABASE_DB_URL:-}" && -n "${DATABASE_URL:-}" ]]; then
-  export SUPABASE_DB_URL="$DATABASE_URL"
-fi
-
 export ONECLI_GATEWAY=true
 export OPENAI_SYNTHESIS_MODEL="${OPENAI_SYNTHESIS_MODEL:-gpt-5.5}"
 export OPENAI_CHAT_MODEL="${OPENAI_CHAT_MODEL:-$OPENAI_SYNTHESIS_MODEL}"
