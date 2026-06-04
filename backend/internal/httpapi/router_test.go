@@ -112,27 +112,16 @@ func TestRouterReadsAndRefreshesKnowledgeRunsWithoutProviderSecrets(t *testing.T
 		t.Fatalf("expected persisted latest run payload, got %s", latestAfterRefresh.Body.String())
 	}
 
-	invalidDigestSend := httptest.NewRecorder()
-	invalidDigestRequest := httptest.NewRequest(http.MethodPost, "/api/digests/send", strings.NewReader(`{"recipientEmail":"not-an-email"}`))
-	invalidDigestRequest.Header.Set("Authorization", authHeader)
-	router.ServeHTTP(invalidDigestSend, invalidDigestRequest)
-	if invalidDigestSend.Code != http.StatusBadRequest {
-		t.Fatalf("expected invalid digest send status 400, got %d", invalidDigestSend.Code)
-	}
+}
 
-	digestSend := httptest.NewRecorder()
-	digestRequest := httptest.NewRequest(http.MethodPost, "/api/digests/send", strings.NewReader(`{"recipientEmail":"reader@example.com","digest":{"digestDate":"2026-05-24","subject":"Displayed digest","bodyMarkdown":"# Displayed digest\n\nA source-grounded newsletter body."}}`))
-	digestRequest.Header.Set("Authorization", authHeader)
-	router.ServeHTTP(digestSend, digestRequest)
-	if digestSend.Code != http.StatusOK {
-		t.Fatalf("expected digest send status 200, got %d: %s", digestSend.Code, digestSend.Body.String())
-	}
-	var digest knowledge.DigestIssue
-	if err := json.Unmarshal(digestSend.Body.Bytes(), &digest); err != nil {
-		t.Fatalf("decode digest send response: %v", err)
-	}
-	if len(digest.Deliveries) != 1 || digest.Deliveries[0].Recipient != "reader@example.com" {
-		t.Fatalf("expected delivery to requested recipient, got %#v", digest.Deliveries)
+func TestRouterDoesNotExposeManualDigestMutations(t *testing.T) {
+	router := testRouter(t)
+	for _, path := range []string{"/api/digests/generate", "/api/digests/send"} {
+		response := httptest.NewRecorder()
+		router.ServeHTTP(response, httptest.NewRequest(http.MethodPost, path, nil))
+		if response.Code != http.StatusNotFound {
+			t.Fatalf("expected removed manual digest route %s to return 404, got %d", path, response.Code)
+		}
 	}
 }
 

@@ -90,17 +90,6 @@ export async function saveKnowledgeFeedback(input: {
   });
 }
 
-export async function generateDailyDigest() {
-  return request<NonNullable<KnowledgeRunResult["digest"]>>("/api/digests/generate", { method: "POST" });
-}
-
-export async function sendLatestDigest(input: { recipientEmail: string; digest?: DigestIssue }) {
-  return request<NonNullable<KnowledgeRunResult["digest"]>>("/api/digests/send", {
-    method: "POST",
-    body: JSON.stringify(input)
-  });
-}
-
 export async function shareInsightToX(input: {
   targetType: string;
   targetId: string;
@@ -231,7 +220,7 @@ function sanitizeAPIError(message: string) {
   }
   const lower = trimmed.toLowerCase();
   if (lower.includes("failed to connect") && lower.includes("database=postgres")) {
-    return "Local backend cannot reach Postgres. Use the displayed digest send path or switch local DATABASE_URL to the reachable connection string.";
+    return "Local backend cannot reach Postgres. Check that DATABASE_URL uses a reachable connection string.";
   }
   return trimmed;
 }

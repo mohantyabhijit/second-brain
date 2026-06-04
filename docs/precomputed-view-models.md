@@ -54,5 +54,5 @@ The Redis manifest is the hot-path version pointer. It is updated only after run
 ## Remaining Runtime Computation
 
 - `POST /api/ask` is still intentionally interactive and may call pgvector, Neo4j, Exa, and OpenAI. It is user-initiated, not part of page render. The precomputed `askContext` is available for a future thin/cached Ask path.
-- `POST /api/digests/generate`, `POST /api/digests/send`, `POST /api/knowledge-runs/refresh`, feedback, share, and auth routes are mutations. They are bypassed by Cloudflare and can perform side effects.
+- `POST /api/knowledge-runs/refresh`, feedback, share, and auth routes are mutations. They are bypassed by Cloudflare and can perform side effects.
 - If both Redis and Supabase `read_model_snapshots` miss, app-state endpoints can rebuild from canonical Supabase data to avoid a blank local app. Treat this as a recovery path, not the production page-load path.

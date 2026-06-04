@@ -8,7 +8,6 @@ const MUTATING_API_PREFIXES = [
   "/second-brain/api/auth/",
   "/second-brain/api/debug/",
   "/second-brain/api/ask",
-  "/second-brain/api/digests/send",
   "/second-brain/api/knowledge-runs/refresh",
   "/second-brain/api/share/"
 ];

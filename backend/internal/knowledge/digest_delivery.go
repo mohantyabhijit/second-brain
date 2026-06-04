@@ -3,13 +3,10 @@ package knowledge
 import (
 	"bytes"
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"html"
 	"net/http"
-	"net/mail"
 	"strings"
 	"time"
 )
@@ -21,15 +18,9 @@ type resendResponse struct {
 	} `json:"error"`
 }
 
-const customRecipientNewsletterIntro = "This is a newsletter from Abhijit's Second Brain. The full issue is below."
-
-func (s *Service) deliverDigest(ctx context.Context, digest DigestIssue, recipientOverride string) DigestDelivery {
+func (s *Service) deliverDigest(ctx context.Context, digest DigestIssue) DigestDelivery {
 	now := time.Now().UTC()
-	manualRecipient := strings.TrimSpace(recipientOverride) != ""
-	recipient := strings.TrimSpace(recipientOverride)
-	if recipient == "" {
-		recipient = strings.TrimSpace(s.cfg.DigestEmailTo)
-	}
+	recipient := strings.TrimSpace(s.cfg.DigestEmailTo)
 	delivery := DigestDelivery{
 		Provider:    "resend",
 		Recipient:   recipient,
@@ -45,13 +36,12 @@ func (s *Service) deliverDigest(ctx context.Context, digest DigestIssue, recipie
 		return delivery
 	}
 
-	emailDigest := digestWithCustomRecipientIntro(digest, manualRecipient)
 	body := map[string]any{
 		"from":    s.cfg.DigestEmailFrom,
 		"to":      []string{recipient},
 		"subject": digest.Subject,
-		"html":    digestHTML(emailDigest),
-		"text":    digestText(emailDigest),
+		"html":    digestHTML(digest),
+		"text":    digestText(digest),
 	}
 	raw, err := json.Marshal(body)
 	if err != nil {
@@ -60,7 +50,7 @@ func (s *Service) deliverDigest(ctx context.Context, digest DigestIssue, recipie
 	}
 	headers := resendAuthHeader(s.cfg.ResendAPIKey)
 	headers.Set("Content-Type", "application/json")
-	headers.Set("Idempotency-Key", digestDeliveryIdempotencyKey(digest.IdempotencyKey, manualRecipient, now))
+	headers.Set("Idempotency-Key", digestDeliveryIdempotencyKey(digest.IdempotencyKey))
 	var response resendResponse
 	if err := s.requestJSON(ctx, http.MethodPost, "https://api.resend.com/emails", headers, bytes.NewReader(raw), &response); err != nil {
 		delivery.Status = "failed"
@@ -77,51 +67,12 @@ func (s *Service) deliverDigest(ctx context.Context, digest DigestIssue, recipie
 	return delivery
 }
 
-func digestWithCustomRecipientIntro(digest DigestIssue, customRecipient bool) DigestIssue {
-	if !customRecipient || strings.Contains(digest.BodyMarkdown, customRecipientNewsletterIntro) {
-		return digest
-	}
-	body := strings.TrimSpace(digest.BodyMarkdown)
-	if body == "" {
-		digest.BodyMarkdown = customRecipientNewsletterIntro
-		return digest
-	}
-	lines := strings.Split(body, "\n")
-	if len(lines) > 0 && strings.HasPrefix(strings.TrimSpace(lines[0]), "# ") {
-		rest := strings.TrimSpace(strings.Join(lines[1:], "\n"))
-		if rest == "" {
-			digest.BodyMarkdown = strings.TrimSpace(lines[0]) + "\n\n" + customRecipientNewsletterIntro
-			return digest
-		}
-		digest.BodyMarkdown = strings.TrimSpace(lines[0]) + "\n\n" + customRecipientNewsletterIntro + "\n\n" + rest
-		return digest
-	}
-	digest.BodyMarkdown = customRecipientNewsletterIntro + "\n\n" + body
-	return digest
-}
-
-func normalizeDigestRecipient(value string) (string, error) {
-	trimmed := strings.TrimSpace(value)
-	if trimmed == "" {
-		return "", fmt.Errorf("recipientEmail is required")
-	}
-	address, err := mail.ParseAddress(trimmed)
-	if err != nil || address.Address == "" {
-		return "", fmt.Errorf("recipientEmail must be a valid email address")
-	}
-	return address.Address, nil
-}
-
-func digestDeliveryIdempotencyKey(baseKey string, manualRecipient bool, attemptedAt time.Time) string {
+func digestDeliveryIdempotencyKey(baseKey string) string {
 	key := strings.TrimSpace(baseKey)
 	if key == "" {
 		key = "digest"
 	}
-	if !manualRecipient {
-		return key
-	}
-	sum := sha256.Sum256([]byte(attemptedAt.UTC().Format(time.RFC3339Nano)))
-	return key + ":manual:" + hex.EncodeToString(sum[:])[:16]
+	return key
 }
 
 func resendAuthHeader(apiKey string) http.Header {

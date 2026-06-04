@@ -14,7 +14,6 @@ type SecondBrainConsoleViewProps = {
   chatMessages: ChatMessage[];
   digestIssues: DigestIssue[];
   isAsking: boolean;
-  isDigesting: boolean;
   isLoading: boolean;
   insightGraph: InsightGraphResponse | null;
   auth: SupabaseAuthState;
@@ -24,8 +23,6 @@ type SecondBrainConsoleViewProps = {
   onConnectX: () => Promise<void>;
   onSavePlaylist: (playlist: string) => Promise<void>;
   onAsk: (question: string, useLatest?: boolean) => Promise<void>;
-  onDigest: () => void;
-  onSendDigest: (recipientEmail: string) => Promise<DigestIssue>;
   onFeedback: (targetType: string, targetId: string, signal: FeedbackSignal, sourceUrl?: string) => void;
 };
 
@@ -91,11 +88,9 @@ const themeStorageKey = "second-brain-theme";
 
 type ThemeMode = "light" | "dark";
 
-export function SecondBrainConsoleView({ activePage, auth, chatMessages, digestIssues, insightGraph, isAsking, isDigesting, isLoading, model, refreshStatus, workspace, onAsk, onConnectX, onDigest, onSavePlaylist, onSendDigest, onFeedback }: SecondBrainConsoleViewProps) {
+export function SecondBrainConsoleView({ activePage, auth, chatMessages, digestIssues, insightGraph, isAsking, isLoading, model, refreshStatus, workspace, onAsk, onConnectX, onSavePlaylist, onFeedback }: SecondBrainConsoleViewProps) {
   const [visibleCount, setVisibleCount] = useState(initialVisibleCount);
   const [copiedItems, setCopiedItems] = useState<Set<string>>(new Set());
-  const [digestEmail, setDigestEmail] = useState("");
-  const [digestSendMessage, setDigestSendMessage] = useState<string | null>(null);
   const [openSummaryItem, setOpenSummaryItem] = useState<FeedItem | null>(null);
   const theme = useThemeMode();
   const sentinelRef = useRef<HTMLDivElement | null>(null);
@@ -131,27 +126,6 @@ export function SecondBrainConsoleView({ activePage, auth, chatMessages, digestI
     onFeedback(item.source.toLowerCase(), item.id, "copied", item.sourceUrl);
   }
 
-  async function submitDigestEmail(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const recipient = digestEmail.trim();
-    if (!recipient) {
-      setDigestSendMessage("Enter an email address.");
-      return;
-    }
-    setDigestSendMessage(null);
-    try {
-      const digest = await onSendDigest(recipient);
-      const delivery = digest.deliveries?.[0];
-      if (delivery?.status === "sent") {
-        setDigestSendMessage(`Sent latest digest to ${delivery.recipient}.`);
-        return;
-      }
-      setDigestSendMessage(delivery?.error || `Digest delivery ${delivery?.status ?? digest.status}.`);
-    } catch (error) {
-      setDigestSendMessage(error instanceof Error ? error.message : "Digest delivery failed.");
-    }
-  }
-
   return (
     <main className="wall-shell">
       <aside className="wall-sidebar" aria-label="Second Brain navigation">
@@ -178,45 +152,6 @@ export function SecondBrainConsoleView({ activePage, auth, chatMessages, digestI
           </div>
           <ThemeToggle mode={theme.mode} onToggle={theme.toggle} />
           <IdentityBadge auth={auth} workspace={workspace} />
-          {activePage === "daily-newsletter" && auth.isLoading ? (
-            <div className="digest-email-tools">
-              <button className="secondary-action" disabled type="button">
-                <span className="button-spinner" aria-hidden="true" />
-                Checking Supabase session
-              </button>
-            </div>
-          ) : null}
-          {activePage === "daily-newsletter" && !auth.isLoading && !auth.isAuthenticated ? (
-            <div className="digest-email-tools">
-              <Link className="secondary-action" href="/?redirect=daily-newsletter">
-                Sign in to Generate Digest
-              </Link>
-              <p>Public viewers can read existing issues. Sign in with Supabase to generate or send digests.</p>
-            </div>
-          ) : null}
-          {activePage === "daily-newsletter" && auth.isAuthenticated ? (
-            <div className="digest-email-tools">
-              <button className="secondary-action" disabled={isDigesting} onClick={onDigest} type="button">
-                {isDigesting ? <span className="button-spinner" aria-hidden="true" /> : null}
-                Generate Digest
-              </button>
-              <form className="digest-email-form" onSubmit={submitDigestEmail}>
-                <input
-                  aria-label="Digest recipient email"
-                  disabled={isDigesting}
-                  onChange={(event) => setDigestEmail(event.target.value)}
-                  placeholder="reader@example.com"
-                  type="email"
-                  value={digestEmail}
-                />
-                <button disabled={isDigesting} type="submit">
-                  {isDigesting ? <span className="button-spinner" aria-hidden="true" /> : null}
-                  Send Latest
-                </button>
-              </form>
-              {digestSendMessage ? <p role="status">{digestSendMessage}</p> : null}
-            </div>
-          ) : null}
         </header>
 
         {model.error && activePage !== "knowledge-graph" ? <div className="error-banner">{model.error}</div> : null}
