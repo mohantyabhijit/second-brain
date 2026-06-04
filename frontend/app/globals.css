@@ -16,6 +16,10 @@
   --red: #b42318;
   --shadow: 0 18px 44px rgba(31, 44, 39, 0.1);
   --soft-shadow: 0 8px 24px rgba(31, 44, 39, 0.06);
+  --feed-card-hover-bg: rgba(255, 255, 255, 0.58);
+  --newsletter-card-bg: linear-gradient(180deg, #ffffff 0%, #fbfcfb 100%);
+  --newsletter-card-hover-bg: linear-gradient(180deg, #ffffff 0%, #f7fbfb 100%);
+  --quote-ink: #1d2a25;
 }
 
 [data-theme="dark"] {
@@ -37,6 +41,10 @@
   --red: #ff8b7f;
   --shadow: 0 18px 44px rgba(0, 0, 0, 0.34);
   --soft-shadow: 0 8px 24px rgba(0, 0, 0, 0.24);
+  --feed-card-hover-bg: rgba(255, 255, 255, 0.04);
+  --newsletter-card-bg: linear-gradient(180deg, #171d1a 0%, #141a17 100%);
+  --newsletter-card-hover-bg: linear-gradient(180deg, #1b2420 0%, #171f1b 100%);
+  --quote-ink: var(--ink-soft);
 }
 
 * {
@@ -618,7 +626,7 @@ h1 {
   border: 1px solid var(--line);
   border-radius: 8px;
   padding: 10px 12px;
-  background: #fff;
+  background: var(--surface);
   color: var(--ink-soft);
   font-size: 0.86rem;
   font-weight: 760;
@@ -633,7 +641,7 @@ h1 {
   border: 1px solid var(--line);
   border-radius: 8px;
   padding: 12px 14px;
-  background: #fff;
+  background: var(--surface);
   color: var(--ink-soft);
   box-shadow: 0 12px 24px rgba(26, 36, 45, 0.06);
 }
@@ -689,7 +697,7 @@ h1 {
 .feed-card:focus-visible {
   outline: none;
   border-color: var(--line-strong);
-  background: rgba(255, 255, 255, 0.58);
+  background: var(--feed-card-hover-bg);
 }
 
 .feed-card.newsletter {
@@ -701,8 +709,13 @@ h1 {
   border: 1px solid var(--line);
   border-radius: 8px;
   padding: 18px;
-  background: linear-gradient(180deg, #ffffff 0%, #fbfcfb 100%);
+  background: var(--newsletter-card-bg);
   box-shadow: var(--soft-shadow);
+}
+
+.feed-card.newsletter:hover,
+.feed-card.newsletter:focus-visible {
+  background: var(--newsletter-card-hover-bg);
 }
 
 .feed-card.newsletter + .feed-card.newsletter {
@@ -878,6 +891,11 @@ h1 {
   object-fit: contain;
 }
 
+[data-theme="dark"] .newsletter-thumb,
+[data-theme="dark"] .newsletter-hero-image {
+  background: #fff;
+}
+
 .feed-source.insight {
   color: #4545b8;
 }
@@ -905,7 +923,7 @@ blockquote {
   margin: 4px 0 0;
   padding: 0;
   border: 0;
-  color: #1d2a25;
+  color: var(--quote-ink);
   font-size: 0.9rem;
   line-height: 1.48;
 }
