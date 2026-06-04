@@ -39,7 +39,7 @@ check_any_secret() {
 }
 
 echo "Checking backend-managed X OAuth setup without printing secret values..."
-check_secret SUPABASE_DB_URL
+check_any_secret DATABASE_URL DATABASE_URL SUPABASE_DB_URL
 check_any_secret X_CLIENT_ID X_CLIENT_ID_PROD X_CLIENT_ID
 check_any_secret X_CLIENT_SECRET X_CLIENT_SECRET_PROD X_CLIENT_SECRET
 check_secret X_REDIRECT_URI

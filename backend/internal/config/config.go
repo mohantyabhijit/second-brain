@@ -18,11 +18,16 @@ type Config struct {
 	PublicOwnerID                string
 	PublicOwnerHandle            string
 	PublicOwnerEmail             string
+	DatabaseURL                  string
 	SupabaseDatabaseURL          string
 	SupabaseURL                  string
 	SupabasePublishableKey       string
 	SupabaseStorageKey           string
 	SupabaseStorageBucket        string
+	ObjectStorageBackend         string
+	ObjectStorageRoot            string
+	ObjectStorageBucket          string
+	AdminAPIToken                string
 	AllowedOrigins               []string
 	OneCLIBin                    string
 	OneCLIGateway                bool
@@ -80,6 +85,8 @@ type Config struct {
 }
 
 func Load() Config {
+	databaseURL := firstEnv("DATABASE_URL", "SUPABASE_DB_URL")
+	storageBucket := value("OBJECT_STORAGE_BUCKET", value("SUPABASE_STORAGE_BUCKET", "sources"))
 	return Config{
 		Env:                          value("APP_ENV", "development"),
 		Port:                         value("PORT", "8080"),
@@ -87,11 +94,16 @@ func Load() Config {
 		PublicOwnerID:                value("PUBLIC_OWNER_ID", DefaultOwnerID),
 		PublicOwnerHandle:            value("PUBLIC_OWNER_HANDLE", DefaultPublicOwnerHandle),
 		PublicOwnerEmail:             os.Getenv("PUBLIC_OWNER_EMAIL"),
-		SupabaseDatabaseURL:          os.Getenv("SUPABASE_DB_URL"),
+		DatabaseURL:                  databaseURL,
+		SupabaseDatabaseURL:          databaseURL,
 		SupabaseURL:                  os.Getenv("SUPABASE_URL"),
 		SupabasePublishableKey:       firstEnv("SUPABASE_PUBLISHABLE_KEY", "NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY"),
 		SupabaseStorageKey:           os.Getenv("SUPABASE_SERVICE_ROLE_KEY"),
-		SupabaseStorageBucket:        value("SUPABASE_STORAGE_BUCKET", "sources"),
+		SupabaseStorageBucket:        storageBucket,
+		ObjectStorageBackend:         value("OBJECT_STORAGE_BACKEND", defaultObjectStorageBackend()),
+		ObjectStorageRoot:            os.Getenv("OBJECT_STORAGE_ROOT"),
+		ObjectStorageBucket:          storageBucket,
+		AdminAPIToken:                os.Getenv("ADMIN_API_TOKEN"),
 		AllowedOrigins:               csv(value("ALLOWED_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000")),
 		OneCLIBin:                    value("ONECLI_BIN", "/Users/abhijitmohanty/.local/bin/onecli"),
 		OneCLIGateway:                os.Getenv("ONECLI_GATEWAY") == "true",
@@ -147,6 +159,16 @@ func Load() Config {
 		Neo4jDatabase:                value("NEO4J_DATABASE", "neo4j"),
 		GraphSyncBatchSize:           intValue("GRAPH_SYNC_BATCH_SIZE", 50),
 	}
+}
+
+func defaultObjectStorageBackend() string {
+	if strings.TrimSpace(os.Getenv("OBJECT_STORAGE_ROOT")) != "" {
+		return "filesystem"
+	}
+	if strings.TrimSpace(os.Getenv("SUPABASE_URL")) != "" || strings.TrimSpace(os.Getenv("SUPABASE_SERVICE_ROLE_KEY")) != "" {
+		return "supabase"
+	}
+	return "none"
 }
 
 func value(key, fallback string) string {

@@ -12,7 +12,7 @@ Key paths:
 - `frontend/src/features/knowledge-inbox/presentation/viewModel.ts`: maps API data into UI-safe props.
 - `frontend/src/features/knowledge-inbox/ui`: reusable, presentational components that do not import the API client.
 - `frontend/src/features/knowledge-inbox/contracts.ts`: shared API response shape.
-- `frontend/src/utils/supabase`: optional Supabase Auth cookie helpers using publishable browser keys only.
+- `frontend/src/utils/supabase`: optional legacy Supabase Auth cookie helpers using publishable browser keys only.
 
 ## Backend
 
@@ -22,21 +22,21 @@ Key paths:
 - `internal/config`: environment parsing.
 - `internal/httpapi`: routing, JSON responses, and CORS.
 - `internal/knowledge`: source intake, transcript checks, artifact writes, validation, and prompt synthesis.
-- `internal/store/postgres`: Supabase Postgres persistence.
+- `internal/store/postgres`: Postgres persistence.
 
-The frontend never uses the Supabase database connection directly. It calls the Go API for product data, and the Go API uses the Supabase pooled Postgres connection string. The frontend may use Supabase publishable keys for auth session cookies only.
+The frontend never uses the database connection directly. It calls the Go API for product data, and the Go API uses `DATABASE_URL`. Protected operator actions can use a static admin bearer token; Supabase publishable keys remain only as an optional legacy auth fallback.
 
 ## Storage Architecture
 
 The app uses five storage surfaces with separate responsibilities:
 
-- Supabase Postgres is the relational system of record for users, source items, runs, chunk metadata, validation state, summaries, and ingestion audit logs.
-- Supabase Storage stores raw and derived objects such as fetched documents, transcript files, webpage snapshots, PDFs, images, and export artifacts.
-- `pgvector` in Supabase Postgres stores embeddings for chunks, summaries, entities, and other retrieval units that need semantic search.
+- Postgres is the relational system of record for users, source items, runs, chunk metadata, validation state, summaries, and ingestion audit logs.
+- Filesystem object storage stores raw and derived objects such as fetched documents, transcript files, webpage snapshots, PDFs, images, and export artifacts.
+- `pgvector` in Postgres stores embeddings for chunks, summaries, entities, and other retrieval units that need semantic search.
 - Neo4j stores the knowledge graph: entities, concepts, source references, claims, and typed relationships used for multi-hop reasoning.
 - Redis stores precomputed read models for fast frontend rendering. It is a derived cache, not canonical storage.
 
-Supabase remains the canonical source of truth. Neo4j is a derived graph index that can be rebuilt from Postgres records and source artifacts when needed. Redis read models can be rebuilt after each refresh from Supabase, Supabase Storage, pgvector, and Neo4j-derived state. The detailed Redis plan lives in `docs/redis-read-model-plan.md`.
+Postgres plus object storage is the canonical source of truth. Neo4j is a derived graph index that can be rebuilt from Postgres records and source artifacts when needed. Redis read models can be rebuilt after each refresh from Postgres, object storage metadata, pgvector, and Neo4j-derived state. The detailed Redis plan lives in `docs/redis-read-model-plan.md`.
 
 Normal frontend routes render from precomputed page view models, not request-time Supabase joins or Neo4j traversal. The current route-to-view contract, cache/versioning strategy, and remaining runtime exceptions are documented in `docs/precomputed-view-models.md`.
 
@@ -48,7 +48,7 @@ Core tables:
 
 - `source_items`: saved X posts, YouTube videos, documents, and external URLs keyed by source type and external ID.
 - `source_captures`: immutable captures of a source item keyed by capture hash, so the same post can change without losing prior processed versions.
-- `source_objects`: pointers to Supabase Storage objects and their checksums, attached to the source item and source capture.
+- `source_objects`: pointers to object-storage paths and their checksums, attached to the source item and source capture.
 - `source_chunks`: chunked evidence text derived from source captures and generated summaries.
 - `source_embeddings`: pgvector-backed embeddings for chunks, summaries, extracted entity labels, and compatibility insight vectors, scoped to the capture that produced them.
 - `knowledge_syntheses`: prompt-versioned summaries, insights, and action items keyed by source capture, prompt version, and model. The JSON insight payload remains as a run artifact for compatibility.
@@ -64,11 +64,11 @@ The recompute rule is: if the same source capture has the same prompt version an
 
 Daily digest selection uses the canonical ledger instead of the latest run payload alone: the 6 PM digest reads source items first seen after the previous digest and records the exact source item, capture, synthesis, URL, title, and timestamps in `digest_source_items`. Once a source item has appeared in a digest, it is excluded from later digest selection.
 
-Refreshes first read a source-material index keyed by source type, external ID, prompt version, and model. Supabase is canonical through `source_items`, `source_captures`, `source_objects`, and `knowledge_syntheses`; Redis can serve the same source-material state as a derived fast path. If every fetched source is already present with the same capture hash, the refresh skips synthesis, embeddings, storage rewrites, and graph sync. Digest generation still runs from the latest saved knowledge run.
+Refreshes first read a source-material index keyed by source type, external ID, prompt version, and model. Postgres is canonical through `source_items`, `source_captures`, `source_objects`, and `knowledge_syntheses`; Redis can serve the same source-material state as a derived fast path. If every fetched source is already present with the same capture hash, the refresh skips synthesis, embeddings, storage rewrites, and graph sync. Digest generation still runs from the latest saved knowledge run.
 
 ## Object Storage
 
-Supabase Storage is the object store for source material and generated artifacts. Store object metadata in Postgres, including bucket, path, checksum, content type, byte size, source item ID, and capture timestamp.
+The production object store for source material and generated artifacts is a private filesystem tree. Store object metadata in Postgres, including bucket, path, checksum, content type, byte size, source item ID, and capture timestamp.
 
 Use object paths that make provenance obvious, for example:
 
@@ -81,11 +81,11 @@ artifacts/{source_type}/{external_id}/{capture_hash}/{prompt_version}/{model}/su
 exports/{run_id}/knowledge-pack.json
 ```
 
-The backend writes private text objects through Supabase Storage using `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, and `SUPABASE_STORAGE_BUCKET`. Local demos can still record artifact metadata when Storage credentials are missing, but production should treat Storage writes as required.
+The backend writes private text objects with `OBJECT_STORAGE_BACKEND=filesystem`, `OBJECT_STORAGE_ROOT=/srv/second-brain/object-storage`, and `OBJECT_STORAGE_BUCKET=sources`. The legacy Supabase Storage backend remains available only for rollback/export while the old project exists.
 
 ## Vector Database
 
-Use `pgvector` inside Supabase Postgres as the vector database. Embeddings should live beside their relational metadata so semantic search can be filtered by user, source type, run, timestamp, and permissions.
+Use `pgvector` inside Postgres as the vector database. Embeddings should live beside their relational metadata so semantic search can be filtered by user, source type, run, timestamp, and permissions.
 
 Expected vector tables:
 
@@ -119,12 +119,12 @@ Expected relationship types:
 - `PRECEDES`
 - `AUTHORED_BY`
 
-Neo4j should not be the only copy of source data. Store source text, object pointers, generated summaries, and graph-sync status in Supabase so the graph can be recreated or migrated.
+Neo4j should not be the only copy of source data. Store source text, object pointers, generated summaries, and graph-sync status in Postgres plus object storage so the graph can be recreated or migrated.
 
 ## Security
 
-RLS is enabled with a deny-all browser policy. Backend connections should use the Supabase pooled Postgres connection string from server-side environment variables.
+The browser must not connect directly to Postgres. Backend connections should use `DATABASE_URL` from server-side environment variables.
 
-Supabase Storage bucket policies should follow the same rule: browser clients should not get broad object access. The Go API should issue scoped reads or signed URLs only for objects the current user is allowed to inspect.
+Browser clients should not get broad object storage access. The Go API should issue scoped reads or signed URLs only for objects the current user is allowed to inspect.
 
 Neo4j credentials must stay server-side. The frontend should request graph-derived views through the Go API instead of connecting to Neo4j directly.

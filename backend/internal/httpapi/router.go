@@ -2,6 +2,8 @@ package httpapi
 
 import (
 	"context"
+	"crypto/sha256"
+	"crypto/subtle"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -71,22 +73,35 @@ func NewRouter(cfg config.Config, service *knowledge.Service, logger *slog.Logge
 		return serviceForOwner(publicOwnerID)
 	}
 	resolveScope := func(w http.ResponseWriter, r *http.Request, requireAuth bool) (*requestScope, bool) {
-		authUser, hasBearer, err := readSupabaseAuthUser(r.Context(), cfg, r.Header.Get("Authorization"))
+		token, hasBearer, err := readBearerToken(r.Header.Get("Authorization"))
 		if err != nil {
 			httputil.Error(w, http.StatusUnauthorized, err.Error())
 			return nil, false
 		}
 		if !hasBearer {
 			if requireAuth {
-				httputil.Error(w, http.StatusUnauthorized, "Sign in with Supabase to use this action.")
+				httputil.Error(w, http.StatusUnauthorized, "Authentication is required to use this action.")
 				return nil, false
 			}
 			return &requestScope{service: serviceForOwner(publicOwnerID), ownerID: publicOwnerID, publicOwner: true}, true
 		}
+		if adminAPITokenMatches(cfg, token) {
+			return &requestScope{
+				service:       serviceForOwner(publicOwnerID),
+				ownerID:       publicOwnerID,
+				authenticated: true,
+				publicOwner:   true,
+			}, true
+		}
+		authUser, err := readSupabaseAuthUser(r.Context(), cfg, token)
+		if err != nil {
+			httputil.Error(w, http.StatusUnauthorized, err.Error())
+			return nil, false
+		}
 		ownerID, err := service.ResolveOwnerForAuthUser(r.Context(), authUser.ID, authUser.Email, publicOwnerID, cfg.PublicOwnerEmail)
 		if err != nil {
 			logger.Error("resolve authenticated owner", "error", err)
-			httputil.Error(w, http.StatusUnauthorized, "Supabase user could not be mapped to a workspace.")
+			httputil.Error(w, http.StatusUnauthorized, "Authenticated user could not be mapped to a workspace.")
 			return nil, false
 		}
 		return &requestScope{
@@ -519,48 +534,66 @@ func setReadModelCacheHeadersForScope(w http.ResponseWriter, scope *requestScope
 	setReadModelCacheHeaders(w)
 }
 
-func readSupabaseAuthUser(ctx context.Context, cfg config.Config, authorization string) (supabaseAuthUser, bool, error) {
+func readBearerToken(authorization string) (string, bool, error) {
 	const bearerPrefix = "Bearer "
 	authorization = strings.TrimSpace(authorization)
 	if authorization == "" {
-		return supabaseAuthUser{}, false, nil
+		return "", false, nil
 	}
 	if !strings.HasPrefix(authorization, bearerPrefix) {
-		return supabaseAuthUser{}, true, fmt.Errorf("Authorization header must use a bearer token.")
+		return "", true, fmt.Errorf("Authorization header must use a bearer token.")
 	}
 	token := strings.TrimSpace(strings.TrimPrefix(authorization, bearerPrefix))
 	if token == "" {
-		return supabaseAuthUser{}, true, fmt.Errorf("Authorization bearer token is empty.")
+		return "", true, fmt.Errorf("Authorization bearer token is empty.")
+	}
+	return token, true, nil
+}
+
+func adminAPITokenMatches(cfg config.Config, token string) bool {
+	expected := strings.TrimSpace(cfg.AdminAPIToken)
+	if expected == "" || token == "" {
+		return false
+	}
+	tokenHash := sha256.Sum256([]byte(token))
+	expectedHash := sha256.Sum256([]byte(expected))
+	return subtle.ConstantTimeCompare(tokenHash[:], expectedHash[:]) == 1
+}
+
+func readSupabaseAuthUser(ctx context.Context, cfg config.Config, token string) (supabaseAuthUser, error) {
+	token = strings.TrimSpace(token)
+	if token == "" {
+		return supabaseAuthUser{}, fmt.Errorf("Authorization bearer token is empty.")
 	}
 	baseURL := strings.TrimRight(strings.TrimSpace(cfg.SupabaseURL), "/")
 	publishableKey := strings.TrimSpace(cfg.SupabasePublishableKey)
 	if baseURL == "" || publishableKey == "" {
-		return supabaseAuthUser{}, true, fmt.Errorf("Supabase auth is not configured.")
+		return supabaseAuthUser{}, fmt.Errorf("Supabase auth is not configured.")
 	}
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, baseURL+"/auth/v1/user", nil)
 	if err != nil {
-		return supabaseAuthUser{}, true, err
+		return supabaseAuthUser{}, err
 	}
 	request.Header.Set("Authorization", "Bearer "+token)
 	request.Header.Set("apikey", publishableKey)
 	response, err := http.DefaultClient.Do(request)
 	if err != nil {
-		return supabaseAuthUser{}, true, fmt.Errorf("Supabase auth validation failed.")
+		return supabaseAuthUser{}, fmt.Errorf("Supabase auth validation failed.")
 	}
 	defer response.Body.Close()
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		return supabaseAuthUser{}, true, fmt.Errorf("Supabase session is invalid or expired.")
+		return supabaseAuthUser{}, fmt.Errorf("Supabase session is invalid or expired.")
 	}
 	var user supabaseAuthUser
 	if err := json.NewDecoder(response.Body).Decode(&user); err != nil {
-		return supabaseAuthUser{}, true, fmt.Errorf("Supabase auth response could not be decoded.")
+		return supabaseAuthUser{}, fmt.Errorf("Supabase auth response could not be decoded.")
 	}
 	user.ID = strings.TrimSpace(user.ID)
 	user.Email = strings.TrimSpace(user.Email)
 	if user.ID == "" {
-		return supabaseAuthUser{}, true, fmt.Errorf("Supabase auth response did not include a user id.")
+		return supabaseAuthUser{}, fmt.Errorf("Supabase auth response did not include a user id.")
 	}
-	return user, true, nil
+	return user, nil
 }
 
 func responseETag(parts ...any) string {

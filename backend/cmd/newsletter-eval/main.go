@@ -37,14 +37,14 @@ func main() {
 
 	var store knowledge.Store
 	var closeStore func()
-	if cfg.SupabaseDatabaseURL == "" {
+	if cfg.DatabaseURL == "" {
 		logger.Info("using local knowledge run file", "path", cfg.KnowledgeRunPath)
 		store = localfile.New(cfg.KnowledgeRunPath)
 		closeStore = func() {}
 	} else {
-		postgresStore, err := postgres.New(ctx, cfg.SupabaseDatabaseURL)
+		postgresStore, err := postgres.New(ctx, cfg.DatabaseURL)
 		if err != nil {
-			logger.Error("connect supabase postgres", "error", err)
+			logger.Error("connect postgres", "error", err)
 			os.Exit(1)
 		}
 		store = postgresStore

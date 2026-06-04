@@ -157,13 +157,13 @@ func runGraphSync(ctx context.Context, cfg config.Config, logger *slog.Logger) {
 }
 
 func openStore(ctx context.Context, cfg config.Config, logger *slog.Logger) (knowledge.Store, func()) {
-	if cfg.SupabaseDatabaseURL == "" {
-		logger.Warn("SUPABASE_DB_URL missing; using local knowledge run file", "path", cfg.KnowledgeRunPath)
+	if cfg.DatabaseURL == "" {
+		logger.Warn("DATABASE_URL missing; using local knowledge run file", "path", cfg.KnowledgeRunPath)
 		return localfile.New(cfg.KnowledgeRunPath), func() {}
 	}
-	postgresStore, err := postgres.New(ctx, cfg.SupabaseDatabaseURL)
+	postgresStore, err := postgres.New(ctx, cfg.DatabaseURL)
 	if err != nil {
-		logger.Error("connect supabase postgres", "error", err)
+		logger.Error("connect postgres", "error", err)
 		os.Exit(1)
 	}
 	return postgresStore, postgresStore.Close

@@ -205,6 +205,37 @@ func TestRouterResolvesPublicAndAuthenticatedWorkspace(t *testing.T) {
 	}
 }
 
+func TestRouterAcceptsAdminAPITokenWithoutSupabaseAuth(t *testing.T) {
+	cfg := testConfig(t)
+	cfg.AdminAPIToken = "admin-secret"
+	cfg.SupabaseURL = ""
+	cfg.SupabasePublishableKey = ""
+	router := newTestRouter(t, cfg)
+
+	workspaceRequest := httptest.NewRequest(http.MethodGet, "/api/workspace", nil)
+	workspaceRequest.Header.Set("Authorization", "Bearer admin-secret")
+	workspaceResponse := httptest.NewRecorder()
+	router.ServeHTTP(workspaceResponse, workspaceRequest)
+	if workspaceResponse.Code != http.StatusOK {
+		t.Fatalf("expected admin-token workspace status 200, got %d: %s", workspaceResponse.Code, workspaceResponse.Body.String())
+	}
+	var payload knowledge.WorkspaceStatus
+	if err := json.Unmarshal(workspaceResponse.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("decode workspace: %v", err)
+	}
+	if !payload.Profile.IsPublicOwner || !payload.Profile.Authenticated {
+		t.Fatalf("expected authenticated public owner workspace, got %#v", payload.Profile)
+	}
+
+	refreshRequest := httptest.NewRequest(http.MethodPost, "/api/knowledge-runs/refresh", nil)
+	refreshRequest.Header.Set("Authorization", "Bearer admin-secret")
+	refreshResponse := httptest.NewRecorder()
+	router.ServeHTTP(refreshResponse, refreshRequest)
+	if refreshResponse.Code != http.StatusAccepted {
+		t.Fatalf("expected admin-token refresh status 202, got %d: %s", refreshResponse.Code, refreshResponse.Body.String())
+	}
+}
+
 func TestRouterRejectsInvalidSupabaseBearer(t *testing.T) {
 	router, _ := authenticatedTestRouter(t)
 	request := httptest.NewRequest(http.MethodGet, "/api/workspace", nil)

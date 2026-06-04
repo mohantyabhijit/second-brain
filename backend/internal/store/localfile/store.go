@@ -277,7 +277,7 @@ func (s *Store) SaveXTokens(ctx context.Context, tokens knowledge.EncryptedXToke
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	return errors.New("shared X OAuth tokens require SUPABASE_DB_URL/Postgres store")
+	return errors.New("shared X OAuth tokens require DATABASE_URL/Postgres store")
 }
 
 func (s *Store) ReadSourceProviderConnections(ctx context.Context, ownerID string) ([]knowledge.SourceProviderConnection, error) {

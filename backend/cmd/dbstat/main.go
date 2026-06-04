@@ -10,9 +10,12 @@ import (
 )
 
 func main() {
-	databaseURL := os.Getenv("SUPABASE_DB_URL")
+	databaseURL := os.Getenv("DATABASE_URL")
 	if databaseURL == "" {
-		fmt.Fprintln(os.Stderr, "SUPABASE_DB_URL is required")
+		databaseURL = os.Getenv("SUPABASE_DB_URL")
+	}
+	if databaseURL == "" {
+		fmt.Fprintln(os.Stderr, "DATABASE_URL is required")
 		os.Exit(1)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
