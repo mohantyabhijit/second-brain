@@ -128,7 +128,7 @@ if X_REFRESH_TOKEN_PROD="$(security find-generic-password -a "$USER" -s "second-
 fi
 
 export ONECLI_GATEWAY=true
-export OPENAI_SYNTHESIS_MODEL="${OPENAI_SYNTHESIS_MODEL:-gpt-5.5}"
+export OPENAI_SYNTHESIS_MODEL="${OPENAI_SYNTHESIS_MODEL:-gpt-5.4-mini}"
 export OPENAI_CHAT_MODEL="${OPENAI_CHAT_MODEL:-gpt-5.5}"
 export OPENAI_IMAGE_MODEL="${OPENAI_IMAGE_MODEL:-gpt-image-1}"
 export PUBLIC_BASE_URL="${PUBLIC_BASE_URL:-https://abhijitmohanty.com/second-brain}"

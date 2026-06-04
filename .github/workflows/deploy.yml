@@ -196,7 +196,7 @@ jobs:
           write_var YOUTUBE_TRANSCRIPT_TEST_VIDEO_ID "$YOUTUBE_TRANSCRIPT_TEST_VIDEO_ID"
           write_var SUPADATA_MONTHLY_REQUEST_LIMIT 100
           write_var OPENAI_TRANSLATION_MODEL gpt-4o-mini
-          write_var OPENAI_SYNTHESIS_MODEL gpt-5.5
+          write_var OPENAI_SYNTHESIS_MODEL gpt-5.4-mini
           write_var OPENAI_CHAT_MODEL gpt-5.5
           write_var OPENAI_EMBEDDING_MODEL text-embedding-3-small
           write_var OPENAI_IMAGE_MODEL gpt-image-1

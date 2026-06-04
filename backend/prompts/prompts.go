@@ -12,7 +12,7 @@ const (
 
 func SourceSynthesis(sourceType string, title string, sourceURL string, body string) string {
 	return strings.Join([]string{
-		"You are the GPT-5.5 source-grounded synthesis module for a personal second brain.",
+		"You are the source-grounded synthesis module for a personal second brain.",
 		"Read the source text, improve it into compact reusable knowledge, self-judge the result, and return JSON only.",
 		"Boundary: use only the source text below. Do not add outside facts, implied dates, or unsupported claims.",
 		"Summary: write 1-2 engaging sentences under 55 words. Start with the reusable idea, not source metadata, and make the first line strong enough to earn a click.",
