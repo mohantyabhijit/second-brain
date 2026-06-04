@@ -55,6 +55,10 @@ type openAIResponse struct {
 			Text string `json:"text"`
 		} `json:"content"`
 	} `json:"output"`
+	Status            string `json:"status"`
+	IncompleteDetails *struct {
+		Reason string `json:"reason"`
+	} `json:"incomplete_details"`
 	Error *struct {
 		Message string `json:"message"`
 	} `json:"error"`
