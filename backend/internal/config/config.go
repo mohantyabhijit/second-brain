@@ -122,7 +122,7 @@ func Load() Config {
 		SupadataMonthlyRequestLimit:  intValue("SUPADATA_MONTHLY_REQUEST_LIMIT", 100),
 		OpenAITranslationModel:       value("OPENAI_TRANSLATION_MODEL", "gpt-4o-mini"),
 		OpenAISynthesisModel:         value("OPENAI_SYNTHESIS_MODEL", "gpt-5.4-mini"),
-		OpenAIChatModel:              value("OPENAI_CHAT_MODEL", value("OPENAI_SYNTHESIS_MODEL", "gpt-5.5")),
+		OpenAIChatModel:              value("OPENAI_CHAT_MODEL", "gpt-5.4"),
 		OpenAIEmbeddingModel:         value("OPENAI_EMBEDDING_MODEL", "text-embedding-3-small"),
 		OpenAIImageModel:             value("OPENAI_IMAGE_MODEL", "gpt-image-1"),
 		PublicBaseURL:                value("PUBLIC_BASE_URL", defaultPublicBaseURL(value("APP_ENV", "development"))),

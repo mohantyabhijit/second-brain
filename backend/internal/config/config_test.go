@@ -29,6 +29,7 @@ func TestLoadAppliesDefaultsAndParsesCSV(t *testing.T) {
 	t.Setenv("SUPADATA_MONTHLY_REQUEST_LIMIT", "90")
 	t.Setenv("OPENAI_TRANSLATION_MODEL", "translation-model")
 	t.Setenv("OPENAI_SYNTHESIS_MODEL", "synthesis-model")
+	t.Setenv("OPENAI_CHAT_MODEL", "chat-model")
 	t.Setenv("OPENAI_IMAGE_MODEL", "image-model")
 	t.Setenv("PUBLIC_BASE_URL", "https://example.com/second-brain")
 
@@ -64,7 +65,7 @@ func TestLoadAppliesDefaultsAndParsesCSV(t *testing.T) {
 	if cfg.SupadataMonthlyRequestLimit != 90 {
 		t.Fatalf("unexpected Supadata monthly request limit: %d", cfg.SupadataMonthlyRequestLimit)
 	}
-	if cfg.OpenAITranslationModel != "translation-model" || cfg.OpenAISynthesisModel != "synthesis-model" || cfg.OpenAIImageModel != "image-model" {
+	if cfg.OpenAITranslationModel != "translation-model" || cfg.OpenAISynthesisModel != "synthesis-model" || cfg.OpenAIChatModel != "chat-model" || cfg.OpenAIImageModel != "image-model" {
 		t.Fatalf("unexpected OpenAI config: %#v", cfg)
 	}
 	if cfg.PublicBaseURL != "https://example.com/second-brain" {
@@ -88,6 +89,7 @@ func TestLoadFallsBackForBlankValues(t *testing.T) {
 	t.Setenv("SUPADATA_MONTHLY_REQUEST_LIMIT", "")
 	t.Setenv("OPENAI_TRANSLATION_MODEL", "")
 	t.Setenv("OPENAI_SYNTHESIS_MODEL", "")
+	t.Setenv("OPENAI_CHAT_MODEL", "")
 	t.Setenv("OPENAI_IMAGE_MODEL", "")
 	t.Setenv("PUBLIC_BASE_URL", "")
 
@@ -105,7 +107,7 @@ func TestLoadFallsBackForBlankValues(t *testing.T) {
 	if !reflect.DeepEqual(cfg.AllowedOrigins, []string{"http://localhost:3000", "http://127.0.0.1:3000"}) {
 		t.Fatalf("unexpected default allowed origins: %#v", cfg.AllowedOrigins)
 	}
-	if cfg.YouTubePlaylistID == "" || cfg.OpenAITranslationModel != "gpt-4o-mini" || cfg.OpenAISynthesisModel != "gpt-5.4-mini" || cfg.OpenAIImageModel != "gpt-image-1" {
+	if cfg.YouTubePlaylistID == "" || cfg.OpenAITranslationModel != "gpt-4o-mini" || cfg.OpenAISynthesisModel != "gpt-5.4-mini" || cfg.OpenAIChatModel != "gpt-5.4" || cfg.OpenAIImageModel != "gpt-image-1" {
 		t.Fatalf("expected model and playlist defaults, got %#v", cfg)
 	}
 	if cfg.SupadataMonthlyRequestLimit != 100 {
