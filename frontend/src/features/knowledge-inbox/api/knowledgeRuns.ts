@@ -1,5 +1,6 @@
 import { tryCreateClient } from "../../../utils/supabase/client";
 import type { AppState, AskSecondBrainResponse, DigestIssue, FeedbackSignal, InsightGraphResponse, KnowledgeRunResult, RefreshStatus, SourceProviderConnection, WorkspaceStatus } from "../contracts";
+import { readLocalAdminToken } from "../model/adminToken";
 
 export type AppStateView = "insights" | "daily-newsletter" | "original-x-posts" | "original-youtube-posts" | "knowledge-graph";
 
@@ -142,6 +143,10 @@ export async function saveYouTubePlaylist(input: { playlistId?: string; playlist
 }
 
 async function getAuthHeaders(): Promise<Record<string, string>> {
+  const adminToken = readLocalAdminToken();
+  if (adminToken) {
+    return { Authorization: `Bearer ${adminToken}` };
+  }
   if (typeof window === "undefined") {
     return {};
   }
@@ -231,7 +236,7 @@ function sanitizeAPIError(message: string) {
   }
   const lower = trimmed.toLowerCase();
   if (lower.includes("failed to connect") && lower.includes("database=postgres")) {
-    return "Local backend cannot reach Supabase Postgres. Use the displayed digest send path or switch local SUPABASE_DB_URL to the pooled connection string.";
+    return "Local backend cannot reach Postgres. Use the displayed digest send path or switch local DATABASE_URL to the reachable connection string.";
   }
   return trimmed;
 }

@@ -7,9 +7,8 @@ required=(
   DEPLOY_USER
   DEPLOY_SSH_KEY
   ONECLI_API_KEY
-  SUPABASE_DB_URL
-  SUPABASE_URL
-  SUPABASE_SERVICE_ROLE_KEY
+  DATABASE_URL
+  ADMIN_API_TOKEN
 )
 
 for name in "${required[@]}"; do
@@ -63,6 +62,8 @@ frontend_release="$base/frontend/releases/$release"
 onecli="/home/deploy/.local/bin/onecli"
 
 mkdir -p "$api_dir" "$base/migrations"
+mkdir -p "$base/object-storage"
+chmod 750 "$base/object-storage"
 tar -xzf "$tmp/api.tgz" -C "$api_dir"
 rm -rf "$base/migrations.new"
 mkdir -p "$base/migrations.new"

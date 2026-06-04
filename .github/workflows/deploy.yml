@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       import_x_token_store:
-        description: "Import current OneCLI X refresh token into the encrypted Supabase token store"
+        description: "Import current OneCLI X refresh token into the encrypted Postgres token store"
         required: false
         default: false
         type: boolean
@@ -104,15 +104,15 @@ jobs:
       DEPLOY_USER: ${{ secrets.DO_USER }}
       DEPLOY_SSH_KEY: ${{ secrets.DO_SSH_KEY }}
       ONECLI_API_KEY: ${{ secrets.ONECLI_API_KEY }}
-      SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
-      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-      SUPABASE_PUBLISHABLE_KEY: ${{ secrets.SUPABASE_PUBLISHABLE_KEY }}
-      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      DATABASE_URL: ${{ secrets.DATABASE_URL || secrets.SUPABASE_DB_URL }}
       APP_USER_ID: ${{ secrets.APP_USER_ID }}
       PUBLIC_OWNER_ID: ${{ secrets.PUBLIC_OWNER_ID }}
       PUBLIC_OWNER_HANDLE: ${{ secrets.PUBLIC_OWNER_HANDLE }}
       PUBLIC_OWNER_EMAIL: ${{ secrets.PUBLIC_OWNER_EMAIL }}
-      SUPABASE_STORAGE_BUCKET: ${{ secrets.SUPABASE_STORAGE_BUCKET }}
+      OBJECT_STORAGE_BACKEND: filesystem
+      OBJECT_STORAGE_ROOT: /srv/second-brain/object-storage
+      OBJECT_STORAGE_BUCKET: sources
+      ADMIN_API_TOKEN: ${{ secrets.ADMIN_API_TOKEN }}
       REDIS_URL: ${{ secrets.REDIS_URL }}
       REDIS_CACHE_ENABLED: ${{ secrets.REDIS_CACHE_ENABLED }}
       REDIS_CACHE_TTL: ${{ secrets.REDIS_CACHE_TTL }}
@@ -166,11 +166,11 @@ jobs:
           write_var PORT 8090
           write_var APP_USER_ID "$APP_USER_ID"
           write_var ALLOWED_ORIGINS "https://abhijitmohanty.com,https://www.abhijitmohanty.com"
-          write_var SUPABASE_DB_URL "$SUPABASE_DB_URL"
-          write_var SUPABASE_URL "$SUPABASE_URL"
-          write_var SUPABASE_PUBLISHABLE_KEY "$SUPABASE_PUBLISHABLE_KEY"
-          write_var SUPABASE_SERVICE_ROLE_KEY "$SUPABASE_SERVICE_ROLE_KEY"
-          write_var SUPABASE_STORAGE_BUCKET "${SUPABASE_STORAGE_BUCKET:-sources}"
+          write_var DATABASE_URL "$DATABASE_URL"
+          write_var OBJECT_STORAGE_BACKEND "${OBJECT_STORAGE_BACKEND:-filesystem}"
+          write_var OBJECT_STORAGE_ROOT "${OBJECT_STORAGE_ROOT:-/srv/second-brain/object-storage}"
+          write_var OBJECT_STORAGE_BUCKET "${OBJECT_STORAGE_BUCKET:-sources}"
+          write_var ADMIN_API_TOKEN "$ADMIN_API_TOKEN"
           write_var PUBLIC_OWNER_ID "${PUBLIC_OWNER_ID:-00000000-0000-0000-0000-000000000001}"
           write_var PUBLIC_OWNER_HANDLE "${PUBLIC_OWNER_HANDLE:-abhijitmohanty}"
           write_var PUBLIC_OWNER_EMAIL "$PUBLIC_OWNER_EMAIL"
@@ -244,7 +244,7 @@ jobs:
       ONECLI_X_ACCESS_SECRET_ID: c280ee57-4e2e-47dd-b768-85b2db002ee8
       ONECLI_X_REFRESH_SECRET_ID: 78842398-70d0-47cc-b517-8909e26e76ff
       APP_ENV: production
-      SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+      DATABASE_URL: ${{ secrets.DATABASE_URL || secrets.SUPABASE_DB_URL }}
       X_CLIENT_ID: ${{ secrets.X_CLIENT_ID_PROD || secrets.X_CLIENT_ID }}
       X_CLIENT_SECRET: ${{ secrets.X_CLIENT_SECRET_PROD || secrets.X_CLIENT_SECRET }}
       X_TOKEN_ENCRYPTION_KEY: ${{ secrets.X_TOKEN_ENCRYPTION_KEY }}

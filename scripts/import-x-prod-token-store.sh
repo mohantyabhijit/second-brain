@@ -17,7 +17,16 @@ load_keychain() {
   fi
 }
 
-load_keychain SUPABASE_DB_URL "second-brain/SUPABASE_DB_URL"
+if [[ -z "${DATABASE_URL:-}" ]]; then
+  if value="$(security find-generic-password -a "$USER" -s "second-brain/DATABASE_URL" -w 2>/dev/null)"; then
+    export DATABASE_URL="$value"
+  else
+    load_keychain DATABASE_URL "second-brain/SUPABASE_DB_URL"
+  fi
+fi
+if [[ -z "${SUPABASE_DB_URL:-}" ]]; then
+  export SUPABASE_DB_URL="$DATABASE_URL"
+fi
 load_keychain X_CLIENT_ID "second-brain/X_CLIENT_ID_PROD"
 load_keychain X_CLIENT_SECRET "second-brain/X_CLIENT_SECRET_PROD"
 load_keychain X_TOKEN_ENCRYPTION_KEY "second-brain/X_TOKEN_ENCRYPTION_KEY"

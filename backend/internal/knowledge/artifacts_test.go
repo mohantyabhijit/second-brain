@@ -6,6 +6,8 @@ import (
 	"encoding/hex"
 	"io"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -21,7 +23,7 @@ func TestWriteEvidenceArtifactRecordsMetadataWithoutStorageCredentials(t *testin
 		artifactKind: "tweet",
 		contentType:  "text/plain; charset=utf-8",
 	}
-	service := NewService(config.Config{SupabaseStorageBucket: "sources"}, cacheStore{}, http.DefaultClient)
+	service := NewService(config.Config{ObjectStorageBackend: "supabase", ObjectStorageBucket: "sources"}, cacheStore{}, http.DefaultClient)
 
 	captureHash := candidate.captureHash()
 	artifact := service.writeEvidenceArtifact(context.Background(), candidate, captureHash)
@@ -87,9 +89,10 @@ func TestWriteEvidenceArtifactUploadsToSupabaseStorage(t *testing.T) {
 		contentType:  "text/plain; charset=utf-8",
 	}
 	service := NewService(config.Config{
-		SupabaseURL:           "https://supabase.example",
-		SupabaseStorageKey:    "service-role",
-		SupabaseStorageBucket: "sources",
+		SupabaseURL:          "https://supabase.example",
+		SupabaseStorageKey:   "service-role",
+		ObjectStorageBackend: "supabase",
+		ObjectStorageBucket:  "sources",
 	}, cacheStore{}, client)
 
 	captureHash := candidate.captureHash()
@@ -115,6 +118,58 @@ func TestWriteEvidenceArtifactUploadsToSupabaseStorage(t *testing.T) {
 	}
 }
 
+func TestWriteEvidenceArtifactStoresOnFilesystem(t *testing.T) {
+	root := t.TempDir()
+	candidate := sourceCandidate{
+		sourceType:   SourceTypeYouTube,
+		externalID:   "video id",
+		title:        "Video",
+		body:         "transcript body",
+		artifactKind: "transcript",
+		contentType:  "text/plain; charset=utf-8",
+	}
+	service := NewService(config.Config{
+		ObjectStorageBackend: "filesystem",
+		ObjectStorageRoot:    root,
+		ObjectStorageBucket:  "sources",
+	}, cacheStore{}, http.DefaultClient)
+
+	captureHash := candidate.captureHash()
+	artifact := service.writeEvidenceArtifact(context.Background(), candidate, captureHash)
+
+	if !artifact.Stored || artifact.Error != "" {
+		t.Fatalf("expected filesystem-stored artifact without error, got %#v", artifact)
+	}
+	storedPath := filepath.Join(root, "sources", "youtube", "video id", captureHash, "transcript.txt")
+	raw, err := os.ReadFile(storedPath)
+	if err != nil {
+		t.Fatalf("read stored artifact: %v", err)
+	}
+	if string(raw) != "transcript body" {
+		t.Fatalf("unexpected stored body: %q", string(raw))
+	}
+}
+
+func TestFilesystemObjectPathRejectsTraversal(t *testing.T) {
+	root := t.TempDir()
+
+	for _, tc := range []struct {
+		name   string
+		bucket string
+		object string
+	}{
+		{name: "bucket traversal", bucket: "../sources", object: "x/tweet-1/source.txt"},
+		{name: "object traversal", bucket: "sources", object: "x/../source.txt"},
+		{name: "empty object segment", bucket: "sources", object: "x//source.txt"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if _, err := filesystemObjectPath(root, tc.bucket, tc.object); err == nil {
+				t.Fatal("expected unsafe storage path to be rejected")
+			}
+		})
+	}
+}
+
 func TestWriteSynthesisArtifactRecordsProcessedOutputMetadata(t *testing.T) {
 	candidate := sourceCandidate{
 		sourceType:   SourceTypeX,
@@ -135,7 +190,7 @@ func TestWriteSynthesisArtifactRecordsProcessedOutputMetadata(t *testing.T) {
 			Summary: "Processed summary",
 		},
 	}
-	service := NewService(config.Config{SupabaseStorageBucket: "sources"}, cacheStore{}, http.DefaultClient)
+	service := NewService(config.Config{ObjectStorageBackend: "supabase", ObjectStorageBucket: "sources"}, cacheStore{}, http.DefaultClient)
 
 	artifact := service.writeSynthesisArtifact(context.Background(), candidate, "capture-1", record)
 

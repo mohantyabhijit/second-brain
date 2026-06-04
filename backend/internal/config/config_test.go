@@ -8,10 +8,15 @@ import (
 func TestLoadAppliesDefaultsAndParsesCSV(t *testing.T) {
 	t.Setenv("APP_ENV", "test")
 	t.Setenv("PORT", "9090")
+	t.Setenv("DATABASE_URL", "postgres://primary")
 	t.Setenv("SUPABASE_DB_URL", "postgres://example")
 	t.Setenv("SUPABASE_URL", "https://supabase.example")
 	t.Setenv("SUPABASE_SERVICE_ROLE_KEY", "service-role")
 	t.Setenv("SUPABASE_STORAGE_BUCKET", "source-artifacts")
+	t.Setenv("OBJECT_STORAGE_BACKEND", "filesystem")
+	t.Setenv("OBJECT_STORAGE_ROOT", "/srv/second-brain/object-storage")
+	t.Setenv("OBJECT_STORAGE_BUCKET", "sources")
+	t.Setenv("ADMIN_API_TOKEN", "admin-token")
 	t.Setenv("ALLOWED_ORIGINS", " https://app.example, ,http://localhost:3000 ")
 	t.Setenv("ONECLI_BIN", "/tmp/onecli")
 	t.Setenv("ONECLI_GATEWAY", "true")
@@ -32,10 +37,16 @@ func TestLoadAppliesDefaultsAndParsesCSV(t *testing.T) {
 	if cfg.Env != "test" || cfg.Port != "9090" || cfg.OneCLIBin != "/tmp/onecli" || !cfg.OneCLIGateway {
 		t.Fatalf("unexpected basic config: %#v", cfg)
 	}
-	if cfg.SupabaseDatabaseURL != "postgres://example" || cfg.SupabaseURL != "https://supabase.example" || cfg.SupabaseStorageKey != "service-role" {
+	if cfg.DatabaseURL != "postgres://primary" || cfg.SupabaseDatabaseURL != "postgres://primary" {
+		t.Fatalf("unexpected database config: %#v", cfg)
+	}
+	if cfg.SupabaseURL != "https://supabase.example" || cfg.SupabaseStorageKey != "service-role" {
 		t.Fatalf("unexpected Supabase config: %#v", cfg)
 	}
-	if cfg.SupabaseStorageBucket != "source-artifacts" || cfg.KnowledgeRunPath != "/tmp/latest.json" {
+	if cfg.SupabaseStorageBucket != "sources" || cfg.ObjectStorageBucket != "sources" || cfg.ObjectStorageBackend != "filesystem" || cfg.ObjectStorageRoot != "/srv/second-brain/object-storage" {
+		t.Fatalf("unexpected object storage config: %#v", cfg)
+	}
+	if cfg.AdminAPIToken != "admin-token" || cfg.KnowledgeRunPath != "/tmp/latest.json" {
 		t.Fatalf("unexpected storage/run config: %#v", cfg)
 	}
 	if cfg.XBookmarkLimit != 250 {
@@ -83,6 +94,9 @@ func TestLoadFallsBackForBlankValues(t *testing.T) {
 	}
 	if cfg.SupabaseStorageBucket != "sources" {
 		t.Fatalf("expected default storage bucket, got %q", cfg.SupabaseStorageBucket)
+	}
+	if cfg.DatabaseURL != "" || cfg.ObjectStorageBucket != "sources" || cfg.ObjectStorageBackend != "none" || cfg.ObjectStorageRoot != "" {
+		t.Fatalf("unexpected default database/object storage config: %#v", cfg)
 	}
 	if cfg.XBookmarkLimit != 0 || cfg.XBookmarkProcessLimit != 50 {
 		t.Fatalf("expected all-bookmarks fetch and 50-bookmark process defaults, got fetch=%d process=%d", cfg.XBookmarkLimit, cfg.XBookmarkProcessLimit)

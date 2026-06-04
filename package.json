@@ -39,7 +39,7 @@
     "backend:test": "cd backend && GOCACHE=$PWD/../.cache/go-build go test ./...",
     "test": "npm run frontend:test && npm run backend:test && npm run cloudflare:test",
     "ci": "npm run typecheck && npm run lint && npm run test && npm run build",
-    "db:migrate": "bash scripts/migrate-supabase.sh",
+    "db:migrate": "bash scripts/migrate-postgres.sh",
     "onecli:check": "/Users/abhijitmohanty/.local/bin/onecli auth status && /Users/abhijitmohanty/.local/bin/onecli secrets list --project second-brain",
     "onecli:save-secrets": "bash scripts/save-onecli-secrets.sh"
   },

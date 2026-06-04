@@ -16,8 +16,8 @@ import (
 func main() {
 	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
 	cfg := config.Load()
-	if strings.TrimSpace(cfg.SupabaseDatabaseURL) == "" {
-		logger.Error("SUPABASE_DB_URL is required to import X OAuth tokens into the shared store")
+	if strings.TrimSpace(cfg.DatabaseURL) == "" {
+		logger.Error("DATABASE_URL is required to import X OAuth tokens into the shared store")
 		os.Exit(1)
 	}
 	refreshToken := strings.TrimSpace(os.Getenv("X_REFRESH_TOKEN"))
@@ -28,9 +28,9 @@ func main() {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
-	store, err := postgres.New(ctx, cfg.SupabaseDatabaseURL)
+	store, err := postgres.New(ctx, cfg.DatabaseURL)
 	if err != nil {
-		logger.Error("connect supabase postgres", "error", err)
+		logger.Error("connect postgres", "error", err)
 		os.Exit(1)
 	}
 	defer store.Close()

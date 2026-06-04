@@ -19,7 +19,7 @@ fi
 if ! curl -fsS "$API_BASE_URL/healthz" >/dev/null; then
   cat >&2 <<EOF
 Backend is not reachable at $API_BASE_URL.
-Start it with npm run backend:dev, with SUPABASE_DB_URL, X_CLIENT_ID,
+Start it with npm run backend:dev, with DATABASE_URL, X_CLIENT_ID,
 X_CLIENT_SECRET, X_SESSION_SECRET, and X_TOKEN_ENCRYPTION_KEY configured.
 EOF
   exit 1

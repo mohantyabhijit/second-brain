@@ -17,8 +17,8 @@ import (
 func main() {
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 	cfg := config.Load()
-	if cfg.SupabaseDatabaseURL == "" {
-		logger.Error("SUPABASE_DB_URL is required")
+	if cfg.DatabaseURL == "" {
+		logger.Error("DATABASE_URL is required")
 		os.Exit(1)
 	}
 
@@ -30,7 +30,7 @@ func main() {
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
-	pool, err := pgxpool.New(ctx, cfg.SupabaseDatabaseURL)
+	pool, err := pgxpool.New(ctx, cfg.DatabaseURL)
 	if err != nil {
 		logger.Error("connect database", "error", err)
 		os.Exit(1)

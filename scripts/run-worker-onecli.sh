@@ -14,7 +14,11 @@ if [[ -f "$BACKEND_DIR/.env" ]]; then
 fi
 
 for key in \
-  SUPABASE_DB_URL \
+  DATABASE_URL \
+  ADMIN_API_TOKEN \
+  OBJECT_STORAGE_BACKEND \
+  OBJECT_STORAGE_ROOT \
+  OBJECT_STORAGE_BUCKET \
   SUPABASE_URL \
   SUPABASE_SERVICE_ROLE_KEY \
   SUPABASE_STORAGE_BUCKET \
@@ -36,6 +40,14 @@ for key in \
     fi
   fi
 done
+if [[ -z "${DATABASE_URL:-}" ]]; then
+  if DATABASE_URL="$(security find-generic-password -a "$USER" -s "second-brain/SUPABASE_DB_URL" -w 2>/dev/null)"; then
+    export DATABASE_URL
+  fi
+fi
+if [[ -z "${SUPABASE_DB_URL:-}" && -n "${DATABASE_URL:-}" ]]; then
+  export SUPABASE_DB_URL="$DATABASE_URL"
+fi
 
 export X_CLIENT_ID="${X_CLIENT_ID:-${X_CLIENT_ID_PROD:-}}"
 export X_CLIENT_SECRET="${X_CLIENT_SECRET:-${X_CLIENT_SECRET_PROD:-}}"

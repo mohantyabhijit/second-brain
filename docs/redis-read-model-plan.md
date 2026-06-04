@@ -2,22 +2,22 @@
 
 ## Goal
 
-Make normal page load fast by serving frontend data from Redis-backed read models instead of querying Supabase Postgres and Neo4j on every render.
+Make normal page load fast by serving frontend data from Redis-backed read models instead of querying Postgres and Neo4j on every render.
 
-Supabase remains the canonical system of record. Neo4j remains the derived graph index. Redis stores only precomputed render payloads and short-lived operational state that can be rebuilt from Supabase, Supabase Storage, pgvector, and Neo4j.
+Postgres plus object storage remains the canonical system of record. Neo4j remains the derived graph index. Redis stores only precomputed render payloads and short-lived operational state that can be rebuilt from Postgres, object storage metadata, pgvector, and Neo4j.
 
-The browser must not connect to Redis directly. The frontend calls the Go API, and the Go API reads Redis first with Supabase fallback.
+The browser must not connect to Redis directly. The frontend calls the Go API, and the Go API reads Redis first with Postgres fallback.
 
 ## Target Load Path
 
-Current page load does multiple API calls that can hit Supabase:
+Current page load does multiple API calls that can hit Postgres:
 
 ```text
 Frontend mount
   -> GET /api/knowledge-runs/latest
   -> GET /api/digests
   -> GET /api/knowledge-runs/refresh
-  -> backend reads Supabase/refresh memory
+  -> backend reads Postgres/refresh memory
 ```
 
 Target page load should be one fast API call backed by Redis:
@@ -39,7 +39,7 @@ Existing endpoints should stay available for compatibility, but their implementa
 
 - Initial app state API response from Redis: less than 75 ms server-side p95.
 - Frontend first meaningful render after API response: less than 150 ms for already-built JS.
-- No Supabase or Neo4j calls in the normal initial render path when Redis has a current manifest.
+- No Postgres or Neo4j calls in the normal initial render path when Redis has a current manifest.
 - One network round trip for boot data through `GET /api/app-state`.
 - Redis payloads should be bounded. Keep the app-state response under 1-2 MB uncompressed; split large source lists into paged keys if needed.
 - Use `ETag` or manifest versioning so the frontend can skip re-rendering unchanged snapshots.
@@ -65,7 +65,7 @@ Redis stores derived read models, not canonical data.
 | `sb:v1:{owner}:ask:context:{run_id}` | string JSON | Compact RAG/GraphRAG source bundle for the current run | 30 days |
 | `sb:v1:{owner}:ask:answer:{run_id}:{question_hash}` | string JSON | Optional repeated-question answer cache | 15 minutes to 6 hours |
 
-Do not store secrets, provider tokens, Supabase credentials, service-role keys, full raw transcript archives, or the only copy of any canonical source record in Redis.
+Do not store secrets, provider tokens, database credentials, object-storage credentials, full raw transcript archives, or the only copy of any canonical source record in Redis.
 
 ## App State Shape
 
@@ -198,8 +198,8 @@ Redis should be populated after canonical persistence succeeds.
    -> digest
 
 3. Persist canonical data
-   -> Supabase Postgres
-   -> Supabase Storage
+   -> Postgres
+   -> object storage
    -> pgvector tables
    -> graph_sync_outbox
 
@@ -352,10 +352,10 @@ Do not make the app read Redis through Supabase FDW tables. The wrapper is read-
 
 | Failure | Behavior |
 | --- | --- |
-| Redis unavailable on page load | Backend falls back to Supabase, returns `X-Second-Brain-Cache: fallback`, logs warning |
-| Redis unavailable after successful refresh | Supabase remains updated, manifest is not flipped, next page load may use old Redis or Supabase fallback |
-| Refresh fails before Supabase save | Keep old Redis manifest and old app snapshot |
-| Refresh saves Supabase but graph sync fails | Publish app state with `graphStatus: stale` or `skipped` |
+| Redis unavailable on page load | Backend falls back to Postgres, returns `X-Second-Brain-Cache: fallback`, logs warning |
+| Redis unavailable after successful refresh | Postgres remains updated, manifest is not flipped, next page load may use old Redis or Postgres fallback |
+| Refresh fails before Postgres save | Keep old Redis manifest and old app snapshot |
+| Refresh saves Postgres but graph sync fails | Publish app state with `graphStatus: stale` or `skipped` |
 | Read model builder fails | Do not flip manifest; return previous good snapshot |
 | Large X bookmark payload | Split into paged Redis keys and lazy-load pages through backend |
 

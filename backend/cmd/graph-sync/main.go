@@ -49,8 +49,8 @@ type sourceGraphPayload struct {
 func main() {
 	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
 	cfg := config.Load()
-	if cfg.SupabaseDatabaseURL == "" {
-		logger.Error("SUPABASE_DB_URL is required for graph sync")
+	if cfg.DatabaseURL == "" {
+		logger.Error("DATABASE_URL is required for graph sync")
 		os.Exit(1)
 	}
 	if cfg.Neo4jURI == "" || cfg.Neo4jUsername == "" || cfg.Neo4jPassword == "" {
@@ -61,9 +61,9 @@ func main() {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 
-	store, err := postgres.New(ctx, cfg.SupabaseDatabaseURL)
+	store, err := postgres.New(ctx, cfg.DatabaseURL)
 	if err != nil {
-		logger.Error("connect supabase postgres", "error", err)
+		logger.Error("connect postgres", "error", err)
 		os.Exit(1)
 	}
 	defer store.Close()
