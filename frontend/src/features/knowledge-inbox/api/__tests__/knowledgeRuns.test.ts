@@ -384,33 +384,4 @@ describe("knowledge run API client", () => {
     });
   });
 
-  it("prefers the local admin token over Supabase browser sessions", async () => {
-    vi.stubEnv("NEXT_PUBLIC_API_BASE_URL", "https://api.example.test");
-    vi.stubGlobal("window", {
-      localStorage: {
-        getItem: vi.fn((key: string) => (key === "second-brain-admin-token" ? " admin-token " : null))
-      }
-    });
-    vi.doMock("../../../../utils/supabase/client", () => ({
-      tryCreateClient: () => ({
-        auth: {
-          getSession: async () => ({ data: { session: { access_token: "session-token" } } })
-        }
-      })
-    }));
-    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ status: "ok" }), { status: 200, headers: { "Content-Type": "application/json" } }));
-    vi.stubGlobal("fetch", fetchMock);
-
-    const { saveKnowledgeFeedback } = await import("../knowledgeRuns");
-    await saveKnowledgeFeedback({ targetType: "insight", targetId: "insight-1", signal: "useful" });
-
-    expect(fetchMock).toHaveBeenCalledWith("https://api.example.test/api/feedback", {
-      method: "POST",
-      body: JSON.stringify({ targetType: "insight", targetId: "insight-1", signal: "useful" }),
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: "Bearer admin-token"
-      }
-    });
-  });
 });

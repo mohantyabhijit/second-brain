@@ -12,6 +12,12 @@ if [[ -f "$BACKEND_DIR/.env" ]]; then
   . "$BACKEND_DIR/.env"
   set +a
 fi
+if [[ -f "$ROOT_DIR/frontend/.env.local" ]]; then
+  set -a
+  # shellcheck disable=SC1091
+  . "$ROOT_DIR/frontend/.env.local"
+  set +a
+fi
 
 if [[ -z "${DATABASE_URL:-}" ]]; then
   if DATABASE_URL="$(security find-generic-password -a "$USER" -s "second-brain/DATABASE_URL" -w 2>/dev/null)"; then
@@ -26,7 +32,7 @@ if [[ -z "${SUPABASE_DB_URL:-}" && -n "${DATABASE_URL:-}" ]]; then
   export SUPABASE_DB_URL="$DATABASE_URL"
 fi
 
-for key in ADMIN_API_TOKEN OBJECT_STORAGE_BACKEND OBJECT_STORAGE_ROOT OBJECT_STORAGE_BUCKET; do
+for key in SUPABASE_PUBLISHABLE_KEY OBJECT_STORAGE_BACKEND OBJECT_STORAGE_ROOT OBJECT_STORAGE_BUCKET; do
   if [[ -z "${!key:-}" ]]; then
     if value="$(security find-generic-password -a "$USER" -s "second-brain/$key" -w 2>/dev/null)"; then
       export "$key=$value"
@@ -40,6 +46,12 @@ if [[ -z "${SUPABASE_URL:-}" ]]; then
   else
     unset SUPABASE_URL
   fi
+fi
+if [[ -z "${SUPABASE_URL:-}" && -n "${NEXT_PUBLIC_SUPABASE_URL:-}" ]]; then
+  export SUPABASE_URL="$NEXT_PUBLIC_SUPABASE_URL"
+fi
+if [[ -z "${SUPABASE_PUBLISHABLE_KEY:-}" && -n "${NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY:-}" ]]; then
+  export SUPABASE_PUBLISHABLE_KEY="$NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY"
 fi
 
 if [[ -z "${SUPABASE_SERVICE_ROLE_KEY:-}" ]]; then

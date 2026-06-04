@@ -432,6 +432,7 @@ h1 {
   background: var(--surface);
   color: var(--ink);
   font-weight: 800;
+  text-decoration: none;
   cursor: pointer;
 }
 

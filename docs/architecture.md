@@ -12,7 +12,7 @@ Key paths:
 - `frontend/src/features/knowledge-inbox/presentation/viewModel.ts`: maps API data into UI-safe props.
 - `frontend/src/features/knowledge-inbox/ui`: reusable, presentational components that do not import the API client.
 - `frontend/src/features/knowledge-inbox/contracts.ts`: shared API response shape.
-- `frontend/src/utils/supabase`: optional legacy Supabase Auth cookie helpers using publishable browser keys only.
+- `frontend/src/utils/supabase`: Supabase Auth session helpers using publishable browser keys only.
 
 ## Backend
 
@@ -24,7 +24,7 @@ Key paths:
 - `internal/knowledge`: source intake, transcript checks, artifact writes, validation, and prompt synthesis.
 - `internal/store/postgres`: Postgres persistence.
 
-The frontend never uses the database connection directly. It calls the Go API for product data, and the Go API uses `DATABASE_URL`. Protected operator actions can use a static admin bearer token; Supabase publishable keys remain only as an optional legacy auth fallback.
+The frontend never uses the database connection directly. It calls the Go API for product data, and the Go API uses `DATABASE_URL`. Supabase Auth is the sole authentication provider; the Go API validates its bearer sessions before protected operator actions.
 
 ## Storage Architecture
 
@@ -81,7 +81,7 @@ artifacts/{source_type}/{external_id}/{capture_hash}/{prompt_version}/{model}/su
 exports/{run_id}/knowledge-pack.json
 ```
 
-The backend writes private text objects with `OBJECT_STORAGE_BACKEND=filesystem`, `OBJECT_STORAGE_ROOT=/srv/second-brain/object-storage`, and `OBJECT_STORAGE_BUCKET=sources`. The legacy Supabase Storage backend remains available only for rollback/export while the old project exists.
+The backend writes private text objects with `OBJECT_STORAGE_BACKEND=filesystem`, `OBJECT_STORAGE_ROOT=/srv/second-brain/object-storage`, and `OBJECT_STORAGE_BUCKET=sources`. Supabase is used only for Auth in production; the legacy Supabase Storage backend remains available only for rollback/export while the old project exists.
 
 ## Vector Database
 
