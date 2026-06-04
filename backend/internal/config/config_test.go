@@ -26,6 +26,7 @@ func TestLoadAppliesDefaultsAndParsesCSV(t *testing.T) {
 	t.Setenv("KNOWLEDGE_RUN_PATH", "/tmp/latest.json")
 	t.Setenv("YOUTUBE_PLAYLIST_ID", "playlist-1")
 	t.Setenv("YOUTUBE_TRANSCRIPT_TEST_VIDEO_ID", "video-1")
+	t.Setenv("SUPADATA_MONTHLY_REQUEST_LIMIT", "90")
 	t.Setenv("OPENAI_TRANSLATION_MODEL", "translation-model")
 	t.Setenv("OPENAI_SYNTHESIS_MODEL", "synthesis-model")
 	t.Setenv("OPENAI_IMAGE_MODEL", "image-model")
@@ -60,6 +61,9 @@ func TestLoadAppliesDefaultsAndParsesCSV(t *testing.T) {
 	if cfg.YouTubePlaylistID != "playlist-1" || cfg.YouTubeTranscriptTestVideoID != "video-1" {
 		t.Fatalf("unexpected YouTube config: %#v", cfg)
 	}
+	if cfg.SupadataMonthlyRequestLimit != 90 {
+		t.Fatalf("unexpected Supadata monthly request limit: %d", cfg.SupadataMonthlyRequestLimit)
+	}
 	if cfg.OpenAITranslationModel != "translation-model" || cfg.OpenAISynthesisModel != "synthesis-model" || cfg.OpenAIImageModel != "image-model" {
 		t.Fatalf("unexpected OpenAI config: %#v", cfg)
 	}
@@ -81,6 +85,7 @@ func TestLoadFallsBackForBlankValues(t *testing.T) {
 	t.Setenv("X_BOOKMARK_PROCESS_LIMIT", "")
 	t.Setenv("KNOWLEDGE_RUN_PATH", "")
 	t.Setenv("YOUTUBE_PLAYLIST_ID", "")
+	t.Setenv("SUPADATA_MONTHLY_REQUEST_LIMIT", "")
 	t.Setenv("OPENAI_TRANSLATION_MODEL", "")
 	t.Setenv("OPENAI_SYNTHESIS_MODEL", "")
 	t.Setenv("OPENAI_IMAGE_MODEL", "")
@@ -102,6 +107,9 @@ func TestLoadFallsBackForBlankValues(t *testing.T) {
 	}
 	if cfg.YouTubePlaylistID == "" || cfg.OpenAITranslationModel != "gpt-4o-mini" || cfg.OpenAISynthesisModel != "gpt-5.5" || cfg.OpenAIImageModel != "gpt-image-1" {
 		t.Fatalf("expected model and playlist defaults, got %#v", cfg)
+	}
+	if cfg.SupadataMonthlyRequestLimit != 100 {
+		t.Fatalf("expected free-tier Supadata request limit, got %d", cfg.SupadataMonthlyRequestLimit)
 	}
 	if cfg.PublicBaseURL != "http://localhost:8080" {
 		t.Fatalf("expected local public base URL default, got %#v", cfg)

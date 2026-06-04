@@ -16,7 +16,48 @@ func (fn roundTripFunc) RoundTrip(request *http.Request) (*http.Response, error)
 	return fn(request)
 }
 
-func TestFetchSupadataTranscriptRetriesMissingNativeTranscript(t *testing.T) {
+type transcriptClaimStore struct {
+	cacheStore
+	claimed map[string]bool
+}
+
+func (s *transcriptClaimStore) ClaimYouTubeTranscriptRequest(_ context.Context, ownerID string, videoID string, monthlyLimit int) (bool, error) {
+	key := ownerID + ":" + videoID
+	if s.claimed[key] {
+		return false, nil
+	}
+	s.claimed[key] = true
+	return true, nil
+}
+
+func (s *transcriptClaimStore) CompleteYouTubeTranscriptRequest(_ context.Context, ownerID string, videoID string, status string, detail string) error {
+	return nil
+}
+
+func TestFetchYouTubeTranscriptsClaimsVideoOnlyOnce(t *testing.T) {
+	t.Setenv("SUPADATA_API_KEY", "test-key")
+	requests := 0
+	store := &transcriptClaimStore{claimed: map[string]bool{}}
+	service := NewService(config.Config{OwnerID: "owner-1"}, store, &http.Client{Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
+		requests++
+		return jsonResponse(`{"content":"one durable transcript","lang":"en"}`), nil
+	})})
+
+	first := service.fetchYouTubeTranscriptsForNewMaterials(context.Background(), []YouTubeItem{{VideoID: "video-1"}}, "", nil)
+	second := service.fetchYouTubeTranscriptsForNewMaterials(context.Background(), []YouTubeItem{{VideoID: "video-1"}}, "", nil)
+
+	if requests != 1 {
+		t.Fatalf("expected one Supadata request for the same video, got %d", requests)
+	}
+	if first[0].TranscriptStatus != "available" {
+		t.Fatalf("expected first transcript request to succeed, got %#v", first[0])
+	}
+	if second[0].TranscriptStatus != "cached" {
+		t.Fatalf("expected repeated video to skip Supadata, got %#v", second[0])
+	}
+}
+
+func TestFetchSupadataTranscriptUsesOneAutoLanguageRequest(t *testing.T) {
 	t.Setenv("SUPADATA_API_KEY", "test-key")
 
 	requests := []string{}
@@ -24,11 +65,7 @@ func TestFetchSupadataTranscriptRetriesMissingNativeTranscript(t *testing.T) {
 		cfg: config.Config{OpenAITranslationModel: "test-model"},
 		client: &http.Client{Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
 			requests = append(requests, request.URL.RawQuery)
-			body := `{"message":"Transcript Unavailable"}`
-			if len(requests) == 2 {
-				body = `{"content":"transcript found on retry","lang":"en","availableLangs":["en"]}`
-			}
-			return jsonResponse(body), nil
+			return jsonResponse(`{"content":"transcript found","lang":"en","availableLangs":["en"]}`), nil
 		})},
 	}
 
@@ -37,23 +74,25 @@ func TestFetchSupadataTranscriptRetriesMissingNativeTranscript(t *testing.T) {
 	if transcript.TranscriptStatus != "available" {
 		t.Fatalf("expected transcript to become available, got %q: %s", transcript.TranscriptStatus, transcript.TranscriptError)
 	}
-	if transcript.TranscriptPreview != "transcript found on retry" {
+	if transcript.TranscriptPreview != "transcript found" {
 		t.Fatalf("unexpected transcript preview: %q", transcript.TranscriptPreview)
 	}
-	if len(requests) != 2 {
-		t.Fatalf("expected 2 Supadata attempts, got %d", len(requests))
+	if len(requests) != 1 {
+		t.Fatalf("expected one Supadata request, got %d", len(requests))
 	}
-	if !strings.Contains(requests[0], "lang=en") || strings.Contains(requests[1], "lang=") {
-		t.Fatalf("expected second attempt to use auto-language fallback, got requests: %#v", requests)
+	if strings.Contains(requests[0], "lang=") || !strings.Contains(requests[0], "mode=native") {
+		t.Fatalf("expected one native auto-language request, got requests: %#v", requests)
 	}
 }
 
-func TestFetchSupadataTranscriptReportsAllMissingAttempts(t *testing.T) {
+func TestFetchSupadataTranscriptDoesNotRetryMissingTranscript(t *testing.T) {
 	t.Setenv("SUPADATA_API_KEY", "test-key")
 
+	requests := 0
 	service := &Service{
 		cfg: config.Config{OpenAITranslationModel: "test-model"},
 		client: &http.Client{Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
+			requests++
 			return jsonResponse(`{"message":"Transcript Unavailable"}`), nil
 		})},
 	}
@@ -63,10 +102,11 @@ func TestFetchSupadataTranscriptReportsAllMissingAttempts(t *testing.T) {
 	if transcript.TranscriptStatus != "missing" {
 		t.Fatalf("expected missing transcript, got %q", transcript.TranscriptStatus)
 	}
-	for _, label := range []string{"english native", "native auto-language", "hindi native", "default transcript"} {
-		if !strings.Contains(transcript.TranscriptError, label) {
-			t.Fatalf("expected error to mention %q, got %q", label, transcript.TranscriptError)
-		}
+	if requests != 1 {
+		t.Fatalf("expected missing transcript to consume one Supadata request, got %d", requests)
+	}
+	if !strings.Contains(transcript.TranscriptError, "single Supadata native auto-language request") {
+		t.Fatalf("expected one-request budget detail, got %q", transcript.TranscriptError)
 	}
 }
 

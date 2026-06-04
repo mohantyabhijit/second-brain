@@ -9,7 +9,7 @@ Next route
   -> GET /api/app-state?view={view}&limit={limit}
   -> Cloudflare Worker cache
   -> Redis read model
-  -> Supabase read_model_snapshots fallback
+  -> Postgres read_model_snapshots fallback
   -> React render
 ```
 
@@ -46,7 +46,7 @@ npm run precompute:run
 Each publish builds `AppState` with `schemaVersion = redis-read-model-v1`, a digest-sensitive `runId`, and an `etag` over the rendered read model. The publish writes:
 
 - Redis manifest and run-scoped keys under `sb:v1:{owner}:...`.
-- Supabase `read_model_snapshots.payload` for durable JSON fallback.
+- Postgres `read_model_snapshots.payload` for durable JSON fallback.
 - Cloudflare-cacheable API responses with `Cache-Control: public, max-age=30, s-maxage=300, stale-while-revalidate=1800`.
 
 The Redis manifest is the hot-path version pointer. It is updated only after run-scoped keys are written. Cloudflare purge runs after successful refresh, digest, and precompute publishes when purge credentials are configured.
@@ -55,4 +55,4 @@ The Redis manifest is the hot-path version pointer. It is updated only after run
 
 - `POST /api/ask` is still intentionally interactive and may call pgvector, Neo4j, Exa, and OpenAI. It is user-initiated, not part of page render. The precomputed `askContext` is available for a future thin/cached Ask path.
 - `POST /api/knowledge-runs/refresh`, feedback, share, and auth routes are mutations. They are bypassed by Cloudflare and can perform side effects.
-- If both Redis and Supabase `read_model_snapshots` miss, app-state endpoints can rebuild from canonical Supabase data to avoid a blank local app. Treat this as a recovery path, not the production page-load path.
+- If both Redis and Postgres `read_model_snapshots` miss, app-state endpoints can rebuild from canonical Postgres data to avoid a blank local app. Treat this as a recovery path, not the production page-load path.

@@ -1616,6 +1616,77 @@ func (s *Store) SaveYouTubePlaylistConnection(ctx context.Context, ownerID strin
 	return &connection, nil
 }
 
+func (s *Store) ClaimYouTubeTranscriptRequest(ctx context.Context, ownerID string, videoID string, monthlyLimit int) (bool, error) {
+	ownerID = defaultOwnerID(ownerID)
+	videoID = strings.TrimSpace(videoID)
+	if videoID == "" {
+		return false, fmt.Errorf("youtube video id is required")
+	}
+	tx, err := s.beginWriteTx(ctx)
+	if err != nil {
+		return false, err
+	}
+	defer tx.Rollback(ctx)
+	if _, err := tx.Exec(ctx, `select pg_advisory_xact_lock(hashtextextended($1, 0))`, ownerID+":supadata-transcript-budget"); err != nil {
+		return false, err
+	}
+	var claimed bool
+	err = tx.QueryRow(ctx, `
+		insert into youtube_transcript_requests (
+			owner_id,
+			video_id,
+			status,
+			detail,
+			attempted_at
+		)
+		select $1, $2, 'claimed', 'Supadata request claimed before provider call.', now()
+		where $3 > 0
+		  and (
+		    select count(*)
+		    from youtube_transcript_requests
+		    where owner_id = $1
+		      and attempted_at >= date_trunc('month', now())
+		      and attempted_at < date_trunc('month', now()) + interval '1 month'
+		  ) < $3
+		on conflict (owner_id, video_id) do nothing
+		returning true
+	`, ownerID, videoID, monthlyLimit).Scan(&claimed)
+	if errors.Is(err, pgx.ErrNoRows) {
+		if err := tx.Commit(ctx); err != nil {
+			return false, err
+		}
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return false, err
+	}
+	return claimed, nil
+}
+
+func (s *Store) CompleteYouTubeTranscriptRequest(ctx context.Context, ownerID string, videoID string, status string, detail string) error {
+	ownerID = defaultOwnerID(ownerID)
+	videoID = strings.TrimSpace(videoID)
+	if videoID == "" {
+		return fmt.Errorf("youtube video id is required")
+	}
+	status = strings.TrimSpace(status)
+	if status == "" {
+		status = "completed"
+	}
+	_, err := s.pool.Exec(ctx, `
+		update youtube_transcript_requests
+		set status = $3,
+		    detail = $4,
+		    completed_at = now()
+		where owner_id = $1
+		  and video_id = $2
+	`, ownerID, videoID, status, safeUTF8(detail))
+	return err
+}
+
 func sourceKey(sourceType knowledge.SourceType, externalID string) string {
 	return string(sourceType) + ":" + externalID
 }

@@ -1,5 +1,10 @@
 # Redis Read Model Plan
 
+> Historical implementation plan. The production read-model design is active,
+> but its canonical database is now self-hosted PostgreSQL and its Redis server
+> is local to `ubuntu-sgp`. Supabase is used only for Auth. The abandoned
+> Supabase Redis Wrapper direction below is retained only as decision history.
+
 ## Goal
 
 Make normal page load fast by serving frontend data from Redis-backed read models instead of querying Postgres and Neo4j on every render.
@@ -229,7 +234,7 @@ The manifest update is the publish boundary. If the refresh fails halfway, the m
 ## Atomicity Rules
 
 - Never update `sb:v1:{owner}:manifest` before all read models for the new run are present.
-- Treat Redis publish failure as a cache publish failure, not as a canonical refresh failure, after Supabase writes have succeeded.
+- Treat Redis publish failure as a cache publish failure, not as a canonical refresh failure, after Postgres writes have succeeded.
 - Keep the previous manifest if publish fails.
 - Use a temporary publish marker if needed:
 
@@ -247,8 +252,8 @@ sb:v1:{owner}:publish:{run_id}:status = ready
 1. Read manifest from Redis.
 2. Read `app-state:{run_id}`.
 3. If found, return it with `X-Second-Brain-Cache: hit`.
-4. If missing, read latest from Supabase, build app state, write Redis best-effort, return with `X-Second-Brain-Cache: fallback`.
-5. If both Redis and Supabase fail, return an error.
+4. If missing, read latest from Postgres, build app state, write Redis best-effort, return with `X-Second-Brain-Cache: fallback`.
+5. If both Redis and Postgres fail, return an error.
 
 ### Existing Endpoints
 
@@ -310,11 +315,14 @@ type ReadModelCache interface {
 7. Use Redis pipelines for multi-key writes.
 8. Add structured logs for `cache_hit`, `cache_miss`, `cache_fallback`, `cache_publish_failed`, and `cache_publish_completed`.
 
-## Supabase Redis Wrapper
+## Abandoned Supabase Redis Wrapper Direction
 
-The enabled Supabase Redis wrapper should be used for diagnostics and admin SQL visibility only.
+This direction was never part of the current production runtime and must not be
+enabled. The application connects directly to local Redis, while Supabase is
+Auth-only.
 
-Create a Vault-backed Redis server in Supabase, then create small foreign tables:
+The historical proposal was to create a Vault-backed Redis server and small
+foreign tables:
 
 ```sql
 create schema if not exists redis;
@@ -346,7 +354,9 @@ options (
 );
 ```
 
-Do not make the app read Redis through Supabase FDW tables. The wrapper is read-only, has no query pushdown, and can load full result sets into memory.
+Do not make the app read Redis through Supabase FDW tables. The wrapper is
+read-only, has no query pushdown, can load full result sets into memory, and
+would reintroduce a Supabase data dependency.
 
 ## Failure Modes
 
@@ -363,8 +373,8 @@ Do not make the app read Redis through Supabase FDW tables. The wrapper is read-
 
 Backend unit tests:
 
-- cache hit returns app-state without calling Supabase store
-- cache miss falls back to Supabase and warms Redis
+- cache hit returns app-state without calling Postgres
+- cache miss falls back to Postgres and warms Redis
 - publish writes all run-scoped keys before manifest
 - publish failure before manifest preserves old manifest
 - refresh status is written to Redis during stage transitions
@@ -379,11 +389,11 @@ Frontend tests:
 
 Integration checks:
 
-- start backend with Redis and Supabase envs
+- start backend with Redis and Postgres envs
 - run `npm run refresh:run`
 - verify manifest points to the new run
-- load frontend and confirm no Supabase queries are needed for initial render
-- kill Redis and confirm Supabase fallback still renders
+- load frontend and confirm no Postgres queries are needed for initial render
+- kill Redis and confirm Postgres fallback still renders
 
 ## Rollout
 
@@ -419,16 +429,15 @@ Integration checks:
 - Keep pgvector/Neo4j fallback for arbitrary deep questions.
 - Add short-lived repeated-question cache.
 
-### Phase 6: Supabase FDW Diagnostics
+### Phase 6: Supabase FDW Diagnostics - Abandoned
 
-- Add Redis wrapper SQL migration or runbook.
-- Expose manifest/read-model visibility in Supabase SQL for debugging.
+- Do not implement. Use direct Redis diagnostics and application metrics.
 
 ## Acceptance Criteria
 
-- Fresh app load renders from Redis with no Supabase or Neo4j calls on cache hit.
+- Fresh app load renders from Redis with no Postgres or Neo4j calls on cache hit.
 - Browser boot uses one API request for current UI state.
 - Failed refresh never replaces the previous good snapshot.
-- Redis can be rebuilt from Supabase and Neo4j-derived data.
-- Redis outage degrades to Supabase fallback rather than blank UI.
+- Redis can be rebuilt from Postgres and Neo4j-derived data.
+- Redis outage degrades to Postgres fallback rather than blank UI.
 - Logs and response headers make cache behavior visible.

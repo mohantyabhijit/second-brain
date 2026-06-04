@@ -48,6 +48,7 @@ type Config struct {
 	XTokenRotationPath           string
 	YouTubePlaylistID            string
 	YouTubeTranscriptTestVideoID string
+	SupadataMonthlyRequestLimit  int
 	OpenAITranslationModel       string
 	OpenAISynthesisModel         string
 	OpenAIChatModel              string
@@ -118,6 +119,7 @@ func Load() Config {
 		XTokenRotationPath:           value("X_TOKEN_ROTATION_PATH", "../data/runtime/x-token-rotation.json"),
 		YouTubePlaylistID:            value("YOUTUBE_PLAYLIST_ID", defaultYouTubePlaylistID),
 		YouTubeTranscriptTestVideoID: os.Getenv("YOUTUBE_TRANSCRIPT_TEST_VIDEO_ID"),
+		SupadataMonthlyRequestLimit:  intValue("SUPADATA_MONTHLY_REQUEST_LIMIT", 100),
 		OpenAITranslationModel:       value("OPENAI_TRANSLATION_MODEL", "gpt-4o-mini"),
 		OpenAISynthesisModel:         value("OPENAI_SYNTHESIS_MODEL", "gpt-5.5"),
 		OpenAIChatModel:              value("OPENAI_CHAT_MODEL", value("OPENAI_SYNTHESIS_MODEL", "gpt-5.5")),

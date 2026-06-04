@@ -114,10 +114,49 @@ func (s *Service) fetchYouTubeTranscriptsForNewMaterials(ctx context.Context, it
 			items[index].TranscriptError = "Transcript already ingested and processed; skipped provider refetch."
 			continue
 		}
+		if !s.supadataConfigured() {
+			items[index].TranscriptStatus = "blocked"
+			items[index].TranscriptError = credentialHint("SUPADATA_API_KEY")
+			continue
+		}
+		claimed, err := s.claimYouTubeTranscriptRequest(ctx, item.VideoID)
+		if err != nil {
+			items[index].TranscriptStatus = "blocked"
+			items[index].TranscriptError = "Supadata request skipped because the durable per-video request ledger is unavailable: " + err.Error()
+			continue
+		}
+		if !claimed {
+			items[index].TranscriptStatus = "cached"
+			items[index].TranscriptError = "Supadata request already recorded for this video or the monthly request budget is exhausted; skipped provider call."
+			continue
+		}
 		transcript := s.fetchSupadataTranscript(ctx, item.VideoID)
+		s.completeYouTubeTranscriptRequest(ctx, item.VideoID, transcript)
 		items[index] = mergeTranscript(item, transcript)
 	}
 	return items
+}
+
+func (s *Service) supadataConfigured() bool {
+	return os.Getenv("SUPADATA_API_KEY") != "" || s.cfg.OneCLIGateway
+}
+
+func (s *Service) claimYouTubeTranscriptRequest(ctx context.Context, videoID string) (bool, error) {
+	store, ok := s.store.(youtubeTranscriptRequestStore)
+	if !ok {
+		return false, fmt.Errorf("configured store does not support transcript request claims")
+	}
+	return store.ClaimYouTubeTranscriptRequest(ctx, s.cfg.OwnerID, strings.TrimSpace(videoID), s.cfg.SupadataMonthlyRequestLimit)
+}
+
+func (s *Service) completeYouTubeTranscriptRequest(ctx context.Context, videoID string, transcript YouTubeItem) {
+	store, ok := s.store.(youtubeTranscriptRequestStore)
+	if !ok {
+		return
+	}
+	if err := store.CompleteYouTubeTranscriptRequest(ctx, s.cfg.OwnerID, strings.TrimSpace(videoID), transcript.TranscriptStatus, transcript.TranscriptError); err != nil && s.logger != nil {
+		s.logger.Warn("youtube transcript request ledger completion failed", "video_id", videoID, "status", transcript.TranscriptStatus, "error", err)
+	}
 }
 
 func (s *Service) fetchPlaylistItems(ctx context.Context, playlistID string, limit int) ([]YouTubeItem, error) {
@@ -193,30 +232,15 @@ func (s *Service) attachVideoDurations(ctx context.Context, items []YouTubeItem)
 }
 
 func (s *Service) fetchSupadataTranscript(ctx context.Context, videoID string) YouTubeItem {
-	if os.Getenv("SUPADATA_API_KEY") == "" && !s.cfg.OneCLIGateway {
+	if !s.supadataConfigured() {
 		return YouTubeItem{TranscriptStatus: "blocked", TranscriptError: credentialHint("SUPADATA_API_KEY")}
 	}
 
-	attempts := []transcriptAttempt{
-		{label: "english native", lang: "en", mode: "native"},
-		{label: "native auto-language", mode: "native"},
-		{label: "hindi native", lang: "hi", mode: "native"},
-		{label: "default transcript"},
+	transcript := s.fetchSupadataTranscriptAttempt(ctx, videoID, transcriptAttempt{mode: "native"})
+	if transcript.TranscriptStatus == "missing" {
+		transcript.TranscriptError = "Transcript unavailable from the single Supadata native auto-language request. " + transcript.TranscriptError
 	}
-
-	var missingResults []string
-	for _, attempt := range attempts {
-		transcript := s.fetchSupadataTranscriptAttempt(ctx, videoID, attempt)
-		if transcript.TranscriptStatus == "available" || transcript.TranscriptStatus == "blocked" {
-			return transcript
-		}
-		missingResults = append(missingResults, fmt.Sprintf("%s: %s", attempt.label, transcript.TranscriptError))
-	}
-
-	return YouTubeItem{
-		TranscriptStatus: "missing",
-		TranscriptError:  "Transcript unavailable after retrying Supadata variants. " + strings.Join(missingResults, " | "),
-	}
+	return transcript
 }
 
 func (s *Service) fetchSupadataTranscriptAttempt(ctx context.Context, videoID string, attempt transcriptAttempt) YouTubeItem {

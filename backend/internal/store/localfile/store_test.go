@@ -22,6 +22,48 @@ func TestReadLatestReturnsNilWhenRunFileDoesNotExist(t *testing.T) {
 	}
 }
 
+func TestYouTubeTranscriptRequestClaimPersistsAcrossStoreInstances(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "runtime", "latest.json")
+	first := New(path)
+
+	claimed, err := first.ClaimYouTubeTranscriptRequest(context.Background(), "owner-1", "video-1", 100)
+	if err != nil {
+		t.Fatalf("claim transcript request: %v", err)
+	}
+	if !claimed {
+		t.Fatal("expected first transcript request claim to succeed")
+	}
+	if err := first.CompleteYouTubeTranscriptRequest(context.Background(), "owner-1", "video-1", "missing", "not available"); err != nil {
+		t.Fatalf("complete transcript request: %v", err)
+	}
+
+	second := New(path)
+	claimed, err = second.ClaimYouTubeTranscriptRequest(context.Background(), "owner-1", "video-1", 100)
+	if err != nil {
+		t.Fatalf("recheck transcript request claim: %v", err)
+	}
+	if claimed {
+		t.Fatal("expected transcript request claim to survive process restart")
+	}
+}
+
+func TestYouTubeTranscriptRequestClaimHonorsMonthlyLimit(t *testing.T) {
+	store := New(filepath.Join(t.TempDir(), "runtime", "latest.json"))
+
+	first, err := store.ClaimYouTubeTranscriptRequest(context.Background(), "owner-1", "video-1", 1)
+	if err != nil {
+		t.Fatalf("claim first transcript request: %v", err)
+	}
+	second, err := store.ClaimYouTubeTranscriptRequest(context.Background(), "owner-1", "video-2", 1)
+	if err != nil {
+		t.Fatalf("claim second transcript request: %v", err)
+	}
+
+	if !first || second {
+		t.Fatalf("expected one claim within monthly limit, got first=%t second=%t", first, second)
+	}
+}
+
 func TestSaveRunReadLatestAndReadCachedSyntheses(t *testing.T) {
 	store := New(filepath.Join(t.TempDir(), "runtime", "latest.json"))
 	generatedAt := time.Date(2026, 1, 1, 10, 0, 0, 0, time.UTC)

@@ -26,6 +26,20 @@ Key paths:
 
 The frontend never uses the database connection directly. It calls the Go API for product data, and the Go API uses `DATABASE_URL`. Supabase Auth is the sole authentication provider; the Go API validates its bearer sessions before protected operator actions.
 
+## Production Topology
+
+Production is split across two shared 1 GB DigitalOcean droplets:
+
+- `ubuntu-sgp` runs nginx, the static Next.js export, the Go API and worker,
+  Redis, and private filesystem object storage.
+- `codex-crapbox` runs PostgreSQL 17 with pgvector. The application connects to
+  it over the DigitalOcean private VPC.
+
+Cloudflare Free fronts nginx and caches public static files and app-state
+responses. Supabase provides Auth only. Neo4j Aura, OneCLI, OpenAI, X,
+Supadata, Exa, and Resend are external provider dependencies with the optional
+and required boundaries documented in `docs/service-exit-plan.md`.
+
 ## Storage Architecture
 
 The app uses five storage surfaces with separate responsibilities:
@@ -51,6 +65,10 @@ Core tables:
 - `source_objects`: pointers to object-storage paths and their checksums, attached to the source item and source capture.
 - `source_chunks`: chunked evidence text derived from source captures and generated summaries.
 - `source_embeddings`: pgvector-backed embeddings for chunks, summaries, extracted entity labels, and compatibility insight vectors, scoped to the capture that produced them.
+- `youtube_transcript_requests`: atomic per-owner/per-video Supadata request
+  ledger. It prevents repeated transcription requests across refreshes,
+  deployments, prompt/model changes, and concurrent workers, and enforces the
+  configured monthly request ceiling.
 - `knowledge_syntheses`: prompt-versioned summaries, insights, and action items keyed by source capture, prompt version, and model. The JSON insight payload remains as a run artifact for compatibility.
 - `insights`, `insight_evidence`, and `insight_embeddings`: first-class insight records with raw, canonical, abstract, and practical forms, grounded evidence, and vectors for similarity search.
 - `knowledge_runs`: ingestion and refresh audit log for UI replay and debugging.
@@ -81,7 +99,7 @@ artifacts/{source_type}/{external_id}/{capture_hash}/{prompt_version}/{model}/su
 exports/{run_id}/knowledge-pack.json
 ```
 
-The backend writes private text objects with `OBJECT_STORAGE_BACKEND=filesystem`, `OBJECT_STORAGE_ROOT=/srv/second-brain/object-storage`, and `OBJECT_STORAGE_BUCKET=sources`. Supabase is used only for Auth in production; the legacy Supabase Storage backend remains available only for rollback/export while the old project exists.
+The backend writes private text objects with `OBJECT_STORAGE_BACKEND=filesystem`, `OBJECT_STORAGE_ROOT=/srv/second-brain/object-storage`, and `OBJECT_STORAGE_BUCKET=sources`. Supabase is used only for Auth in production. The backend intentionally has no Supabase Database or Storage fallback.
 
 ## Vector Database
 
@@ -128,3 +146,14 @@ The browser must not connect directly to Postgres. Backend connections should us
 Browser clients should not get broad object storage access. The Go API should issue scoped reads or signed URLs only for objects the current user is allowed to inspect.
 
 Neo4j credentials must stay server-side. The frontend should request graph-derived views through the Go API instead of connecting to Neo4j directly.
+
+## Operational Constraints
+
+- Neither current 1 GB droplet has enough headroom to safely consolidate all
+  application, database, cache, and development workloads.
+- Redis and Neo4j are derived stores; PostgreSQL and filesystem objects are
+  canonical and must be backed up before either host is replaced.
+- Backups must be recurring, encrypted, and copied off both droplets. A dump on
+  `ubuntu-sgp` does not protect against losing that host.
+- `codex-crapbox` development workloads must be isolated from or moved away
+  from PostgreSQL before the database is treated as highly available.
