@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -14,6 +15,19 @@ import (
 )
 
 const digestPromptVersion = prompts.DigestPromptVersion
+const digestPromptMaxOutputTokens = 5000
+
+type digestPromptFormatError struct {
+	err error
+}
+
+func (e *digestPromptFormatError) Error() string {
+	return e.err.Error()
+}
+
+func (e *digestPromptFormatError) Unwrap() error {
+	return e.err
+}
 
 type promptDigestResponse struct {
 	Subject      string   `json:"subject"`
@@ -59,7 +73,7 @@ func (s *Service) promptDigest(ctx context.Context, base DigestIssue, summaries 
 		digestNewsletterPromptLines(base),
 		truncate(digestPromptInput(summaries, insights, themes, insightClusters, connections), 16000),
 	)
-	return s.promptDigestWithLines(ctx, s.cfg.OpenAISynthesisModel, promptLines, 3000)
+	return s.promptDigestWithLines(ctx, s.cfg.OpenAISynthesisModel, promptLines, digestPromptMaxOutputTokens)
 }
 
 func (s *Service) promptDigestWithLines(ctx context.Context, model string, promptLines []string, maxOutputTokens int) (promptDigestResponse, error) {
@@ -69,8 +83,34 @@ func (s *Service) promptDigestWithLines(ctx context.Context, model string, promp
 	if maxOutputTokens <= 0 {
 		maxOutputTokens = 3000
 	}
+	payload, err := s.promptDigestOnce(ctx, model, promptLines, maxOutputTokens)
+	if err == nil {
+		return payload, nil
+	}
+	var formatErr *digestPromptFormatError
+	if !errors.As(err, &formatErr) {
+		return promptDigestResponse{}, err
+	}
+
+	s.logger.Warn("retrying digest newsletter synthesis after incomplete response", "error", err)
+	retryLines := append([]string(nil), promptLines...)
+	retryLines = append(retryLines,
+		"",
+		"RETRY REQUIREMENT",
+		"The previous response was incomplete or malformed JSON: "+err.Error(),
+		"Return one complete valid JSON object only. Keep the essay concise enough to finish within the output limit.",
+	)
+	payload, retryErr := s.promptDigestOnce(ctx, model, retryLines, max(maxOutputTokens, digestPromptMaxOutputTokens))
+	if retryErr != nil {
+		return promptDigestResponse{}, fmt.Errorf("digest response retry after %v failed: %w", err, retryErr)
+	}
+	return payload, nil
+}
+
+func (s *Service) promptDigestOnce(ctx context.Context, model string, promptLines []string, maxOutputTokens int) (promptDigestResponse, error) {
 	requestBody := map[string]any{
 		"model":             model,
+		"text":              map[string]any{"format": map[string]any{"type": "json_object"}},
 		"input":             strings.Join(promptLines, "\n"),
 		"max_output_tokens": maxOutputTokens,
 	}
@@ -88,6 +128,13 @@ func (s *Service) promptDigestWithLines(ctx context.Context, model string, promp
 	if response.Error != nil && response.Error.Message != "" {
 		return promptDigestResponse{}, fmt.Errorf(response.Error.Message)
 	}
+	if strings.EqualFold(strings.TrimSpace(response.Status), "incomplete") {
+		reason := "unknown"
+		if response.IncompleteDetails != nil && strings.TrimSpace(response.IncompleteDetails.Reason) != "" {
+			reason = strings.TrimSpace(response.IncompleteDetails.Reason)
+		}
+		return promptDigestResponse{}, &digestPromptFormatError{err: fmt.Errorf("model response incomplete: %s", reason)}
+	}
 	text := response.OutputText
 	if strings.TrimSpace(text) == "" {
 		parts := []string{}
@@ -100,9 +147,12 @@ func (s *Service) promptDigestWithLines(ctx context.Context, model string, promp
 		}
 		text = strings.Join(parts, "\n")
 	}
+	if strings.TrimSpace(text) == "" {
+		return promptDigestResponse{}, &digestPromptFormatError{err: fmt.Errorf("model returned empty output")}
+	}
 	var payload promptDigestResponse
 	if err := json.Unmarshal([]byte(extractJSONObject(text)), &payload); err != nil {
-		return promptDigestResponse{}, err
+		return promptDigestResponse{}, &digestPromptFormatError{err: fmt.Errorf("malformed model JSON: %w", err)}
 	}
 	return payload, nil
 }
