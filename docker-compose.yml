@@ -1,0 +1,104 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    image: second-brain-api:observability
+    environment:
+      APP_ENV: ${APP_ENV:-development}
+      PORT: "8080"
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      LOG_ERROR_STACK: ${LOG_ERROR_STACK:-true}
+      LOG_DEBUG_SAMPLE_RATE: ${LOG_DEBUG_SAMPLE_RATE:-1}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost:3000,http://127.0.0.1:3000}
+      DATABASE_URL: ${DATABASE_URL:-}
+      OBJECT_STORAGE_BACKEND: ${OBJECT_STORAGE_BACKEND:-filesystem}
+      OBJECT_STORAGE_ROOT: /app/data/object-storage
+      OBJECT_STORAGE_BUCKET: ${OBJECT_STORAGE_BUCKET:-sources}
+      KNOWLEDGE_RUN_PATH: /app/data/runtime/latest-knowledge-run.json
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-http://localhost:8080}
+      SUPABASE_URL: ${SUPABASE_URL:-}
+      SUPABASE_PUBLISHABLE_KEY: ${SUPABASE_PUBLISHABLE_KEY:-}
+      PUBLIC_OWNER_ID: ${PUBLIC_OWNER_ID:-00000000-0000-0000-0000-000000000001}
+      PUBLIC_OWNER_HANDLE: ${PUBLIC_OWNER_HANDLE:-abhijitmohanty}
+      PUBLIC_OWNER_EMAIL: ${PUBLIC_OWNER_EMAIL:-}
+      REDIS_CACHE_ENABLED: ${REDIS_CACHE_ENABLED:-false}
+      REDIS_URL: ${REDIS_URL:-}
+      LANGFUSE_TRACING_ENABLED: ${LANGFUSE_TRACING_ENABLED:-false}
+      MEMORY_PROFILING_ENABLED: ${MEMORY_PROFILING_ENABLED:-false}
+    labels:
+      observability.logs: "true"
+      observability.app: second-brain
+      observability.service: api
+      observability.environment: ${APP_ENV:-development}
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./data:/app/data
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "5"
+
+  loki:
+    image: grafana/loki:3.7.2
+    command:
+      - -config.file=/etc/loki/loki.yml
+      - -config.expand-env=true
+    environment:
+      LOKI_RETENTION_PERIOD: ${LOKI_RETENTION_PERIOD:-168h}
+    ports:
+      - "3100:3100"
+    volumes:
+      - ./observability/loki/loki.yml:/etc/loki/loki.yml:ro
+      - loki_data:/loki
+
+  fluent-bit:
+    image: fluent/fluent-bit:4.1.0
+    depends_on:
+      - loki
+    volumes:
+      - ./observability/fluent-bit/fluent-bit.conf:/fluent-bit/etc/fluent-bit.conf:ro
+      - ./observability/fluent-bit/parsers.conf:/fluent-bit/etc/parsers.conf:ro
+      - ./observability/fluent-bit/loki-labels.json:/fluent-bit/etc/loki-labels.json:ro
+      - fluent_bit_data:/fluent-bit/state
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+
+  promtail:
+    image: grafana/promtail:3.6.0
+    profiles:
+      - promtail
+    command:
+      - -config.file=/etc/promtail/promtail.yml
+      - -config.expand-env=true
+    depends_on:
+      - loki
+    volumes:
+      - ./observability/promtail/promtail.yml:/etc/promtail/promtail.yml:ro
+      - promtail_positions:/tmp
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+
+  grafana:
+    image: grafana/grafana:13.0.1
+    depends_on:
+      - loki
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+      GF_USERS_DEFAULT_THEME: light
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+    ports:
+      - "3001:3000"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./observability/grafana/provisioning/datasources:/etc/grafana/provisioning/datasources:ro
+      - ./observability/grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ./observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
+
+volumes:
+  grafana_data:
+  fluent_bit_data:
+  loki_data:
+  promtail_positions:

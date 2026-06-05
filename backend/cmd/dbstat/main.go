@@ -6,25 +6,29 @@ import (
 	"os"
 	"time"
 
+	"github.com/abhijitmohanty/second-brain/backend/internal/config"
+	"github.com/abhijitmohanty/second-brain/backend/internal/platform/logging"
 	"github.com/jackc/pgx/v5"
 )
 
 func main() {
-	databaseURL := os.Getenv("DATABASE_URL")
+	cfg := config.Load()
+	logger := logging.NewForConfig("dbstat", cfg)
+	databaseURL := cfg.DatabaseURL
 	if databaseURL == "" {
-		fmt.Fprintln(os.Stderr, "DATABASE_URL is required")
+		logger.Error("DATABASE_URL is required")
 		os.Exit(1)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 	conn, err := pgx.Connect(ctx, databaseURL)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		logger.Error("connect postgres", "error", err)
 		os.Exit(1)
 	}
 	defer conn.Close(ctx)
 
-	printCounts(ctx, conn)
+	printCounts(ctx, conn, logger)
 
 	rows, err := conn.Query(ctx, `
 		select pid, state, wait_event_type, wait_event, (now() - query_start)::text as age, left(query, 220) as query
@@ -34,7 +38,7 @@ func main() {
 		limit 20
 	`)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		logger.Error("read postgres activity", "error", err)
 		os.Exit(1)
 	}
 	defer rows.Close()
@@ -42,14 +46,14 @@ func main() {
 		var pid int
 		var state, waitType, waitEvent, age, query *string
 		if err := rows.Scan(&pid, &state, &waitType, &waitEvent, &age, &query); err != nil {
-			fmt.Fprintln(os.Stderr, err)
+			logger.Error("scan postgres activity", "error", err)
 			os.Exit(1)
 		}
-		fmt.Printf("pid=%d state=%s wait=%s/%s age=%s query=%q\n", pid, str(state), str(waitType), str(waitEvent), str(age), str(query))
+		logger.Info("postgres activity", "pid", pid, "state", str(state), "wait_type", str(waitType), "wait_event", str(waitEvent), "age", str(age), "query", str(query))
 	}
 }
 
-func printCounts(ctx context.Context, conn *pgx.Conn) {
+func printCounts(ctx context.Context, conn *pgx.Conn, logger *logging.Logger) {
 	tables := []string{
 		"knowledge_runs",
 		"source_items",
@@ -67,10 +71,10 @@ func printCounts(ctx context.Context, conn *pgx.Conn) {
 		var count int64
 		query := fmt.Sprintf("select count(*) from %s", pgx.Identifier{table}.Sanitize())
 		if err := conn.QueryRow(ctx, query).Scan(&count); err != nil {
-			fmt.Printf("table=%s count_error=%q\n", table, err.Error())
+			logger.Warn("postgres table count failed", "table", table, "error", err)
 			continue
 		}
-		fmt.Printf("table=%s count=%d\n", table, count)
+		logger.Info("postgres table count", "table", table, "count", count)
 	}
 }
 

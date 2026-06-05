@@ -277,7 +277,7 @@ func (s *Service) refreshXAccessToken(ctx context.Context) (string, error) {
 	clientID := strings.TrimSpace(s.cfg.XClientID)
 	refreshToken := strings.TrimSpace(os.Getenv("X_REFRESH_TOKEN"))
 	if clientID == "" || (refreshToken == "" && !s.cfg.OneCLIGateway) {
-		s.logger.Warn("x token refresh skipped", "reason", "X_CLIENT_ID or X_REFRESH_TOKEN missing")
+		s.log(ctx).Warn("x token refresh skipped", "reason", "X_CLIENT_ID or X_REFRESH_TOKEN missing")
 		return strings.TrimSpace(os.Getenv("X_USER_ACCESS_TOKEN")), nil
 	}
 
@@ -288,21 +288,21 @@ func (s *Service) refreshXAccessToken(ctx context.Context) (string, error) {
 			return "", s.xReauthorizationError()
 		}
 		if configuredXAccessTokenAvailable(s.cfg.OneCLIGateway) {
-			s.logger.Warn("x token refresh failed; falling back to configured X access token", "error", err)
+			s.log(ctx).Warn("x token refresh failed; falling back to configured X access token", "error", err)
 			return strings.TrimSpace(os.Getenv("X_USER_ACCESS_TOKEN")), nil
 		}
 		return "", fmt.Errorf("X token refresh failed: %w", err)
 	}
 	if strings.TrimSpace(payload.AccessToken) == "" {
 		if configuredXAccessTokenAvailable(s.cfg.OneCLIGateway) {
-			s.logger.Warn("x token refresh returned no access token; falling back to configured X access token")
+			s.log(ctx).Warn("x token refresh returned no access token; falling back to configured X access token")
 			return strings.TrimSpace(os.Getenv("X_USER_ACCESS_TOKEN")), nil
 		}
 		return "", fmt.Errorf("X token refresh returned no access token")
 	}
 	if strings.TrimSpace(payload.RefreshToken) == "" {
 		if configuredXAccessTokenAvailable(s.cfg.OneCLIGateway) {
-			s.logger.Warn("x token refresh returned no rotated refresh token; falling back to configured X access token")
+			s.log(ctx).Warn("x token refresh returned no rotated refresh token; falling back to configured X access token")
 			return strings.TrimSpace(os.Getenv("X_USER_ACCESS_TOKEN")), nil
 		}
 		return "", fmt.Errorf("X token refresh returned no rotated refresh token")
@@ -323,19 +323,19 @@ func (s *Service) refreshXAccessToken(ctx context.Context) (string, error) {
 			TokenType:       strings.TrimSpace(payload.TokenType),
 			UpdatedAt:       rotatedAt,
 		}, nil); err != nil {
-			s.logger.Warn("persist rotated X tokens to shared store failed", "error", err)
+			s.log(ctx).Warn("persist rotated X tokens to shared store failed", "error", err)
 		}
 	}
 	if err := s.recordXTokenRotation(ctx, payload, rotatedAt); err != nil {
-		s.logger.Warn("record X token rotation metadata failed", "error", err)
+		s.log(ctx).Warn("record X token rotation metadata failed", "error", err)
 	}
 	if err := persistXTokensToKeychain(ctx, s.cfg.XKeychainTokenSuffix, payload.AccessToken, payload.RefreshToken); err != nil {
-		s.logger.Warn("persist rotated X tokens to Keychain failed", "error", err)
+		s.log(ctx).Warn("persist rotated X tokens to Keychain failed", "error", err)
 	}
 	if err := s.rotateOneCLIXSecrets(ctx, payload.AccessToken, payload.RefreshToken); err != nil {
 		return "", err
 	}
-	s.logger.Info("x token refresh completed", "duration_ms", time.Since(start).Milliseconds(), "expires_in", payload.ExpiresIn, "scope", payload.Scope)
+	s.log(ctx).Info("x token refresh completed", "duration_ms", time.Since(start).Milliseconds(), "expires_in", payload.ExpiresIn, "scope", payload.Scope)
 	return payload.AccessToken, nil
 }
 

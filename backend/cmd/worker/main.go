@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -18,6 +17,7 @@ import (
 	"github.com/abhijitmohanty/second-brain/backend/internal/config"
 	"github.com/abhijitmohanty/second-brain/backend/internal/knowledge"
 	"github.com/abhijitmohanty/second-brain/backend/internal/platform/httpclient"
+	"github.com/abhijitmohanty/second-brain/backend/internal/platform/logging"
 	platformtracing "github.com/abhijitmohanty/second-brain/backend/internal/platform/tracing"
 	"github.com/abhijitmohanty/second-brain/backend/internal/store/localfile"
 	"github.com/abhijitmohanty/second-brain/backend/internal/store/postgres"
@@ -25,8 +25,8 @@ import (
 )
 
 func main() {
-	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
 	cfg := config.Load()
+	logger := logging.NewForConfig("worker", cfg)
 	shutdownTracing, _ := platformtracing.StartLangfuse(context.Background(), cfg, "second-brain-worker", logger)
 	defer func() {
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -96,7 +96,7 @@ type refreshOutcome struct {
 	skippedReason string
 }
 
-func runOnce(ctx context.Context, cfg config.Config, service *knowledge.Service, logger *slog.Logger) refreshOutcome {
+func runOnce(ctx context.Context, cfg config.Config, service *knowledge.Service, logger *logging.Logger) refreshOutcome {
 	runCtx, cancel := context.WithTimeout(ctx, parseDuration(cfg.RefreshTimeout, 90*time.Minute))
 	defer cancel()
 	outcome, err := service.RunCycle(runCtx)
@@ -109,7 +109,7 @@ func runOnce(ctx context.Context, cfg config.Config, service *knowledge.Service,
 	return refreshOutcome{ok: true, newContent: outcome.NewContent, skippedReason: fallbackReason(outcome.SkippedReason, "no_new_source_materials")}
 }
 
-func generateDigest(ctx context.Context, service *knowledge.Service, logger *slog.Logger, reason string) {
+func generateDigest(ctx context.Context, service *knowledge.Service, logger *logging.Logger, reason string) {
 	digestCtx, cancel := context.WithTimeout(ctx, 3*time.Minute)
 	defer cancel()
 	digest, err := service.GenerateDigest(digestCtx)
@@ -124,7 +124,7 @@ func generateDigest(ctx context.Context, service *knowledge.Service, logger *slo
 	logger.Info("worker digest completed", "reason", reason, "date", digest.DigestDate, "status", digest.Status, "subject", digest.Subject)
 }
 
-func publishReadModels(ctx context.Context, service *knowledge.Service, logger *slog.Logger, reason string) {
+func publishReadModels(ctx context.Context, service *knowledge.Service, logger *logging.Logger, reason string) {
 	precomputeCtx, cancel := context.WithTimeout(ctx, 2*time.Minute)
 	defer cancel()
 	state, err := service.PublishReadModels(precomputeCtx, reason)
@@ -135,7 +135,7 @@ func publishReadModels(ctx context.Context, service *knowledge.Service, logger *
 	logger.Info("worker precompute completed", "reason", reason, "run_id", state.Manifest.RunID, "etag", state.Manifest.ETag)
 }
 
-func runGraphSync(ctx context.Context, cfg config.Config, logger *slog.Logger) {
+func runGraphSync(ctx context.Context, cfg config.Config, logger *logging.Logger) {
 	if strings.TrimSpace(cfg.Neo4jURI) == "" || strings.TrimSpace(cfg.Neo4jUsername) == "" || strings.TrimSpace(cfg.Neo4jPassword) == "" {
 		logger.Info("worker graph sync skipped", "reason", "NEO4J_URI, NEO4J_USERNAME, and NEO4J_PASSWORD are required for graph sync")
 		return
@@ -163,7 +163,7 @@ func runGraphSync(ctx context.Context, cfg config.Config, logger *slog.Logger) {
 	logger.Info("worker graph sync completed")
 }
 
-func openStore(ctx context.Context, cfg config.Config, logger *slog.Logger) (knowledge.Store, func()) {
+func openStore(ctx context.Context, cfg config.Config, logger *logging.Logger) (knowledge.Store, func()) {
 	if cfg.DatabaseURL == "" {
 		logger.Warn("DATABASE_URL missing; using local knowledge run file", "path", cfg.KnowledgeRunPath)
 		return localfile.New(cfg.KnowledgeRunPath), func() {}

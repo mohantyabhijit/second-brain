@@ -2,7 +2,6 @@ package httpapi
 
 import (
 	"crypto/subtle"
-	"log/slog"
 	"net/http"
 	"net/http/pprof"
 	"runtime"
@@ -11,6 +10,7 @@ import (
 
 	"github.com/abhijitmohanty/second-brain/backend/internal/config"
 	"github.com/abhijitmohanty/second-brain/backend/internal/platform/httputil"
+	"github.com/abhijitmohanty/second-brain/backend/internal/platform/logging"
 )
 
 type memoryStatsResponse struct {
@@ -34,7 +34,7 @@ type memoryStatsResponse struct {
 	GoroutineProfilePath string `json:"goroutineProfilePath"`
 }
 
-func registerProfilingRoutes(mux *http.ServeMux, cfg config.Config, logger *slog.Logger) {
+func registerProfilingRoutes(mux *http.ServeMux, cfg config.Config, logger *logging.Logger) {
 	if !cfg.MemoryProfilingEnabled {
 		return
 	}

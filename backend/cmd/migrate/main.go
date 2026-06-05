@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"os"
 	"path/filepath"
 	"slices"
@@ -11,12 +10,13 @@ import (
 	"time"
 
 	"github.com/abhijitmohanty/second-brain/backend/internal/config"
+	"github.com/abhijitmohanty/second-brain/backend/internal/platform/logging"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 func main() {
-	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 	cfg := config.Load()
+	logger := logging.NewForConfig("migrate", cfg)
 	if cfg.DatabaseURL == "" {
 		logger.Error("DATABASE_URL is required")
 		os.Exit(1)
@@ -62,7 +62,7 @@ func main() {
 	}
 }
 
-func applyMigration(ctx context.Context, pool *pgxpool.Pool, file string, logger *slog.Logger) error {
+func applyMigration(ctx context.Context, pool *pgxpool.Pool, file string, logger *logging.Logger) error {
 	version := strings.TrimSuffix(filepath.Base(file), filepath.Ext(file))
 
 	var exists bool

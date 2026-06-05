@@ -86,6 +86,9 @@ type Config struct {
 	Neo4jPassword                   string
 	Neo4jDatabase                   string
 	GraphSyncBatchSize              int
+	LogLevel                        string
+	LogErrorStack                   bool
+	LogDebugSampleRate              int
 }
 
 func Load() Config {
@@ -164,6 +167,9 @@ func Load() Config {
 		Neo4jPassword:                   os.Getenv("NEO4J_PASSWORD"),
 		Neo4jDatabase:                   value("NEO4J_DATABASE", "neo4j"),
 		GraphSyncBatchSize:              intValue("GRAPH_SYNC_BATCH_SIZE", 50),
+		LogLevel:                        value("LOG_LEVEL", "info"),
+		LogErrorStack:                   value("LOG_ERROR_STACK", "true") == "true",
+		LogDebugSampleRate:              intValue("LOG_DEBUG_SAMPLE_RATE", 1),
 	}
 }
 

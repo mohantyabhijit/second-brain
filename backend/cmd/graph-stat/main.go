@@ -2,18 +2,17 @@ package main
 
 import (
 	"context"
-	"fmt"
-	"log/slog"
 	"os"
 	"time"
 
 	"github.com/abhijitmohanty/second-brain/backend/internal/config"
+	"github.com/abhijitmohanty/second-brain/backend/internal/platform/logging"
 	"github.com/neo4j/neo4j-go-driver/v5/neo4j"
 )
 
 func main() {
-	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
 	cfg := config.Load()
+	logger := logging.NewForConfig("graph-stat", cfg)
 	if cfg.Neo4jURI == "" || cfg.Neo4jUsername == "" || cfg.Neo4jPassword == "" {
 		logger.Error("NEO4J_URI, NEO4J_USERNAME, and NEO4J_PASSWORD are required for graph stat")
 		os.Exit(1)
@@ -50,12 +49,13 @@ func main() {
 		if err != nil {
 			return false, err
 		}
-		fmt.Printf(
-			"sources=%d captures=%d insights=%d actions=%d\n",
-			asInt64(record.AsMap()["sources"]),
-			asInt64(record.AsMap()["captures"]),
-			asInt64(record.AsMap()["insights"]),
-			asInt64(record.AsMap()["actions"]),
+		fields := record.AsMap()
+		logger.Info(
+			"neo4j graph stats",
+			"sources", asInt64(fields["sources"]),
+			"captures", asInt64(fields["captures"]),
+			"insights", asInt64(fields["insights"]),
+			"actions", asInt64(fields["actions"]),
 		)
 		return true, nil
 	})

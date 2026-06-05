@@ -25,7 +25,7 @@ func (s *Service) retrieveGraphSources(ctx context.Context, question string, lim
 
 	driver, err := neo4j.NewDriverWithContext(s.cfg.Neo4jURI, neo4j.BasicAuth(s.cfg.Neo4jUsername, s.cfg.Neo4jPassword, ""))
 	if err != nil {
-		s.logger.Warn("neo4j graph rag connection failed", "error", err)
+		s.log(ctx).Warn("neo4j graph rag connection failed", "error", err)
 		return nil
 	}
 	defer driver.Close(queryCtx)
@@ -92,7 +92,7 @@ func (s *Service) retrieveGraphSources(ctx context.Context, question string, lim
 		return sources, rows.Err()
 	})
 	if err != nil {
-		s.logger.Warn("neo4j graph rag query failed", "error", err)
+		s.log(ctx).Warn("neo4j graph rag query failed", "error", err)
 		return nil
 	}
 	return results

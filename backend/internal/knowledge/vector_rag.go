@@ -27,7 +27,7 @@ func (s *Service) retrieveVectorSources(ctx context.Context, question string, li
 	}
 	sources, err := store.SearchAskSources(queryCtx, s.cfg.OwnerID, s.embeddingModel(), vectors[0], question, limit)
 	if err != nil {
-		s.logger.Warn("pgvector rag query failed", "error", err)
+		s.log(ctx).Warn("pgvector rag query failed", "error", err)
 		return nil
 	}
 	for index := range sources {

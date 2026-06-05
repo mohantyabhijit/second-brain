@@ -3,15 +3,16 @@ package tracing
 import (
 	"context"
 	"encoding/base64"
-	"log/slog"
 	"strings"
 	"time"
 
 	"github.com/abhijitmohanty/second-brain/backend/internal/config"
 	"github.com/abhijitmohanty/second-brain/backend/internal/platform/httpclient"
+	"github.com/abhijitmohanty/second-brain/backend/internal/platform/logging"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
+	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/sdk/resource"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 )
@@ -20,10 +21,11 @@ type Shutdown func(context.Context)
 
 const langfuseOTLPTracesPath = "/api/public/otel/v1/traces"
 
-func StartLangfuse(ctx context.Context, cfg config.Config, serviceName string, logger *slog.Logger) (Shutdown, bool) {
+func StartLangfuse(ctx context.Context, cfg config.Config, serviceName string, logger *logging.Logger) (Shutdown, bool) {
 	if logger == nil {
-		logger = slog.Default()
+		logger = logging.Default()
 	}
+	otel.SetTextMapPropagator(propagation.TraceContext{})
 	if !cfg.LangfuseTracingEnabled {
 		return noopShutdown, false
 	}

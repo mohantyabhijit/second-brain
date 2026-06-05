@@ -69,7 +69,7 @@ func (s *Service) writeStorageArtifact(ctx context.Context, artifact SourceArtif
 	default:
 		artifact.Error = fmt.Sprintf("Object storage backend %q is not supported; metadata recorded without object upload.", s.cfg.ObjectStorageBackend)
 	}
-	s.logger.Warn(
+	s.log(ctx).Warn(
 		label+" upload skipped",
 		"source", artifact.Source,
 		"source_id", artifact.SourceID,
@@ -107,28 +107,28 @@ func (s *Service) writeFilesystemStorageArtifact(ctx context.Context, artifact S
 	objectPath, err := filesystemObjectPath(s.cfg.ObjectStorageRoot, artifact.Bucket, artifact.Path)
 	if err != nil {
 		artifact.Error = fmt.Sprintf("filesystem object storage upload failed: %v", err)
-		s.logger.Warn(label+" upload skipped", "source", artifact.Source, "source_id", artifact.SourceID, "bucket", artifact.Bucket, "path", artifact.Path, "byte_size", artifact.ByteSize, "reason", artifact.Error)
+		s.log(ctx).Warn(label+" upload skipped", "source", artifact.Source, "source_id", artifact.SourceID, "bucket", artifact.Bucket, "path", artifact.Path, "byte_size", artifact.ByteSize, "reason", artifact.Error)
 		return artifact
 	}
 	if err := os.MkdirAll(filepath.Dir(objectPath), 0o750); err != nil {
 		artifact.Error = fmt.Sprintf("filesystem object storage upload failed: %v", err)
-		s.logger.Warn(label+" upload failed", "source", artifact.Source, "source_id", artifact.SourceID, "bucket", artifact.Bucket, "path", artifact.Path, "duration_ms", time.Since(start).Milliseconds(), "error", err)
+		s.log(ctx).Warn(label+" upload failed", "source", artifact.Source, "source_id", artifact.SourceID, "bucket", artifact.Bucket, "path", artifact.Path, "duration_ms", time.Since(start).Milliseconds(), "error", err)
 		return artifact
 	}
 	tmpPath := fmt.Sprintf("%s.tmp-%d", objectPath, time.Now().UnixNano())
 	if err := os.WriteFile(tmpPath, raw, 0o640); err != nil {
 		artifact.Error = fmt.Sprintf("filesystem object storage upload failed: %v", err)
-		s.logger.Warn(label+" upload failed", "source", artifact.Source, "source_id", artifact.SourceID, "bucket", artifact.Bucket, "path", artifact.Path, "duration_ms", time.Since(start).Milliseconds(), "error", err)
+		s.log(ctx).Warn(label+" upload failed", "source", artifact.Source, "source_id", artifact.SourceID, "bucket", artifact.Bucket, "path", artifact.Path, "duration_ms", time.Since(start).Milliseconds(), "error", err)
 		return artifact
 	}
 	if err := os.Rename(tmpPath, objectPath); err != nil {
 		_ = os.Remove(tmpPath)
 		artifact.Error = fmt.Sprintf("filesystem object storage upload failed: %v", err)
-		s.logger.Warn(label+" upload failed", "source", artifact.Source, "source_id", artifact.SourceID, "bucket", artifact.Bucket, "path", artifact.Path, "duration_ms", time.Since(start).Milliseconds(), "error", err)
+		s.log(ctx).Warn(label+" upload failed", "source", artifact.Source, "source_id", artifact.SourceID, "bucket", artifact.Bucket, "path", artifact.Path, "duration_ms", time.Since(start).Milliseconds(), "error", err)
 		return artifact
 	}
 	artifact.Stored = true
-	s.logger.Info(label+" stored", "backend", "filesystem", "source", artifact.Source, "source_id", artifact.SourceID, "bucket", artifact.Bucket, "path", artifact.Path, "byte_size", artifact.ByteSize, "duration_ms", time.Since(start).Milliseconds())
+	s.log(ctx).Info(label+" stored", "backend", "filesystem", "source", artifact.Source, "source_id", artifact.SourceID, "bucket", artifact.Bucket, "path", artifact.Path, "byte_size", artifact.ByteSize, "duration_ms", time.Since(start).Milliseconds())
 	return artifact
 }
 

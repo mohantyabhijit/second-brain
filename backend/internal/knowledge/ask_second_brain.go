@@ -92,7 +92,7 @@ func (s *Service) AskSecondBrain(ctx context.Context, request AskSecondBrainRequ
 
 	answer, model, err := s.promptAskSecondBrain(ctx, question, localSources, usedLatest, searchStatus)
 	if err != nil {
-		s.logger.Warn("ask second brain prompt failed; using extractive answer", "error", err)
+		s.log(ctx).Warn("ask second brain prompt failed; using extractive answer", "error", err)
 		answer = extractiveAskAnswer(question, localSources, usedLatest, searchStatus)
 		model = "extractive-rag-fallback-v1"
 	}
@@ -223,7 +223,7 @@ func (s *Service) exaSearch(ctx context.Context, question string, limit int) ([]
 	headers.Set("Content-Type", "application/json")
 	var response exaSearchResponse
 	if err := s.requestJSON(ctx, http.MethodPost, "https://api.exa.ai/search", headers, bytes.NewReader(raw), &response); err != nil {
-		s.logger.Warn("exa search failed", "error", err)
+		s.log(ctx).Warn("exa search failed", "error", err)
 		return nil, "exa_failed"
 	}
 	sources := make([]AskSecondBrainSource, 0, len(response.Results))

@@ -107,7 +107,7 @@ func (s *Service) promptDigestWithPrompt(ctx context.Context, model string, prom
 		return promptDigestResponse{}, err
 	}
 
-	s.logger.Warn("retrying digest newsletter synthesis after incomplete response", "error", err)
+	s.log(ctx).Warn("retrying digest newsletter synthesis after incomplete response", "error", err)
 	retryPrompt := prompt
 	retryPrompt.Lines = append([]string(nil), prompt.Lines...)
 	retryPrompt.Lines = append(retryPrompt.Lines,
@@ -239,7 +239,7 @@ func (s *Service) digestNewsletterPrompt(ctx context.Context, base DigestIssue, 
 	client := langfuseclient.NewClient(s.cfg, s.client)
 	managedPrompt, err := client.GetTextPrompt(ctx, promptName, promptLabel)
 	if err != nil {
-		s.logger.Warn("using local digest prompt after langfuse prompt fetch failed", "name", promptName, "label", promptLabel, "error", err)
+		s.log(ctx).Warn("using local digest prompt after langfuse prompt fetch failed", "name", promptName, "label", promptLabel, "error", err)
 		localPrompt.LangfusePromptFallback = truncateTelemetryValue(err.Error())
 		return localPrompt
 	}
