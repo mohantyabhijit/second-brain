@@ -8,6 +8,11 @@ on:
         required: false
         default: false
         type: boolean
+      run_newsletter_eval:
+        description: Run one non-mutating managed-prompt newsletter eval baseline before auditing
+        required: false
+        default: false
+        type: boolean
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
@@ -50,6 +55,24 @@ jobs:
           . "$api_dir/second-brain.env"
           set +a
           "$onecli" run --project second-brain -- "$api_dir/second-brain-digest"
+          REMOTE
+
+      - name: Run production newsletter eval baseline
+        if: ${{ inputs.run_newsletter_eval }}
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/second-brain-audit" -p "$DEPLOY_PORT" "$DEPLOY_USER@$DEPLOY_HOST" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          api_dir="/srv/second-brain/api"
+          onecli="/home/deploy/.local/bin/onecli"
+          set -a
+          # shellcheck disable=SC1091
+          . "$api_dir/second-brain.env"
+          set +a
+          "$onecli" run --project second-brain -- "$api_dir/second-brain-newsletter-eval" \
+            --iterations 0 \
+            --out "$api_dir/newsletter-experiments" \
+            --timeout 5m
           REMOTE
 
       - name: Check public API snapshot
