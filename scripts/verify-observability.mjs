@@ -41,13 +41,17 @@ assertIncludes(fluentBit, "Path              /var/lib/docker/containers/*/*-json
 assertIncludes(fluentBit, "Parser            docker", "fluent-bit.conf");
 assertIncludes(fluentBit, "Parser        zerolog_json", "fluent-bit.conf");
 assertIncludes(fluentBit, "Regex  service_name ^.+$", "fluent-bit.conf");
-assertIncludes(fluentBit, "Labels          job=second-brain,app=second-brain,container=app,service=$service_name,environment=$environment", "fluent-bit.conf");
+assertIncludes(fluentBit, "Hard_copy  service_name  loki_service", "fluent-bit.conf");
+assertIncludes(fluentBit, "Hard_copy  environment   loki_environment", "fluent-bit.conf");
+assertIncludes(fluentBit, "Hard_copy  log_level     loki_log_level", "fluent-bit.conf");
+assertIncludes(fluentBit, "Labels          job=second-brain,app=second-brain,container=app,service=$loki_service,environment=$loki_environment", "fluent-bit.conf");
+assertIncludes(fluentBit, "Remove_Keys     stream,time,loki_service,loki_environment,loki_log_level", "fluent-bit.conf");
 for (const highCardinality of ["request_id", "trace_id", "user_id", "path", "error"]) {
   assert(!fluentBit.includes(`=${highCardinality}`), `fluent-bit.conf promotes high-cardinality ${highCardinality} as a label`);
 }
 
 const labelMap = parseJSON("observability/fluent-bit/loki-labels.json");
-assert(labelMap.log_level === "log_level", "Fluent Bit label map must promote log_level only");
+assert(labelMap.loki_log_level === "log_level", "Fluent Bit label map must promote log_level from the temporary label alias only");
 for (const forbidden of ["request_id", "trace_id", "user_id", "path", "error"]) {
   assert(!(forbidden in labelMap), `Fluent Bit label map must not promote ${forbidden}`);
 }
