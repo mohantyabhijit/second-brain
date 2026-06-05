@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/abhijitmohanty/second-brain/backend/internal/config"
+	"github.com/abhijitmohanty/second-brain/backend/internal/platform/httpclient"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
@@ -43,6 +44,7 @@ func StartLangfuse(ctx context.Context, cfg config.Config, serviceName string, l
 	exporter, err := otlptracehttp.New(ctx,
 		otlptracehttp.WithEndpointURL(baseURL+langfuseOTLPTracesPath),
 		otlptracehttp.WithHeaders(headers),
+		otlptracehttp.WithHTTPClient(httpclient.New()),
 	)
 	if err != nil {
 		logger.Warn("langfuse tracing disabled; exporter setup failed", "error", err)

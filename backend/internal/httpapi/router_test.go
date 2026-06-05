@@ -125,6 +125,102 @@ func TestRouterDoesNotExposeManualDigestMutations(t *testing.T) {
 	}
 }
 
+func TestRouterGeneratesLangfuseSampleDigestFromLatestSources(t *testing.T) {
+	cfg := testConfig(t)
+	t.Setenv("OPENAI_API_KEY", "openai-key")
+	cfg.LangfusePromptManagementEnabled = false
+	cfg.MemoryProfilingToken = "debug-secret"
+	store := localfile.New(cfg.KnowledgeRunPath)
+	generatedAt := time.Date(2026, 6, 5, 8, 0, 0, 0, time.UTC)
+	result := knowledge.Result{
+		GeneratedAt: generatedAt,
+		Validation:  []knowledge.ValidationItem{{Label: "seed", Status: "pass", Detail: "seeded sample"}},
+	}
+	for i := 1; i <= 4; i++ {
+		sourceID := fmt.Sprintf("source-%d", i)
+		result.Summaries = append(result.Summaries, knowledge.Summary{
+			ID:         sourceID,
+			Source:     "x",
+			Title:      fmt.Sprintf("Seed source %d", i),
+			SourceURL:  "https://x.example/status/" + sourceID,
+			Summary:    "A useful source-backed summary.",
+			Confidence: "high",
+		})
+		result.Insights = append(result.Insights, knowledge.Insight{
+			ID:         fmt.Sprintf("insight-%d", i),
+			Source:     "x",
+			SourceID:   sourceID,
+			Title:      fmt.Sprintf("Seed insight %d", i),
+			Insight:    "A source-backed insight for sample digest generation.",
+			Evidence:   "The source supports this insight.",
+			SourceURL:  "https://x.example/status/" + sourceID,
+			Confidence: "high",
+		})
+	}
+	if err := store.SaveRun(context.Background(), result, nil); err != nil {
+		t.Fatalf("seed latest run: %v", err)
+	}
+	requests := []string{}
+	client := &http.Client{Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
+		requests = append(requests, request.URL.String())
+		if request.URL.String() != "https://api.openai.com/v1/responses" {
+			t.Fatalf("unexpected URL: %s", request.URL.String())
+		}
+		if request.Header.Get("Authorization") != "Bearer openai-key" {
+			t.Fatalf("unexpected authorization header: %q", request.Header.Get("Authorization"))
+		}
+		return jsonResponse(`{"output_text":"{\"subject\":\"Sample digest\",\"body_markdown\":\"# Sample digest\\n\\nA generated Langfuse sample.\"}"}`), nil
+	})}
+	service := knowledge.NewService(cfg, store, client)
+	router := NewRouter(cfg, service, slog.New(slog.NewTextHandler(io.Discard, nil)))
+
+	request := httptest.NewRequest(http.MethodPost, "/api/debug/langfuse/sample-digest?sources=3", nil)
+	request.Header.Set("X-Second-Brain-Profile-Token", "debug-secret")
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("expected sample digest status 200, got %d: %s", response.Code, response.Body.String())
+	}
+	var payload knowledge.SampleDigestResult
+	if err := json.Unmarshal(response.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("decode sample digest response: %v", err)
+	}
+	if payload.SelectedSourceCount != 3 || len(payload.Sources) != 3 {
+		t.Fatalf("expected 3 sampled sources, got %#v", payload.Sources)
+	}
+	if payload.Digest.Status != "sample" || payload.Digest.Subject != "Sample digest" {
+		t.Fatalf("expected sample digest payload, got %#v", payload.Digest)
+	}
+	if payload.Persisted || payload.Delivered || len(payload.Digest.Deliveries) != 0 {
+		t.Fatalf("sample route must not persist or deliver, got %#v", payload)
+	}
+	if got := response.Header().Get("Cache-Control"); got != "private, no-store" {
+		t.Fatalf("expected no-store cache header, got %q", got)
+	}
+	if len(requests) != 1 {
+		t.Fatalf("expected one OpenAI synthesis request, got %#v", requests)
+	}
+	latest, err := store.ReadLatest(context.Background())
+	if err != nil {
+		t.Fatalf("read latest after sample: %v", err)
+	}
+	if latest == nil || latest.Digest != nil {
+		t.Fatalf("sample digest must not update latest digest, got %#v", latest)
+	}
+}
+
+func TestRouterRequiresDebugTokenForSampleDigestInProduction(t *testing.T) {
+	cfg := testConfig(t)
+	cfg.Env = "production"
+	router := newTestRouter(t, cfg)
+
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/api/debug/langfuse/sample-digest", nil))
+	if response.Code != http.StatusUnauthorized {
+		t.Fatalf("expected sample digest debug token status 401, got %d: %s", response.Code, response.Body.String())
+	}
+}
+
 func TestRouterServesAppStateFallback(t *testing.T) {
 	router := testRouter(t)
 
