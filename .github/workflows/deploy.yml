@@ -70,6 +70,7 @@ jobs:
           CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o ../dist/second-brain-migrate ./cmd/migrate
           CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o ../dist/second-brain-refresh ./cmd/refresh
           CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o ../dist/second-brain-digest ./cmd/digest
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o ../dist/second-brain-langfuse-prompts ./cmd/langfuse-prompts
           CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o ../dist/second-brain-precompute ./cmd/precompute
           CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o ../dist/second-brain-graph-sync ./cmd/graph-sync
           CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o ../dist/second-brain-worker ./cmd/worker
@@ -79,7 +80,7 @@ jobs:
         run: |
           mkdir -p artifacts
           tar -C frontend/out -czf artifacts/frontend.tgz .
-          tar -C dist -czf artifacts/api.tgz second-brain-api second-brain-migrate second-brain-refresh second-brain-digest second-brain-precompute second-brain-graph-sync second-brain-worker second-brain-x-token-import
+          tar -C dist -czf artifacts/api.tgz second-brain-api second-brain-migrate second-brain-refresh second-brain-digest second-brain-langfuse-prompts second-brain-precompute second-brain-graph-sync second-brain-worker second-brain-x-token-import
           tar -C supabase -czf artifacts/migrations.tgz migrations
 
       - name: Upload deployment artifacts
@@ -200,6 +201,11 @@ jobs:
           write_var OPENAI_CHAT_MODEL gpt-5.4
           write_var OPENAI_EMBEDDING_MODEL text-embedding-3-small
           write_var OPENAI_IMAGE_MODEL gpt-image-1
+          write_var LANGFUSE_TRACING_ENABLED true
+          write_var LANGFUSE_BASE_URL "https://jp.cloud.langfuse.com"
+          write_var LANGFUSE_PROMPT_MANAGEMENT_ENABLED true
+          write_var LANGFUSE_PROMPT_LABEL production
+          write_var LANGFUSE_DIGEST_PROMPT_NAME "second-brain/digest-newsletter"
           write_var PUBLIC_BASE_URL "https://abhijitmohanty.com/second-brain"
           write_var EXA_API_KEY "$EXA_API_KEY"
           write_var DIGEST_TIMEZONE Asia/Singapore

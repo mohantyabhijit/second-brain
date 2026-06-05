@@ -205,6 +205,20 @@ func (s *Service) promptSynthesis(ctx context.Context, candidate sourceCandidate
 	if model == extractiveSynthesisModel {
 		return promptSynthesisResponse{}, fmt.Errorf("OPENAI_API_KEY is not present")
 	}
+	ctx, span := s.startObservationSpan(ctx, observationOptions{
+		Name:          "source-synthesis",
+		Type:          "generation",
+		Model:         model,
+		PromptVersion: synthesisPromptVersion,
+		Tags:          []string{"refresh", "source-synthesis", string(candidate.sourceType)},
+		Metadata:      sourceCandidateMetadata(candidate),
+		InputSummary:  sourceCandidateInputSummary(candidate),
+		ModelParams: map[string]any{
+			"max_output_tokens": 4500,
+			"response_format":   "json_object",
+		},
+	})
+	defer span.End()
 	requestBody := map[string]any{
 		"model": model,
 		"text":  map[string]any{"format": map[string]any{"type": "json_object"}},
@@ -225,11 +239,15 @@ func (s *Service) promptSynthesis(ctx context.Context, candidate sourceCandidate
 
 	var response openAIResponse
 	if err := s.requestJSON(ctx, http.MethodPost, "https://api.openai.com/v1/responses", headers, bytes.NewReader(raw), &response); err != nil {
+		setSpanError(span, err)
 		return promptSynthesisResponse{}, err
 	}
 	if response.Error != nil && response.Error.Message != "" {
-		return promptSynthesisResponse{}, fmt.Errorf(response.Error.Message)
+		err := fmt.Errorf("%s", response.Error.Message)
+		setSpanError(span, err)
+		return promptSynthesisResponse{}, err
 	}
+	setOpenAIUsage(span, response.Usage)
 	text := response.OutputText
 	if strings.TrimSpace(text) == "" {
 		parts := []string{}
@@ -244,16 +262,37 @@ func (s *Service) promptSynthesis(ctx context.Context, candidate sourceCandidate
 	}
 	var payload promptSynthesisResponse
 	if err := json.Unmarshal([]byte(extractJSONObject(text)), &payload); err != nil {
+		setSpanError(span, err)
 		compactPayload, retryErr := s.promptCompactSynthesis(ctx, candidate, model, err)
 		if retryErr == nil {
+			setSpanOutputSummary(span, map[string]any{"decision": compactPayload.Decision, "repaired": true, "insights": len(compactPayload.Insights)})
 			return compactPayload, nil
 		}
 		return promptSynthesisResponse{}, err
 	}
+	setSpanOutputSummary(span, map[string]any{"decision": payload.Decision, "insights": len(payload.Insights), "actions": len(payload.ActionItems)})
 	return payload, nil
 }
 
 func (s *Service) promptCompactSynthesis(ctx context.Context, candidate sourceCandidate, model string, parseErr error) (promptSynthesisResponse, error) {
+	ctx, span := s.startObservationSpan(ctx, observationOptions{
+		Name:          "source-synthesis-compact-retry",
+		Type:          "generation",
+		Model:         model,
+		PromptVersion: synthesisPromptVersion,
+		Tags:          []string{"refresh", "source-synthesis", "retry", string(candidate.sourceType)},
+		Metadata:      sourceCandidateMetadata(candidate),
+		InputSummary: map[string]any{
+			"source_type": string(candidate.sourceType),
+			"body_chars":  len(candidate.body),
+			"parse_error": truncateTelemetryValue(parseErr.Error()),
+		},
+		ModelParams: map[string]any{
+			"max_output_tokens": 1600,
+			"response_format":   "json_object",
+		},
+	})
+	defer span.End()
 	requestBody := map[string]any{
 		"model": model,
 		"text":  map[string]any{"format": map[string]any{"type": "json_object"}},
@@ -275,11 +314,15 @@ func (s *Service) promptCompactSynthesis(ctx context.Context, candidate sourceCa
 
 	var response openAIResponse
 	if err := s.requestJSON(ctx, http.MethodPost, "https://api.openai.com/v1/responses", headers, bytes.NewReader(raw), &response); err != nil {
+		setSpanError(span, err)
 		return promptSynthesisResponse{}, err
 	}
 	if response.Error != nil && response.Error.Message != "" {
-		return promptSynthesisResponse{}, fmt.Errorf(response.Error.Message)
+		err := fmt.Errorf("%s", response.Error.Message)
+		setSpanError(span, err)
+		return promptSynthesisResponse{}, err
 	}
+	setOpenAIUsage(span, response.Usage)
 	text := response.OutputText
 	if strings.TrimSpace(text) == "" {
 		parts := []string{}
@@ -294,8 +337,10 @@ func (s *Service) promptCompactSynthesis(ctx context.Context, candidate sourceCa
 	}
 	var payload promptSynthesisResponse
 	if err := json.Unmarshal([]byte(extractJSONObject(text)), &payload); err != nil {
+		setSpanError(span, err)
 		return promptSynthesisResponse{}, err
 	}
+	setSpanOutputSummary(span, map[string]any{"decision": payload.Decision, "insights": len(payload.Insights), "actions": len(payload.ActionItems)})
 	return payload, nil
 }
 
@@ -303,8 +348,27 @@ func (s *Service) judgeSynthesis(ctx context.Context, candidate sourceCandidate,
 	if !s.synthesisJudgeEnabled(model) {
 		return payload, nil
 	}
+	ctx, span := s.startObservationSpan(ctx, observationOptions{
+		Name:          "source-synthesis-judge",
+		Type:          "generation",
+		Model:         model,
+		PromptVersion: synthesisPromptVersion,
+		Tags:          []string{"refresh", "source-synthesis", "judge", string(candidate.sourceType)},
+		Metadata:      sourceCandidateMetadata(candidate),
+		InputSummary: map[string]any{
+			"source_type": string(candidate.sourceType),
+			"body_chars":  len(candidate.body),
+			"insights":    len(payload.Insights),
+		},
+		ModelParams: map[string]any{
+			"max_output_tokens": 2500,
+			"response_format":   "json_object",
+		},
+	})
+	defer span.End()
 	payloadJSON, err := json.Marshal(payload)
 	if err != nil {
+		setSpanError(span, err)
 		return payload, err
 	}
 	requestBody := map[string]any{
@@ -321,6 +385,7 @@ func (s *Service) judgeSynthesis(ctx context.Context, candidate sourceCandidate,
 	}
 	raw, err := json.Marshal(requestBody)
 	if err != nil {
+		setSpanError(span, err)
 		return payload, err
 	}
 	headers := authHeader("OPENAI_API_KEY", "Bearer {value}")
@@ -328,11 +393,15 @@ func (s *Service) judgeSynthesis(ctx context.Context, candidate sourceCandidate,
 
 	var response openAIResponse
 	if err := s.requestJSON(ctx, http.MethodPost, "https://api.openai.com/v1/responses", headers, bytes.NewReader(raw), &response); err != nil {
+		setSpanError(span, err)
 		return payload, err
 	}
 	if response.Error != nil && response.Error.Message != "" {
-		return payload, fmt.Errorf(response.Error.Message)
+		err := fmt.Errorf("%s", response.Error.Message)
+		setSpanError(span, err)
+		return payload, err
 	}
+	setOpenAIUsage(span, response.Usage)
 	text := response.OutputText
 	if strings.TrimSpace(text) == "" {
 		parts := []string{}
@@ -347,6 +416,7 @@ func (s *Service) judgeSynthesis(ctx context.Context, candidate sourceCandidate,
 	}
 	var judge promptJudgeResponse
 	if err := json.Unmarshal([]byte(extractJSONObject(text)), &judge); err != nil {
+		setSpanError(span, err)
 		return payload, err
 	}
 	if judge.RevisedResponse != nil {
@@ -362,6 +432,7 @@ func (s *Service) judgeSynthesis(ctx context.Context, candidate sourceCandidate,
 				Rationale:   judge.Rationale,
 			}
 		}
+		setSpanOutputSummary(span, map[string]any{"verdict": fallback(judge.Verdict, "revised"), "overall_score": judge.OverallScore, "revised": true})
 		return revised, nil
 	}
 	if payload.Quality.Overall == 0 {
@@ -375,6 +446,7 @@ func (s *Service) judgeSynthesis(ctx context.Context, candidate sourceCandidate,
 			Rationale:   judge.Rationale,
 		}
 	}
+	setSpanOutputSummary(span, map[string]any{"verdict": fallback(judge.Verdict, "pass"), "overall_score": judge.OverallScore, "revised": false})
 	return payload, nil
 }
 

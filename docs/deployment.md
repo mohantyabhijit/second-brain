@@ -34,6 +34,11 @@ GitHub Actions stores only deploy/runtime secrets needed outside OneCLI:
 - `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ZONE_ID`, `CLOUDFLARE_CACHE_PURGE_ENABLED`: optional edge-cache purge credentials. When present, successful refresh and digest read-model publishes purge the static pages and app-state URLs that Cloudflare caches.
 - `MEMORY_PROFILING_ENABLED`, `MEMORY_PROFILE_TOKEN`: optional backend profiling controls. When enabled in production, call `/second-brain/api/debug/memory` or `/second-brain/api/debug/pprof/heap?debug=1` with `Authorization: Bearer $MEMORY_PROFILE_TOKEN`.
 - `ONECLI_API_KEY`: logs the VPS deploy user into OneCLI so the API can run behind the OneCLI gateway.
+- `LANGFUSE_BASE_URL`: non-secret Langfuse OTLP endpoint. Production uses
+  `https://jp.cloud.langfuse.com`; Langfuse credentials stay in OneCLI.
+- `LANGFUSE_PROMPT_MANAGEMENT_ENABLED`, `LANGFUSE_PROMPT_LABEL`, and
+  `LANGFUSE_DIGEST_PROMPT_NAME`: fetch the production digest newsletter prompt
+  from Langfuse Prompt Management with local prompt fallback.
 
 The `second-brain-edge-cache` Worker is deployed separately from the VPS workflow with `npm run edge-cache:deploy`. That deploy path needs `CLOUDFLARE_ACCOUNT_ID` or the checked-in Worker Wrangler config plus a token with Workers edit permissions; the runtime purge token only needs zone read and cache purge permissions.
 
@@ -43,6 +48,10 @@ Provider API credentials stay in OneCLI instead of GitHub Secrets where possible
 - YouTube API key.
 - Supadata API key.
 - OpenAI API key.
+- Langfuse OTLP credentials, stored as the Basic Auth header value for
+  `jp.cloud.langfuse.com/api/public/otel/v1/traces`.
+- Langfuse Prompt API credentials, stored as the Basic Auth header value for
+  `jp.cloud.langfuse.com/api/public/v2/prompts*`.
 
 The frontend receives only the public Supabase Auth configuration. It does not receive provider secrets, Redis credentials, database credentials, or object-storage credentials.
 

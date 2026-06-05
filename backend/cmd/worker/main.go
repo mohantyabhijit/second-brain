@@ -18,6 +18,7 @@ import (
 	"github.com/abhijitmohanty/second-brain/backend/internal/config"
 	"github.com/abhijitmohanty/second-brain/backend/internal/knowledge"
 	"github.com/abhijitmohanty/second-brain/backend/internal/platform/httpclient"
+	platformtracing "github.com/abhijitmohanty/second-brain/backend/internal/platform/tracing"
 	"github.com/abhijitmohanty/second-brain/backend/internal/store/localfile"
 	"github.com/abhijitmohanty/second-brain/backend/internal/store/postgres"
 	rcron "github.com/robfig/cron/v3"
@@ -26,6 +27,12 @@ import (
 func main() {
 	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
 	cfg := config.Load()
+	shutdownTracing, _ := platformtracing.StartLangfuse(context.Background(), cfg, "second-brain-worker", logger)
+	defer func() {
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		shutdownTracing(shutdownCtx)
+	}()
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 

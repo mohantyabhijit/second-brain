@@ -79,6 +79,7 @@ chmod +x \
   "$api_dir/second-brain-migrate" \
   "$api_dir/second-brain-refresh" \
   "$api_dir/second-brain-digest" \
+  "$api_dir/second-brain-langfuse-prompts" \
   "$api_dir/second-brain-precompute" \
   "$api_dir/second-brain-graph-sync" \
   "$api_dir/second-brain-worker" \
@@ -104,6 +105,7 @@ set -a
 # shellcheck disable=SC1091
 . "$api_dir/second-brain.env"
 set +a
+"$onecli" run --project second-brain -- "$api_dir/second-brain-langfuse-prompts"
 "$api_dir/second-brain-migrate" "$base/migrations"
 
 cat > /tmp/second-brain-api.service <<SERVICE

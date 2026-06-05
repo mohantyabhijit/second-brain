@@ -55,7 +55,8 @@ type openAIResponse struct {
 			Text string `json:"text"`
 		} `json:"content"`
 	} `json:"output"`
-	Status            string `json:"status"`
+	Usage             openAIUsage `json:"usage"`
+	Status            string      `json:"status"`
 	IncompleteDetails *struct {
 		Reason string `json:"reason"`
 	} `json:"incomplete_details"`
@@ -161,6 +162,14 @@ func (s *Service) completeYouTubeTranscriptRequest(ctx context.Context, videoID 
 	if err := store.CompleteYouTubeTranscriptRequest(ctx, s.cfg.OwnerID, strings.TrimSpace(videoID), transcript.TranscriptStatus, transcript.TranscriptError); err != nil && s.logger != nil {
 		s.logger.Warn("youtube transcript request ledger completion failed", "video_id", videoID, "status", transcript.TranscriptStatus, "error", err)
 	}
+}
+
+type openAIUsage struct {
+	InputTokens      int `json:"input_tokens"`
+	OutputTokens     int `json:"output_tokens"`
+	TotalTokens      int `json:"total_tokens"`
+	PromptTokens     int `json:"prompt_tokens"`
+	CompletionTokens int `json:"completion_tokens"`
 }
 
 func (s *Service) fetchPlaylistItems(ctx context.Context, playlistID string, limit int) ([]YouTubeItem, error) {
@@ -321,6 +330,24 @@ func (s *Service) translateTranscriptPreviewToEnglish(ctx context.Context, text 
 	if token == "" && !s.cfg.OneCLIGateway {
 		return "", fmt.Errorf(credentialHint("OPENAI_API_KEY"))
 	}
+	ctx, span := s.startObservationSpan(ctx, observationOptions{
+		Name:          "youtube-transcript-translation",
+		Type:          "generation",
+		Model:         s.cfg.OpenAITranslationModel,
+		PromptVersion: "youtube-transcript-translation-v1",
+		Tags:          []string{"youtube", "translation"},
+		Metadata: map[string]string{
+			"source_lang": sourceLang,
+		},
+		InputSummary: map[string]any{
+			"source_lang": sourceLang,
+			"text_chars":  len(text),
+		},
+		ModelParams: map[string]any{
+			"max_output_tokens": 2500,
+		},
+	})
+	defer span.End()
 
 	requestBody := map[string]any{
 		"model": s.cfg.OpenAITranslationModel,
@@ -343,13 +370,19 @@ func (s *Service) translateTranscriptPreviewToEnglish(ctx context.Context, text 
 	headers.Set("Content-Type", "application/json")
 	var payload openAIResponse
 	if err := s.requestJSON(ctx, http.MethodPost, "https://api.openai.com/v1/responses", headers, bytes.NewReader(raw), &payload); err != nil {
+		setSpanError(span, err)
 		return "", fmt.Errorf("OpenAI translation failed: %w", err)
 	}
 	if payload.Error != nil && payload.Error.Message != "" {
-		return "", fmt.Errorf("OpenAI translation failed: %s", payload.Error.Message)
+		err := fmt.Errorf("OpenAI translation failed: %s", payload.Error.Message)
+		setSpanError(span, err)
+		return "", err
 	}
+	setOpenAIUsage(span, payload.Usage)
 	if payload.OutputText != "" {
-		return strings.TrimSpace(payload.OutputText), nil
+		translated := strings.TrimSpace(payload.OutputText)
+		setSpanOutputSummary(span, map[string]any{"output_chars": len(translated)})
+		return translated, nil
 	}
 
 	parts := []string{}
@@ -362,8 +395,11 @@ func (s *Service) translateTranscriptPreviewToEnglish(ctx context.Context, text 
 	}
 	translated := strings.TrimSpace(strings.Join(parts, "\n"))
 	if translated == "" {
-		return "", fmt.Errorf("OpenAI translation returned no text")
+		err := fmt.Errorf("OpenAI translation returned no text")
+		setSpanError(span, err)
+		return "", err
 	}
+	setSpanOutputSummary(span, map[string]any{"output_chars": len(translated)})
 	return translated, nil
 }
 

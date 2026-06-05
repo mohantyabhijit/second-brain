@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/abhijitmohanty/second-brain/backend/prompts"
+	"go.opentelemetry.io/otel/attribute"
 )
 
 type exaSearchResponse struct {
@@ -28,14 +29,22 @@ type exaSearchResponse struct {
 }
 
 func (s *Service) AskSecondBrain(ctx context.Context, request AskSecondBrainRequest) (AskSecondBrainResponse, error) {
+	ctx, span := s.startOperationSpan(ctx, "ask-second-brain", "ask", "rag")
+	defer span.End()
 	question := strings.TrimSpace(request.Question)
 	if question == "" {
-		return AskSecondBrainResponse{}, fmt.Errorf("question is required")
+		err := fmt.Errorf("question is required")
+		setSpanError(span, err)
+		return AskSecondBrainResponse{}, err
 	}
+	span.SetAttributes(attribute.String("langfuse.observation.input", compactTelemetryJSON(map[string]any{"question_chars": len(question)})))
 	if len(question) > 1200 {
-		return AskSecondBrainResponse{}, fmt.Errorf("question is too long; keep it under 1200 characters")
+		err := fmt.Errorf("question is too long; keep it under 1200 characters")
+		setSpanError(span, err)
+		return AskSecondBrainResponse{}, err
 	}
 	if guardrail := askInputGuardrail(question); guardrail != "" {
+		setSpanOutputSummary(span, map[string]any{"guardrail": "blocked"})
 		return AskSecondBrainResponse{
 			Answer:      guardrail,
 			Guardrail:   "blocked",
@@ -45,10 +54,13 @@ func (s *Service) AskSecondBrain(ctx context.Context, request AskSecondBrainRequ
 
 	latest, err := s.ReadLatest(ctx)
 	if err != nil {
+		setSpanError(span, err)
 		return AskSecondBrainResponse{}, err
 	}
 	if latest == nil {
-		return AskSecondBrainResponse{}, fmt.Errorf("no knowledge run is available yet")
+		err := fmt.Errorf("no knowledge run is available yet")
+		setSpanError(span, err)
+		return AskSecondBrainResponse{}, err
 	}
 
 	localSources := s.retrieveVectorSources(ctx, question, 8)
@@ -65,6 +77,7 @@ func (s *Service) AskSecondBrain(ctx context.Context, request AskSecondBrainRequ
 	}
 	rankAskSources(localSources)
 	if len(localSources) == 0 {
+		setSpanOutputSummary(span, map[string]any{"answer": "insufficient_sources", "used_latest": usedLatest, "search_status": searchStatus})
 		return AskSecondBrainResponse{
 			Answer:       "I could not find enough evidence in your Second Brain yet. Refresh the inbox first, then ask again with a more specific topic.",
 			Sources:      []AskSecondBrainSource{},
@@ -84,6 +97,7 @@ func (s *Service) AskSecondBrain(ctx context.Context, request AskSecondBrainRequ
 		model = "extractive-rag-fallback-v1"
 	}
 	if guardrail := askOutputGuardrail(answer); guardrail != "" {
+		setSpanOutputSummary(span, map[string]any{"guardrail": "output_filtered", "sources": len(localSources), "used_latest": usedLatest, "search_status": searchStatus})
 		return AskSecondBrainResponse{
 			Answer:       guardrail,
 			Sources:      localSources,
@@ -94,14 +108,16 @@ func (s *Service) AskSecondBrain(ctx context.Context, request AskSecondBrainRequ
 			SearchStatus: searchStatus,
 		}, nil
 	}
-	return AskSecondBrainResponse{
+	response := AskSecondBrainResponse{
 		Answer:       strings.TrimSpace(answer),
 		Sources:      localSources,
 		UsedLatest:   usedLatest,
 		Model:        model,
 		GeneratedAt:  time.Now().UTC(),
 		SearchStatus: searchStatus,
-	}, nil
+	}
+	setSpanOutputSummary(span, map[string]any{"model": model, "sources": len(localSources), "used_latest": usedLatest, "search_status": searchStatus, "answer_chars": len(response.Answer)})
+	return response, nil
 }
 
 func (s *Service) promptAskSecondBrain(ctx context.Context, question string, sources []AskSecondBrainSource, usedLatest bool, searchStatus string) (string, string, error) {
@@ -112,6 +128,23 @@ func (s *Service) promptAskSecondBrain(ctx context.Context, question string, sou
 	if model == "" {
 		model = s.cfg.OpenAISynthesisModel
 	}
+	ctx, span := s.startObservationSpan(ctx, observationOptions{
+		Name:          "ask-second-brain-response",
+		Type:          "generation",
+		Model:         model,
+		PromptVersion: prompts.AskSecondBrainPromptVersion,
+		Tags:          []string{"ask", "rag", "generation"},
+		InputSummary: map[string]any{
+			"question_chars": len(question),
+			"sources":        len(sources),
+			"used_latest":    usedLatest,
+			"search_status":  searchStatus,
+		},
+		ModelParams: map[string]any{
+			"max_output_tokens": 900,
+		},
+	})
+	defer span.End()
 	payload, err := json.Marshal(map[string]any{
 		"question":      question,
 		"used_latest":   usedLatest,
@@ -119,6 +152,7 @@ func (s *Service) promptAskSecondBrain(ctx context.Context, question string, sou
 		"sources":       sources,
 	})
 	if err != nil {
+		setSpanError(span, err)
 		return "", model, err
 	}
 	requestBody := map[string]any{
@@ -128,17 +162,22 @@ func (s *Service) promptAskSecondBrain(ctx context.Context, question string, sou
 	}
 	raw, err := json.Marshal(requestBody)
 	if err != nil {
+		setSpanError(span, err)
 		return "", model, err
 	}
 	headers := authHeader("OPENAI_API_KEY", "Bearer {value}")
 	headers.Set("Content-Type", "application/json")
 	var response openAIResponse
 	if err := s.requestJSON(ctx, http.MethodPost, "https://api.openai.com/v1/responses", headers, bytes.NewReader(raw), &response); err != nil {
+		setSpanError(span, err)
 		return "", model, err
 	}
 	if response.Error != nil && response.Error.Message != "" {
-		return "", model, fmt.Errorf(response.Error.Message)
+		err := fmt.Errorf("%s", response.Error.Message)
+		setSpanError(span, err)
+		return "", model, err
 	}
+	setOpenAIUsage(span, response.Usage)
 	text := response.OutputText
 	if strings.TrimSpace(text) == "" {
 		parts := []string{}
@@ -152,9 +191,13 @@ func (s *Service) promptAskSecondBrain(ctx context.Context, question string, sou
 		text = strings.Join(parts, "\n")
 	}
 	if strings.TrimSpace(text) == "" {
-		return "", model, fmt.Errorf("empty model response")
+		err := fmt.Errorf("empty model response")
+		setSpanError(span, err)
+		return "", model, err
 	}
-	return text, model, nil
+	answer := strings.TrimSpace(text)
+	setSpanOutputSummary(span, map[string]any{"answer_chars": len(answer)})
+	return answer, model, nil
 }
 
 func (s *Service) exaSearch(ctx context.Context, question string, limit int) ([]AskSecondBrainSource, string) {

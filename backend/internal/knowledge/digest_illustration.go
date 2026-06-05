@@ -82,6 +82,28 @@ func (s *Service) generateDigestIllustration(ctx context.Context, digest DigestI
 		model = "gpt-image-1"
 	}
 	prompt := digestIllustrationPrompt(digest, insights, themes, connections)
+	ctx, span := s.startObservationSpan(ctx, observationOptions{
+		Name:          "digest-illustration-generation",
+		Type:          "generation",
+		Model:         model,
+		PromptVersion: "digest-illustration-v1",
+		Tags:          []string{"digest", "illustration", "image"},
+		Metadata: map[string]string{
+			"digest_date": digest.DigestDate,
+			"digest_id":   digest.ID,
+		},
+		InputSummary: map[string]any{
+			"digest_date":  digest.DigestDate,
+			"prompt_chars": len(prompt),
+			"insights":     len(insights),
+			"themes":       len(themes),
+			"connections":  len(connections),
+		},
+		ModelParams: map[string]any{
+			"size": "1024x1024",
+		},
+	})
+	defer span.End()
 	body := map[string]any{
 		"model":  model,
 		"prompt": prompt,
@@ -89,6 +111,7 @@ func (s *Service) generateDigestIllustration(ctx context.Context, digest DigestI
 	}
 	raw, err := json.Marshal(body)
 	if err != nil {
+		setSpanError(span, err)
 		return generatedIllustration{}, err
 	}
 	headers := authHeader("OPENAI_API_KEY", "Bearer {value}")
@@ -96,13 +119,18 @@ func (s *Service) generateDigestIllustration(ctx context.Context, digest DigestI
 
 	var response openAIImageResponse
 	if err := s.requestJSON(ctx, http.MethodPost, "https://api.openai.com/v1/images/generations", headers, bytes.NewReader(raw), &response); err != nil {
+		setSpanError(span, err)
 		return generatedIllustration{}, err
 	}
 	if response.Error != nil && response.Error.Message != "" {
-		return generatedIllustration{}, fmt.Errorf(response.Error.Message)
+		err := fmt.Errorf("%s", response.Error.Message)
+		setSpanError(span, err)
+		return generatedIllustration{}, err
 	}
 	if len(response.Data) == 0 {
-		return generatedIllustration{}, fmt.Errorf("OpenAI image response returned no data")
+		err := fmt.Errorf("OpenAI image response returned no data")
+		setSpanError(span, err)
+		return generatedIllustration{}, err
 	}
 	image := response.Data[0]
 	mimeType := "image/png"
@@ -111,15 +139,21 @@ func (s *Service) generateDigestIllustration(ctx context.Context, digest DigestI
 		var err error
 		imageBase64, mimeType, err = s.fetchIllustrationURL(ctx, image.URL)
 		if err != nil {
+			setSpanError(span, err)
 			return generatedIllustration{}, err
 		}
 	}
 	if imageBase64 == "" {
-		return generatedIllustration{}, fmt.Errorf("OpenAI image response did not include image bytes")
+		err := fmt.Errorf("OpenAI image response did not include image bytes")
+		setSpanError(span, err)
+		return generatedIllustration{}, err
 	}
 	if _, err := base64.StdEncoding.DecodeString(imageBase64); err != nil {
-		return generatedIllustration{}, fmt.Errorf("OpenAI image response was not valid base64: %w", err)
+		err := fmt.Errorf("OpenAI image response was not valid base64: %w", err)
+		setSpanError(span, err)
+		return generatedIllustration{}, err
 	}
+	setSpanOutputSummary(span, map[string]any{"mime_type": mimeType, "base64_chars": len(imageBase64), "revised_prompt": strings.TrimSpace(image.RevisedPrompt) != ""})
 	return generatedIllustration{
 		prompt:   prompt,
 		alt:      digestIllustrationAlt(digest, insights, themes),

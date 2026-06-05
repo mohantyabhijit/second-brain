@@ -128,6 +128,7 @@ if X_REFRESH_TOKEN_PROD="$(security find-generic-password -a "$USER" -s "second-
 fi
 
 export ONECLI_GATEWAY=true
+export LANGFUSE_BASE_URL="${LANGFUSE_BASE_URL:-https://jp.cloud.langfuse.com}"
 export OPENAI_SYNTHESIS_MODEL="${OPENAI_SYNTHESIS_MODEL:-gpt-5.4-mini}"
 export OPENAI_CHAT_MODEL="${OPENAI_CHAT_MODEL:-gpt-5.4}"
 export X_TOKEN_REFRESH_DIRECT="${X_TOKEN_REFRESH_DIRECT:-true}"
