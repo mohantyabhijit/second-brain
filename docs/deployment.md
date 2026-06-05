@@ -32,7 +32,7 @@ GitHub Actions stores only deploy/runtime secrets needed outside OneCLI:
   requests per calendar month. Production sets it to `100` for the free tier.
 - `REDIS_URL`: optional backend-only Redis read-model cache override. When absent, deploy provisions Redis on the VPS and uses `redis://127.0.0.1:6379/0`; deploy enables `REDIS_CACHE_ENABLED=true`.
 - `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ZONE_ID`, `CLOUDFLARE_CACHE_PURGE_ENABLED`: optional edge-cache purge credentials. When present, successful refresh and digest read-model publishes purge the static pages and app-state URLs that Cloudflare caches.
-- `MEMORY_PROFILING_ENABLED`, `MEMORY_PROFILE_TOKEN`: optional backend profiling controls. When enabled in production, call `/second-brain/api/debug/memory` or `/second-brain/api/debug/pprof/heap?debug=1` with `Authorization: Bearer $MEMORY_PROFILE_TOKEN`.
+- `MEMORY_PROFILING_ENABLED`, `MEMORY_PROFILE_TOKEN`: optional backend profiling controls. When enabled in production, call `/second-brain/api/debug/memory` or `/second-brain/api/debug/pprof/heap?debug=1` with `Authorization: Bearer $MEMORY_PROFILE_TOKEN`. The Langfuse sample digest check at `/second-brain/api/debug/langfuse/sample-digest` also requires this token in production, but does not require `MEMORY_PROFILING_ENABLED=true`.
 - `ONECLI_API_KEY`: logs the VPS deploy user into OneCLI so the API can run behind the OneCLI gateway.
 - `LANGFUSE_BASE_URL`: non-secret Langfuse OTLP endpoint. Production uses
   `https://jp.cloud.langfuse.com`; Langfuse credentials stay in OneCLI.

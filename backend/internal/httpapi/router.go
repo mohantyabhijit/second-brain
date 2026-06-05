@@ -310,6 +310,37 @@ func NewRouter(cfg config.Config, service *knowledge.Service, logger *slog.Logge
 		httputil.JSON(w, http.StatusOK, graph)
 	}
 
+	debugTokenAuthorized := func(r *http.Request) bool {
+		token := strings.TrimSpace(cfg.MemoryProfilingToken)
+		if token == "" && cfg.Env == "production" {
+			return false
+		}
+		if token == "" {
+			return true
+		}
+		return profileTokenAuthorized(r, token)
+	}
+
+	generateLangfuseSampleDigest := func(w http.ResponseWriter, r *http.Request) {
+		if !debugTokenAuthorized(r) {
+			w.Header().Set("WWW-Authenticate", `Bearer realm="second-brain-debug"`)
+			httputil.Error(w, http.StatusUnauthorized, "debug token required")
+			return
+		}
+		sourceCount := queryInt(r, "sources")
+		if sourceCount <= 0 {
+			sourceCount = 3
+		}
+		result, err := serviceForOwner(publicOwnerID).GenerateSampleDigest(r.Context(), sourceCount)
+		if err != nil {
+			logger.Error("generate langfuse sample digest", "error", err)
+			httputil.Error(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		w.Header().Set("Cache-Control", "private, no-store")
+		httputil.JSON(w, http.StatusOK, result)
+	}
+
 	startXAuth := func(w http.ResponseWriter, r *http.Request) {
 		scope, ok := resolveScope(w, r, false)
 		if !ok {
@@ -416,6 +447,7 @@ func NewRouter(cfg config.Config, service *knowledge.Service, logger *slog.Logge
 	mux.HandleFunc("POST /api/share/tweet", shareTweet)
 	mux.HandleFunc("POST /api/ask", askSecondBrain)
 	mux.HandleFunc("GET /api/knowledge-graph/insights", readInsightGraph)
+	mux.HandleFunc("POST /api/debug/langfuse/sample-digest", generateLangfuseSampleDigest)
 	registerProfilingRoutes(mux, cfg, logger)
 
 	return requestLogger(logger, cors(cfg.AllowedOrigins, mux))
