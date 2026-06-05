@@ -77,8 +77,12 @@ type NewsletterPromptRevision struct {
 }
 
 func (s *Service) RunNewsletterPromptExperiment(ctx context.Context, opts NewsletterExperimentOptions) (*NewsletterExperimentReport, error) {
+	ctx, span := s.startOperationSpan(ctx, "newsletter-prompt-experiment", "newsletter-eval", "experiment")
+	defer span.End()
 	if strings.TrimSpace(os.Getenv("OPENAI_API_KEY")) == "" && !s.cfg.OneCLIGateway {
-		return nil, fmt.Errorf("OPENAI_API_KEY is required for newsletter prompt experiments")
+		err := fmt.Errorf("OPENAI_API_KEY is required for newsletter prompt experiments")
+		setSpanError(span, err)
+		return nil, err
 	}
 	if opts.Iterations <= 0 {
 		opts.Iterations = 5
@@ -101,13 +105,18 @@ func (s *Service) RunNewsletterPromptExperiment(ctx context.Context, opts Newsle
 
 	latest, err := s.ReadLatest(ctx)
 	if err != nil {
+		setSpanError(span, err)
 		return nil, err
 	}
 	if latest == nil {
-		return nil, fmt.Errorf("no knowledge run is available for newsletter prompt experiment")
+		err := fmt.Errorf("no knowledge run is available for newsletter prompt experiment")
+		setSpanError(span, err)
+		return nil, err
 	}
 	if !hasDigestInputs(latest.Summaries, latest.Insights) {
-		return nil, fmt.Errorf("no source-grounded digest inputs are available")
+		err := fmt.Errorf("no source-grounded digest inputs are available")
+		setSpanError(span, err)
+		return nil, err
 	}
 
 	selectedInsights := selectDigestInsights(opts.GeneratedAt, latest.Insights, digestMaxInsightCount)
@@ -137,11 +146,17 @@ func (s *Service) RunNewsletterPromptExperiment(ctx context.Context, opts Newsle
 	for iteration := 0; iteration <= opts.Iterations; iteration++ {
 		digest, err := s.generateExperimentNewsletter(ctx, opts.GeneratorModel, base, latest.Summaries, selectedInsights, latest.Themes, latest.InsightClusters, latest.Connections, addendum)
 		if err != nil {
-			return report, fmt.Errorf("generate experiment newsletter iteration %d: %w", iteration, err)
+			err := fmt.Errorf("generate experiment newsletter iteration %d: %w", iteration, err)
+			setSpanError(span, err)
+			setSpanOutputSummary(span, map[string]any{"runs": len(report.Runs), "digest_date": report.DigestDate})
+			return report, err
 		}
 		judge, err := s.judgeExperimentNewsletter(ctx, opts.JudgeModel, inputJSON, digest)
 		if err != nil {
-			return report, fmt.Errorf("judge experiment newsletter iteration %d: %w", iteration, err)
+			err := fmt.Errorf("judge experiment newsletter iteration %d: %w", iteration, err)
+			setSpanError(span, err)
+			setSpanOutputSummary(span, map[string]any{"runs": len(report.Runs), "digest_date": report.DigestDate})
+			return report, err
 		}
 		run := NewsletterExperimentRun{
 			Iteration:      iteration,
@@ -158,7 +173,10 @@ func (s *Service) RunNewsletterPromptExperiment(ctx context.Context, opts Newsle
 		}
 		revision, err := s.reviseExperimentPrompt(ctx, opts.ImproverModel, inputJSON, addendum, digest, judge)
 		if err != nil {
-			return report, fmt.Errorf("revise experiment prompt after iteration %d: %w", iteration, err)
+			err := fmt.Errorf("revise experiment prompt after iteration %d: %w", iteration, err)
+			setSpanError(span, err)
+			setSpanOutputSummary(span, map[string]any{"runs": len(report.Runs), "digest_date": report.DigestDate})
+			return report, err
 		}
 		revision.AddendumLines = normalizeExperimentAddendum(revision.AddendumLines)
 		if len(revision.AddendumLines) == 0 {
@@ -173,6 +191,7 @@ func (s *Service) RunNewsletterPromptExperiment(ctx context.Context, opts Newsle
 		report.FinalScore = report.Runs[len(report.Runs)-1].Score
 		report.Improvement = report.FinalScore - report.BaselineScore
 	}
+	setSpanOutputSummary(span, map[string]any{"runs": len(report.Runs), "baseline_score": report.BaselineScore, "final_score": report.FinalScore, "improvement": report.Improvement, "digest_date": report.DigestDate})
 	return report, nil
 }
 
@@ -253,6 +272,20 @@ func (s *Service) promptExperimentText(ctx context.Context, model string, input 
 	if maxOutputTokens <= 0 {
 		maxOutputTokens = 1000
 	}
+	ctx, span := s.startObservationSpan(ctx, observationOptions{
+		Name:          "newsletter-experiment-model-call",
+		Type:          "generation",
+		Model:         model,
+		PromptVersion: digestPromptVersion,
+		Tags:          []string{"newsletter-eval", "experiment", "generation"},
+		InputSummary: map[string]any{
+			"input_chars": len(input),
+		},
+		ModelParams: map[string]any{
+			"max_output_tokens": maxOutputTokens,
+		},
+	})
+	defer span.End()
 	requestBody := map[string]any{
 		"model":             model,
 		"input":             input,
@@ -260,6 +293,7 @@ func (s *Service) promptExperimentText(ctx context.Context, model string, input 
 	}
 	raw, err := json.Marshal(requestBody)
 	if err != nil {
+		setSpanError(span, err)
 		return "", err
 	}
 	headers := authHeader("OPENAI_API_KEY", "Bearer {value}")
@@ -267,11 +301,15 @@ func (s *Service) promptExperimentText(ctx context.Context, model string, input 
 
 	var response openAIResponse
 	if err := s.requestJSON(ctx, http.MethodPost, "https://api.openai.com/v1/responses", headers, bytes.NewReader(raw), &response); err != nil {
+		setSpanError(span, err)
 		return "", err
 	}
 	if response.Error != nil && response.Error.Message != "" {
-		return "", fmt.Errorf("%s", response.Error.Message)
+		err := fmt.Errorf("%s", response.Error.Message)
+		setSpanError(span, err)
+		return "", err
 	}
+	setOpenAIUsage(span, response.Usage)
 	text := response.OutputText
 	if strings.TrimSpace(text) == "" {
 		parts := []string{}
@@ -285,8 +323,12 @@ func (s *Service) promptExperimentText(ctx context.Context, model string, input 
 		text = strings.Join(parts, "\n")
 	}
 	if strings.TrimSpace(text) == "" {
-		return "", fmt.Errorf("model returned empty output")
+		err := fmt.Errorf("model returned empty output")
+		setSpanError(span, err)
+		return "", err
 	}
+	text = strings.TrimSpace(text)
+	setSpanOutputSummary(span, map[string]any{"output_chars": len(text)})
 	return text, nil
 }
 

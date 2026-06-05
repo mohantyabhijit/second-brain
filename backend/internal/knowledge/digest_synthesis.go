@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	langfuseclient "github.com/abhijitmohanty/second-brain/backend/internal/platform/langfuse"
 	"github.com/abhijitmohanty/second-brain/backend/prompts"
 )
 
@@ -33,6 +34,15 @@ type promptDigestResponse struct {
 	Subject      string   `json:"subject"`
 	BodyMarkdown string   `json:"body_markdown"`
 	BodyLines    []string `json:"body_lines"`
+}
+
+type digestPromptPayload struct {
+	Lines                  []string
+	LangfusePromptName     string
+	LangfusePromptVersion  int
+	LangfusePromptLabel    string
+	LangfusePromptSource   string
+	LangfusePromptFallback string
 }
 
 func hasDigestInputs(summaries []Summary, insights []Insight) bool {
@@ -69,21 +79,26 @@ func (s *Service) composeDigestIssue(ctx context.Context, generatedAt time.Time,
 }
 
 func (s *Service) promptDigest(ctx context.Context, base DigestIssue, summaries []Summary, insights []Insight, themes []ThemeCluster, insightClusters []InsightCluster, connections []SourceConnection) (promptDigestResponse, error) {
-	promptLines := prompts.AppendInputJSON(
-		digestNewsletterPromptLines(base),
-		truncate(digestPromptInput(summaries, insights, themes, insightClusters, connections), 16000),
-	)
-	return s.promptDigestWithLines(ctx, s.cfg.OpenAISynthesisModel, promptLines, digestPromptMaxOutputTokens)
+	inputJSON := truncate(digestPromptInput(summaries, insights, themes, insightClusters, connections), 16000)
+	prompt := s.digestNewsletterPrompt(ctx, base, inputJSON)
+	return s.promptDigestWithPrompt(ctx, s.cfg.OpenAISynthesisModel, prompt, digestPromptMaxOutputTokens)
 }
 
 func (s *Service) promptDigestWithLines(ctx context.Context, model string, promptLines []string, maxOutputTokens int) (promptDigestResponse, error) {
+	return s.promptDigestWithPrompt(ctx, model, digestPromptPayload{
+		Lines:                promptLines,
+		LangfusePromptSource: "local",
+	}, maxOutputTokens)
+}
+
+func (s *Service) promptDigestWithPrompt(ctx context.Context, model string, prompt digestPromptPayload, maxOutputTokens int) (promptDigestResponse, error) {
 	if strings.TrimSpace(model) == "" {
 		model = s.cfg.OpenAISynthesisModel
 	}
 	if maxOutputTokens <= 0 {
 		maxOutputTokens = 3000
 	}
-	payload, err := s.promptDigestOnce(ctx, model, promptLines, maxOutputTokens)
+	payload, err := s.promptDigestOnce(ctx, model, prompt, maxOutputTokens)
 	if err == nil {
 		return payload, nil
 	}
@@ -93,29 +108,61 @@ func (s *Service) promptDigestWithLines(ctx context.Context, model string, promp
 	}
 
 	s.logger.Warn("retrying digest newsletter synthesis after incomplete response", "error", err)
-	retryLines := append([]string(nil), promptLines...)
-	retryLines = append(retryLines,
+	retryPrompt := prompt
+	retryPrompt.Lines = append([]string(nil), prompt.Lines...)
+	retryPrompt.Lines = append(retryPrompt.Lines,
 		"",
 		"RETRY REQUIREMENT",
 		"The previous response was incomplete or malformed JSON: "+err.Error(),
 		"Return one complete valid JSON object only. Keep the essay concise enough to finish within the output limit.",
 	)
-	payload, retryErr := s.promptDigestOnce(ctx, model, retryLines, max(maxOutputTokens, digestPromptMaxOutputTokens))
+	payload, retryErr := s.promptDigestOnce(ctx, model, retryPrompt, max(maxOutputTokens, digestPromptMaxOutputTokens))
 	if retryErr != nil {
 		return promptDigestResponse{}, fmt.Errorf("digest response retry after %v failed: %w", err, retryErr)
 	}
 	return payload, nil
 }
 
-func (s *Service) promptDigestOnce(ctx context.Context, model string, promptLines []string, maxOutputTokens int) (promptDigestResponse, error) {
+func (s *Service) promptDigestOnce(ctx context.Context, model string, prompt digestPromptPayload, maxOutputTokens int) (promptDigestResponse, error) {
+	promptText := strings.Join(prompt.Lines, "\n")
+	metadata := map[string]string{
+		"retry":         fmt.Sprintf("%t", containsPromptLine(prompt.Lines, "RETRY REQUIREMENT")),
+		"prompt_source": prompt.LangfusePromptSource,
+	}
+	if prompt.LangfusePromptLabel != "" {
+		metadata["prompt_label"] = prompt.LangfusePromptLabel
+	}
+	if prompt.LangfusePromptFallback != "" {
+		metadata["prompt_fallback"] = prompt.LangfusePromptFallback
+	}
+	ctx, span := s.startObservationSpan(ctx, observationOptions{
+		Name:          "digest-newsletter-synthesis",
+		Type:          "generation",
+		Model:         model,
+		PromptVersion: digestPromptVersion,
+		PromptName:    prompt.LangfusePromptName,
+		PromptNumber:  prompt.LangfusePromptVersion,
+		Tags:          []string{"digest", "newsletter", "generation"},
+		Metadata:      metadata,
+		InputSummary: map[string]any{
+			"prompt_lines": len(prompt.Lines),
+			"prompt_chars": len(promptText),
+		},
+		ModelParams: map[string]any{
+			"max_output_tokens": maxOutputTokens,
+			"response_format":   "json_object",
+		},
+	})
+	defer span.End()
 	requestBody := map[string]any{
 		"model":             model,
 		"text":              map[string]any{"format": map[string]any{"type": "json_object"}},
-		"input":             strings.Join(promptLines, "\n"),
+		"input":             promptText,
 		"max_output_tokens": maxOutputTokens,
 	}
 	raw, err := json.Marshal(requestBody)
 	if err != nil {
+		setSpanError(span, err)
 		return promptDigestResponse{}, err
 	}
 	headers := authHeader("OPENAI_API_KEY", "Bearer {value}")
@@ -123,17 +170,23 @@ func (s *Service) promptDigestOnce(ctx context.Context, model string, promptLine
 
 	var response openAIResponse
 	if err := s.requestJSON(ctx, http.MethodPost, "https://api.openai.com/v1/responses", headers, bytes.NewReader(raw), &response); err != nil {
+		setSpanError(span, err)
 		return promptDigestResponse{}, err
 	}
 	if response.Error != nil && response.Error.Message != "" {
-		return promptDigestResponse{}, fmt.Errorf(response.Error.Message)
+		err := fmt.Errorf("%s", response.Error.Message)
+		setSpanError(span, err)
+		return promptDigestResponse{}, err
 	}
+	setOpenAIUsage(span, response.Usage)
 	if strings.EqualFold(strings.TrimSpace(response.Status), "incomplete") {
 		reason := "unknown"
 		if response.IncompleteDetails != nil && strings.TrimSpace(response.IncompleteDetails.Reason) != "" {
 			reason = strings.TrimSpace(response.IncompleteDetails.Reason)
 		}
-		return promptDigestResponse{}, &digestPromptFormatError{err: fmt.Errorf("model response incomplete: %s", reason)}
+		err := &digestPromptFormatError{err: fmt.Errorf("model response incomplete: %s", reason)}
+		setSpanError(span, err)
+		return promptDigestResponse{}, err
 	}
 	text := response.OutputText
 	if strings.TrimSpace(text) == "" {
@@ -148,13 +201,68 @@ func (s *Service) promptDigestOnce(ctx context.Context, model string, promptLine
 		text = strings.Join(parts, "\n")
 	}
 	if strings.TrimSpace(text) == "" {
-		return promptDigestResponse{}, &digestPromptFormatError{err: fmt.Errorf("model returned empty output")}
+		err := &digestPromptFormatError{err: fmt.Errorf("model returned empty output")}
+		setSpanError(span, err)
+		return promptDigestResponse{}, err
 	}
 	var payload promptDigestResponse
 	if err := json.Unmarshal([]byte(extractJSONObject(text)), &payload); err != nil {
-		return promptDigestResponse{}, &digestPromptFormatError{err: fmt.Errorf("malformed model JSON: %w", err)}
+		formatErr := &digestPromptFormatError{err: fmt.Errorf("malformed model JSON: %w", err)}
+		setSpanError(span, formatErr)
+		return promptDigestResponse{}, formatErr
 	}
+	setSpanOutputSummary(span, map[string]any{
+		"subject_chars": len(payload.Subject),
+		"body_lines":    len(payload.BodyLines),
+		"body_chars":    len(payload.BodyMarkdown),
+	})
 	return payload, nil
+}
+
+func (s *Service) digestNewsletterPrompt(ctx context.Context, base DigestIssue, inputJSON string) digestPromptPayload {
+	localLines := prompts.AppendInputJSON(digestNewsletterPromptLines(base), inputJSON)
+	localPrompt := digestPromptPayload{
+		Lines:                localLines,
+		LangfusePromptSource: "local",
+	}
+	if !s.cfg.LangfusePromptManagementEnabled || strings.TrimSpace(s.cfg.LangfuseBaseURL) == "" {
+		return localPrompt
+	}
+	promptName := strings.TrimSpace(s.cfg.LangfuseDigestPromptName)
+	if promptName == "" {
+		promptName = "second-brain/digest-newsletter"
+	}
+	promptLabel := strings.TrimSpace(s.cfg.LangfusePromptLabel)
+	if promptLabel == "" {
+		promptLabel = "production"
+	}
+	client := langfuseclient.NewClient(s.cfg, s.client)
+	managedPrompt, err := client.GetTextPrompt(ctx, promptName, promptLabel)
+	if err != nil {
+		s.logger.Warn("using local digest prompt after langfuse prompt fetch failed", "name", promptName, "label", promptLabel, "error", err)
+		localPrompt.LangfusePromptFallback = truncateTelemetryValue(err.Error())
+		return localPrompt
+	}
+	compiled := langfuseclient.CompileTextPrompt(managedPrompt.Prompt, map[string]string{
+		"digest_date": base.DigestDate,
+		"input_json":  inputJSON,
+	})
+	return digestPromptPayload{
+		Lines:                 strings.Split(compiled, "\n"),
+		LangfusePromptName:    managedPrompt.Name,
+		LangfusePromptVersion: managedPrompt.Version,
+		LangfusePromptLabel:   promptLabel,
+		LangfusePromptSource:  "langfuse",
+	}
+}
+
+func containsPromptLine(lines []string, target string) bool {
+	for _, line := range lines {
+		if strings.TrimSpace(line) == target {
+			return true
+		}
+	}
+	return false
 }
 
 func digestNewsletterPromptLines(base DigestIssue) []string {

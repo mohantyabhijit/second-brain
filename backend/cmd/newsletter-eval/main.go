@@ -15,6 +15,7 @@ import (
 	"github.com/abhijitmohanty/second-brain/backend/internal/config"
 	"github.com/abhijitmohanty/second-brain/backend/internal/knowledge"
 	"github.com/abhijitmohanty/second-brain/backend/internal/platform/httpclient"
+	platformtracing "github.com/abhijitmohanty/second-brain/backend/internal/platform/tracing"
 	"github.com/abhijitmohanty/second-brain/backend/internal/store/localfile"
 	"github.com/abhijitmohanty/second-brain/backend/internal/store/postgres"
 )
@@ -22,6 +23,12 @@ import (
 func main() {
 	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
 	cfg := config.Load()
+	shutdownTracing, _ := platformtracing.StartLangfuse(context.Background(), cfg, "second-brain-newsletter-eval", logger)
+	defer func() {
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		shutdownTracing(shutdownCtx)
+	}()
 
 	iterations := flag.Int("iterations", intEnv("NEWSLETTER_EVAL_ITERATIONS", 5), "prompt-improvement iterations after baseline")
 	outputDir := flag.String("out", valueEnv("NEWSLETTER_EVAL_OUTPUT_DIR", "../data/runtime/newsletter-experiments"), "directory for JSON and markdown reports")

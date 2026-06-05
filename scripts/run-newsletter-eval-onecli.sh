@@ -21,6 +21,7 @@ if [[ -z "${DATABASE_URL:-}" ]]; then
   fi
 fi
 export ONECLI_GATEWAY=true
+export LANGFUSE_BASE_URL="${LANGFUSE_BASE_URL:-https://jp.cloud.langfuse.com}"
 export OPENAI_SYNTHESIS_MODEL="${OPENAI_SYNTHESIS_MODEL:-gpt-5.4-mini}"
 export OPENAI_CHAT_MODEL="${OPENAI_CHAT_MODEL:-gpt-5.4}"
 export NEWSLETTER_EVAL_ITERATIONS="${NEWSLETTER_EVAL_ITERATIONS:-5}"

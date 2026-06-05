@@ -549,6 +549,8 @@ func (s *Service) Run(ctx context.Context) (Result, error) {
 }
 
 func (s *Service) RunCycle(ctx context.Context) (RunOutcome, error) {
+	ctx, span := s.startOperationSpan(ctx, "knowledge-refresh", "refresh")
+	defer span.End()
 	start := time.Now()
 	blockers := []string{}
 	result := Result{
@@ -658,9 +660,13 @@ func (s *Service) RunCycle(ctx context.Context) (RunOutcome, error) {
 	if materialLookupFailed {
 		if latest != nil {
 			s.setRefreshStage("completed", "Source material lookup failed; skipped refresh processing to avoid duplicate provider and model work.")
+			setSpanOutputSummary(span, map[string]any{"new_content": false, "skipped_reason": "source_material_lookup_failed"})
 			return RunOutcome{Result: *latest, NewContent: false, SkippedReason: "source_material_lookup_failed"}, nil
 		}
-		return RunOutcome{Result: result, NewContent: false, SkippedReason: "source_material_lookup_failed"}, fmt.Errorf(strings.Join(materialBlockers, "; "))
+		err := fmt.Errorf(strings.Join(materialBlockers, "; "))
+		setSpanError(span, err)
+		setSpanOutputSummary(span, map[string]any{"new_content": false, "skipped_reason": "source_material_lookup_failed"})
+		return RunOutcome{Result: result, NewContent: false, SkippedReason: "source_material_lookup_failed"}, err
 	}
 
 	xCandidates := candidatesFromBookmarks(xBookmarks)
@@ -692,6 +698,7 @@ func (s *Service) RunCycle(ctx context.Context) (RunOutcome, error) {
 		if err := s.publishAppStateForResult(ctx, *latest, "", "refresh_noop_publish"); err != nil {
 			s.logger.Warn("read model cache noop publish failed", "error", err)
 		}
+		setSpanOutputSummary(span, map[string]any{"new_content": false, "skipped_reason": "no_new_source_materials", "x_count": len(xBookmarks), "youtube_count": len(youtubeItems)})
 		return RunOutcome{Result: *latest, NewContent: false, SkippedReason: "no_new_source_materials"}, nil
 	}
 
@@ -767,6 +774,8 @@ func (s *Service) RunCycle(ctx context.Context) (RunOutcome, error) {
 	}
 	if err := s.store.SaveRun(ctx, result, saveSources); err != nil {
 		s.logger.Error("knowledge refresh persist failed", "duration_ms", time.Since(saveStart).Milliseconds(), "error", err)
+		setSpanError(span, err)
+		setSpanOutputSummary(span, map[string]any{"new_content": len(processed) > 0, "blockers": len(result.Blockers)})
 		return RunOutcome{Result: result, NewContent: len(processed) > 0}, err
 	}
 	if err := s.publishAppStateForResult(ctx, result, "", "refresh_publish"); err != nil {
@@ -787,6 +796,18 @@ func (s *Service) RunCycle(ctx context.Context) (RunOutcome, error) {
 		"connections", len(result.Connections),
 		"blockers", len(result.Blockers),
 	)
+	setSpanOutputSummary(span, map[string]any{
+		"new_content":      len(processed) > 0,
+		"x_count":          len(result.XBookmarks),
+		"youtube_count":    len(result.YouTubeItems),
+		"summaries":        len(result.Summaries),
+		"insights":         len(result.Insights),
+		"actions":          len(result.ActionItems),
+		"themes":           len(result.Themes),
+		"insight_clusters": len(result.InsightClusters),
+		"connections":      len(result.Connections),
+		"blockers":         len(result.Blockers),
+	})
 	return RunOutcome{Result: result, NewContent: len(processed) > 0}, nil
 }
 
@@ -956,18 +977,26 @@ func (s *Service) SaveFeedback(ctx context.Context, event FeedbackEvent) error {
 }
 
 func (s *Service) GenerateDigest(ctx context.Context) (*DigestIssue, error) {
+	ctx, span := s.startOperationSpan(ctx, "generate-digest", "digest")
+	defer span.End()
 	latest, err := s.readLatestCanonical(ctx)
 	if err != nil {
+		setSpanError(span, err)
 		return nil, err
 	}
 	if latest == nil {
-		return nil, fmt.Errorf("no knowledge run is available for digest generation")
+		err := fmt.Errorf("no knowledge run is available for digest generation")
+		setSpanError(span, err)
+		return nil, err
 	}
 	if isSentDigestForDate(latest.Digest, digestDateFor(s.cfg.DigestTimezone, s.cfg.DigestTime, time.Now().UTC())) {
+		setSpanOutputSummary(span, map[string]any{"status": "already_sent", "digest_date": latest.Digest.DigestDate})
 		return latest.Digest, nil
 	}
 	if !hasDigestInputs(latest.Summaries, latest.Insights) {
-		return nil, fmt.Errorf("no source-grounded digest inputs are available")
+		err := fmt.Errorf("no source-grounded digest inputs are available")
+		setSpanError(span, err)
+		return nil, err
 	}
 	sourceRefs, summaries, insights, themes, insightClusters, connections, err := s.digestInputsForLatest(ctx, latest)
 	if errors.Is(err, ErrNoNewDigestSources) {
@@ -981,18 +1010,22 @@ func (s *Service) GenerateDigest(ctx context.Context) (*DigestIssue, error) {
 		err = nil
 	}
 	if err != nil {
+		setSpanError(span, err)
 		return nil, err
 	}
 	if !hasDigestInputs(summaries, insights) {
+		setSpanError(span, ErrNoNewDigestSources)
 		return nil, ErrNoNewDigestSources
 	}
 	digest, err := s.composeDigestIssue(ctx, time.Now().UTC(), summaries, insights, themes, insightClusters, connections)
 	if err != nil {
+		setSpanError(span, err)
 		return nil, err
 	}
 	digest.OwnerID = s.cfg.OwnerID
 	digest.SourceRefs = sourceRefs
 	if err := ensureDigestID(&digest); err != nil {
+		setSpanError(span, err)
 		return nil, err
 	}
 	s.annotateDigestIllustration(&digest)
@@ -1002,6 +1035,7 @@ func (s *Service) GenerateDigest(ctx context.Context) (*DigestIssue, error) {
 	}
 	saved, err := s.store.SaveDigest(ctx, digest)
 	if err != nil {
+		setSpanError(span, err)
 		return nil, err
 	}
 	if saved != nil {
@@ -1009,6 +1043,9 @@ func (s *Service) GenerateDigest(ctx context.Context) (*DigestIssue, error) {
 		if err := s.publishAppStateForResult(ctx, *latest, "", "digest_publish"); err != nil {
 			s.logger.Warn("digest saved but read model cache publish failed", "digest_id", saved.ID, "error", err)
 		}
+	}
+	if saved != nil {
+		setSpanOutputSummary(span, map[string]any{"digest_id": saved.ID, "digest_date": saved.DigestDate, "status": saved.Status, "source_refs": len(saved.SourceRefs)})
 	}
 	return saved, nil
 }

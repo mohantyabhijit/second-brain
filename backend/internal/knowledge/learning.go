@@ -46,6 +46,7 @@ type embeddingResponse struct {
 	Data []struct {
 		Embedding []float64 `json:"embedding"`
 	} `json:"data"`
+	Usage openAIUsage `json:"usage"`
 	Error *struct {
 		Message string `json:"message"`
 	} `json:"error"`
@@ -161,6 +162,17 @@ func (s *Service) embeddingLiterals(ctx context.Context, texts []string) []strin
 	if strings.TrimSpace(os.Getenv("OPENAI_API_KEY")) == "" && !s.cfg.OneCLIGateway {
 		return deterministicEmbeddingLiterals(texts)
 	}
+	ctx, span := s.startObservationSpan(ctx, observationOptions{
+		Name:          "knowledge-embeddings",
+		Type:          "embedding",
+		Model:         s.cfg.OpenAIEmbeddingModel,
+		PromptVersion: "embedding-v1",
+		Tags:          []string{"refresh", "embedding"},
+		InputSummary: map[string]any{
+			"text_count": len(texts),
+		},
+	})
+	defer span.End()
 
 	inputs := make([]string, 0, len(texts))
 	for _, text := range texts {
@@ -179,12 +191,16 @@ func (s *Service) embeddingLiterals(ctx context.Context, texts []string) []strin
 
 	var response embeddingResponse
 	if err := s.requestJSON(ctx, http.MethodPost, "https://api.openai.com/v1/embeddings", headers, bytes.NewReader(raw), &response); err != nil {
+		setSpanError(span, err)
 		return deterministicEmbeddingLiterals(texts)
 	}
 	if response.Error != nil && response.Error.Message != "" {
+		setSpanError(span, fmt.Errorf("%s", response.Error.Message))
 		return deterministicEmbeddingLiterals(texts)
 	}
+	setOpenAIUsage(span, response.Usage)
 	if len(response.Data) != len(texts) {
+		setSpanError(span, fmt.Errorf("OpenAI embedding response returned %d vectors for %d inputs", len(response.Data), len(texts)))
 		return deterministicEmbeddingLiterals(texts)
 	}
 	literals := make([]string, 0, len(response.Data))
@@ -195,6 +211,7 @@ func (s *Service) embeddingLiterals(ctx context.Context, texts []string) []strin
 		}
 		literals = append(literals, vectorLiteral(item.Embedding))
 	}
+	setSpanOutputSummary(span, map[string]any{"vector_count": len(literals), "dimensions": embeddingDimensions})
 	return literals
 }
 
