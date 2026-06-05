@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"net/http"
 	"os/exec"
 	"strings"
@@ -12,6 +11,7 @@ import (
 	"time"
 
 	"github.com/abhijitmohanty/second-brain/backend/internal/config"
+	"github.com/abhijitmohanty/second-brain/backend/internal/platform/logging"
 )
 
 type Store interface {
@@ -81,7 +81,7 @@ type Service struct {
 	store            Store
 	cache            ReadModelCache
 	client           *http.Client
-	logger           *slog.Logger
+	logger           *logging.Logger
 	refreshMu        sync.Mutex
 	refresh          RefreshStatus
 	appStateViewMu   sync.Mutex
@@ -118,7 +118,7 @@ func NewService(cfg config.Config, store Store, client *http.Client) *Service {
 		cfg:              cfg,
 		store:            store,
 		client:           client,
-		logger:           slog.Default(),
+		logger:           logging.Default(),
 		appStateViewMemo: map[string]cachedAppStateView{},
 		xOAuthStates:     map[string]xOAuthState{},
 	}
@@ -224,10 +224,14 @@ func (s *Service) SaveYouTubePlaylist(ctx context.Context, input YouTubePlaylist
 	}, nil
 }
 
-func (s *Service) SetLogger(logger *slog.Logger) {
+func (s *Service) SetLogger(logger *logging.Logger) {
 	if logger != nil {
 		s.logger = logger
 	}
+}
+
+func (s *Service) log(ctx context.Context) *logging.Logger {
+	return logging.FromContext(ctx, s.logger)
 }
 
 func (s *Service) SetReadModelCache(cache ReadModelCache) {
@@ -238,7 +242,7 @@ func (s *Service) ReadLatest(ctx context.Context) (*Result, error) {
 	if s.cache != nil {
 		latest, err := s.cache.ReadLatest(ctx, s.cfg.OwnerID)
 		if err == nil {
-			s.logger.Info("read model cache hit", "surface", "latest")
+			s.log(ctx).Info("read model cache hit", "surface", "latest")
 			if latest == nil {
 				return nil, nil
 			}
@@ -250,7 +254,7 @@ func (s *Service) ReadLatest(ctx context.Context) (*Result, error) {
 			return latest, nil
 		}
 		if !errors.Is(err, ErrReadModelCacheMiss) {
-			s.logger.Warn("read model cache fallback", "surface", "latest", "error", err)
+			s.log(ctx).Warn("read model cache fallback", "surface", "latest", "error", err)
 		}
 	}
 	if state, ok := s.readAppStateSnapshot(ctx); ok {
@@ -304,7 +308,7 @@ func (s *Service) ownerYouTubePlaylistID(ctx context.Context) string {
 			}
 		}
 	} else if s.logger != nil {
-		s.logger.Warn("read youtube source connection failed", "owner_id", s.cfg.OwnerID, "error", err)
+		s.log(ctx).Warn("read youtube source connection failed", "owner_id", s.cfg.OwnerID, "error", err)
 	}
 	if s.isPublicOwner() {
 		return strings.TrimSpace(s.cfg.YouTubePlaylistID)
@@ -316,12 +320,12 @@ func (s *Service) ReadAppState(ctx context.Context) (*AppState, string, error) {
 	if s.cache != nil {
 		state, err := s.cache.ReadAppState(ctx, s.cfg.OwnerID)
 		if err == nil {
-			s.logger.Info("read model cache hit", "surface", "app-state")
+			s.log(ctx).Info("read model cache hit", "surface", "app-state")
 			s.normalizeAppState(state)
 			return state, "hit", nil
 		}
 		if !errors.Is(err, ErrReadModelCacheMiss) {
-			s.logger.Warn("read model cache fallback", "surface", "app-state", "error", err)
+			s.log(ctx).Warn("read model cache fallback", "surface", "app-state", "error", err)
 		}
 	}
 	if state, ok := s.readAppStateSnapshot(ctx); ok {
@@ -352,13 +356,13 @@ func (s *Service) ReadAppStateView(ctx context.Context, view string, limit int) 
 	if viewCache, ok := s.cache.(readModelViewCache); ok {
 		state, err := viewCache.ReadAppViewState(ctx, s.cfg.OwnerID, view, limit)
 		if err == nil {
-			s.logger.Info("read model cache hit", "surface", "app-state", "view", view)
+			s.log(ctx).Info("read model cache hit", "surface", "app-state", "view", view)
 			s.normalizeAppState(state)
 			s.memoizeAppStateView(view, limit, state)
 			return state, "hit", nil
 		}
 		if !errors.Is(err, ErrReadModelCacheMiss) {
-			s.logger.Warn("read model cache fallback", "surface", "app-state", "view", view, "error", err)
+			s.log(ctx).Warn("read model cache fallback", "surface", "app-state", "view", view, "error", err)
 		}
 	}
 	if state, ok := s.readAppStateSnapshot(ctx); ok {
@@ -396,11 +400,11 @@ func (s *Service) readAppStateSnapshot(ctx context.Context) (*AppState, bool) {
 	}
 	state, err := store.ReadLatestReadModelSnapshot(ctx, s.cfg.OwnerID)
 	if err == nil && state != nil {
-		s.logger.Info("read model snapshot hit", "surface", "app-state")
+		s.log(ctx).Info("read model snapshot hit", "surface", "app-state")
 		return state, true
 	}
 	if err != nil && !errors.Is(err, ErrReadModelCacheMiss) {
-		s.logger.Warn("read model snapshot fallback", "surface", "app-state", "error", err)
+		s.log(ctx).Warn("read model snapshot fallback", "surface", "app-state", "error", err)
 	}
 	return nil, false
 }
@@ -451,7 +455,7 @@ func (s *Service) readLatestViewCanonical(ctx context.Context, view string, limi
 			normalizeResultCollections(latest)
 			return latest, nil
 		}
-		s.logger.Warn("view-scoped latest fallback", "view", view, "error", err)
+		s.log(ctx).Warn("view-scoped latest fallback", "view", view, "error", err)
 	}
 	if reader, ok := s.store.(latestViewReader); ok {
 		latest, err := reader.ReadLatestView(ctx, view, NormalizePageStateLimit(limit))
@@ -460,7 +464,7 @@ func (s *Service) readLatestViewCanonical(ctx context.Context, view string, limi
 			normalizeResultCollections(latest)
 			return latest, nil
 		}
-		s.logger.Warn("view-scoped latest fallback", "view", view, "error", err)
+		s.log(ctx).Warn("view-scoped latest fallback", "view", view, "error", err)
 	}
 	return s.readLatestCanonical(ctx)
 }
@@ -520,7 +524,7 @@ func (s *Service) ReadRefreshStatus(ctx context.Context) RefreshStatus {
 			return *status
 		}
 		if err != nil && !errors.Is(err, ErrReadModelCacheMiss) {
-			s.logger.Warn("read model cache fallback", "surface", "refresh-status", "error", err)
+			s.log(ctx).Warn("read model cache fallback", "surface", "refresh-status", "error", err)
 		}
 	}
 	return s.RefreshStatus()
@@ -565,13 +569,13 @@ func (s *Service) RunCycle(ctx context.Context) (RunOutcome, error) {
 		Validation:   []ValidationItem{},
 		Blockers:     []string{},
 	}
-	s.logger.Info("knowledge refresh started", "owner_id", s.cfg.OwnerID)
+	s.log(ctx).Info("knowledge refresh started", "owner_id", s.cfg.OwnerID)
 	s.setRefreshStage("checking_credentials", "Checking OneCLI, X, YouTube, Supabase, and model configuration.")
 
 	result.SourceStatus.OneCLI = s.oneCLIStatus(ctx)
 	result.SourceStatus.X = SourceNeedsSecrets
 	result.SourceStatus.YouTube = SourceNeedsSecrets
-	s.logger.Info("onecli status checked", "status", result.SourceStatus.OneCLI)
+	s.log(ctx).Info("onecli status checked", "status", result.SourceStatus.OneCLI)
 	s.setRefreshStage("fetching_sources", "Fetching X bookmarks and YouTube playlist videos.")
 
 	type xFetchResult struct {
@@ -611,20 +615,20 @@ func (s *Service) RunCycle(ctx context.Context) (RunOutcome, error) {
 	xResult := <-xFetch
 	xBookmarks := xResult.items
 	if xResult.err != nil {
-		s.logger.Warn("x bookmark fetch blocked", "duration_ms", xResult.duration.Milliseconds(), "error", xResult.err)
+		s.log(ctx).Warn("x bookmark fetch blocked", "duration_ms", xResult.duration.Milliseconds(), "error", xResult.err)
 		blockers = append(blockers, xResult.err.Error())
 	} else {
-		s.logger.Info("x bookmark fetch completed", "duration_ms", xResult.duration.Milliseconds(), "count", len(xBookmarks))
+		s.log(ctx).Info("x bookmark fetch completed", "duration_ms", xResult.duration.Milliseconds(), "count", len(xBookmarks))
 	}
 
 	youtubeResult := <-youtubeFetch
 	youtubeBlocked := youtubeResult.blocked
 	youtubeItems := youtubeResult.items
 	if youtubeResult.err != nil {
-		s.logger.Warn("youtube inbox fetch blocked", "duration_ms", youtubeResult.duration.Milliseconds(), "error", youtubeResult.err)
+		s.log(ctx).Warn("youtube inbox fetch blocked", "duration_ms", youtubeResult.duration.Milliseconds(), "error", youtubeResult.err)
 		blockers = append(blockers, youtubeResult.err.Error())
 	} else {
-		s.logger.Info(
+		s.log(ctx).Info(
 			"youtube playlist fetch completed",
 			"duration_ms", youtubeResult.duration.Milliseconds(),
 			"count", len(youtubeItems),
@@ -638,7 +642,7 @@ func (s *Service) RunCycle(ctx context.Context) (RunOutcome, error) {
 	if !youtubeBlocked && !materialLookupFailed {
 		transcriptStart := time.Now()
 		youtubeItems = s.fetchYouTubeTranscriptsForNewMaterials(ctx, youtubeItems, s.cfg.YouTubeTranscriptTestVideoID, sourceMaterials)
-		s.logger.Info(
+		s.log(ctx).Info(
 			"youtube transcript fetch completed",
 			"duration_ms", time.Since(transcriptStart).Milliseconds(),
 			"count", len(youtubeItems),
@@ -646,7 +650,7 @@ func (s *Service) RunCycle(ctx context.Context) (RunOutcome, error) {
 			"transcripts_cached", countCachedTranscripts(youtubeItems),
 		)
 	} else if materialLookupFailed {
-		s.logger.Warn("youtube transcript fetch skipped because source material lookup failed")
+		s.log(ctx).Warn("youtube transcript fetch skipped because source material lookup failed")
 	}
 
 	result.XBookmarks = xBookmarks
@@ -654,7 +658,7 @@ func (s *Service) RunCycle(ctx context.Context) (RunOutcome, error) {
 
 	latest, latestErr := s.readLatestCanonical(ctx)
 	if latestErr != nil {
-		s.logger.Warn("latest run lookup failed before refresh merge", "error", latestErr)
+		s.log(ctx).Warn("latest run lookup failed before refresh merge", "error", latestErr)
 		blockers = append(blockers, "latest run lookup failed: "+latestErr.Error())
 	}
 	if materialLookupFailed {
@@ -677,7 +681,7 @@ func (s *Service) RunCycle(ctx context.Context) (RunOutcome, error) {
 	}
 	candidates := append(xCandidates, candidatesFromVideos(youtubeItems)...)
 	newCandidates, skippedCandidates := filterNewSourceCandidates(candidates, sourceMaterials, model)
-	s.logger.Info(
+	s.log(ctx).Info(
 		"source candidates prepared",
 		"count", len(candidates),
 		"new_count", len(newCandidates),
@@ -689,14 +693,14 @@ func (s *Service) RunCycle(ctx context.Context) (RunOutcome, error) {
 	noNewContent := len(newCandidates) == 0 && len(blockers) == 0 && latest != nil && (len(candidates) > 0 || len(youtubeItems) > 0 || len(xBookmarks) > 0)
 	if noNewContent {
 		s.setRefreshStage("completed", "No new source materials found; skipped refresh processing.")
-		s.logger.Info(
+		s.log(ctx).Info(
 			"knowledge refresh skipped; no new source materials",
 			"x_count", len(xBookmarks),
 			"youtube_count", len(youtubeItems),
 			"cached_transcripts", countCachedTranscripts(youtubeItems),
 		)
 		if err := s.publishAppStateForResult(ctx, *latest, "", "refresh_noop_publish"); err != nil {
-			s.logger.Warn("read model cache noop publish failed", "error", err)
+			s.log(ctx).Warn("read model cache noop publish failed", "error", err)
 		}
 		setSpanOutputSummary(span, map[string]any{"new_content": false, "skipped_reason": "no_new_source_materials", "x_count": len(xBookmarks), "youtube_count": len(youtubeItems)})
 		return RunOutcome{Result: *latest, NewContent: false, SkippedReason: "no_new_source_materials"}, nil
@@ -705,11 +709,11 @@ func (s *Service) RunCycle(ctx context.Context) (RunOutcome, error) {
 	s.setRefreshStage("gleaning_insights", fmt.Sprintf("Gleaning insights from %d new source material(s).", len(newCandidates)))
 	processStart := time.Now()
 	processed, synthesisBlockers := s.processSourceCandidates(ctx, newCandidates)
-	s.logger.Info("source candidates processed", "duration_ms", time.Since(processStart).Milliseconds(), "count", len(processed), "blockers", len(synthesisBlockers))
+	s.log(ctx).Info("source candidates processed", "duration_ms", time.Since(processStart).Milliseconds(), "count", len(processed), "blockers", len(synthesisBlockers))
 	s.setRefreshStage("enriching_memory", "Embedding, ranking, clustering, and connecting repeated ideas across sources.")
 	enrichStart := time.Now()
 	processed = s.enrichProcessedSources(ctx, processed)
-	s.logger.Info("source enrichment completed", "duration_ms", time.Since(enrichStart).Milliseconds(), "count", len(processed))
+	s.log(ctx).Info("source enrichment completed", "duration_ms", time.Since(enrichStart).Milliseconds(), "count", len(processed))
 	blockers = append(blockers, synthesisBlockers...)
 	excludeSourceIDs := processedSourceIDs(processed)
 	saveSources := processed
@@ -773,15 +777,15 @@ func (s *Service) RunCycle(ctx context.Context) (RunOutcome, error) {
 		defer progressStore.SetRefreshProgressReporter(nil)
 	}
 	if err := s.store.SaveRun(ctx, result, saveSources); err != nil {
-		s.logger.Error("knowledge refresh persist failed", "duration_ms", time.Since(saveStart).Milliseconds(), "error", err)
+		s.log(ctx).Error("knowledge refresh persist failed", "duration_ms", time.Since(saveStart).Milliseconds(), "error", err)
 		setSpanError(span, err)
 		setSpanOutputSummary(span, map[string]any{"new_content": len(processed) > 0, "blockers": len(result.Blockers)})
 		return RunOutcome{Result: result, NewContent: len(processed) > 0}, err
 	}
 	if err := s.publishAppStateForResult(ctx, result, "", "refresh_publish"); err != nil {
-		s.logger.Warn("read model cache refresh publish failed", "error", err)
+		s.log(ctx).Warn("read model cache refresh publish failed", "error", err)
 	}
-	s.logger.Info(
+	s.log(ctx).Info(
 		"knowledge refresh completed",
 		"duration_ms", time.Since(start).Milliseconds(),
 		"x_count", len(result.XBookmarks),
@@ -835,7 +839,7 @@ func (s *Service) refreshTimeout() time.Duration {
 func (s *Service) publishAppStateForResult(ctx context.Context, result Result, graphStatus string, reason string) error {
 	digests, err := s.readDigestsCanonical(ctx, 50)
 	if err != nil {
-		s.logger.Warn("read digests for Redis publish failed", "error", err)
+		s.log(ctx).Warn("read digests for Redis publish failed", "error", err)
 		if result.Digest != nil {
 			digests = []DigestIssue{*result.Digest}
 		}
@@ -870,10 +874,10 @@ func (s *Service) publishAppStateBestEffort(ctx context.Context, state AppState,
 	if store, ok := s.store.(readModelSnapshotStore); ok {
 		if err := store.SaveReadModelSnapshot(publishCtx, s.cfg.OwnerID, state); err != nil {
 			snapshotErr = err
-			s.logger.Warn("read model snapshot publish failed", "reason", reason, "run_id", state.Manifest.RunID, "error", err)
+			s.log(ctx).Warn("read model snapshot publish failed", "reason", reason, "run_id", state.Manifest.RunID, "error", err)
 		} else {
 			snapshotPublished = true
-			s.logger.Info("read model snapshot publish completed", "reason", reason, "run_id", state.Manifest.RunID, "etag", state.Manifest.ETag)
+			s.log(ctx).Info("read model snapshot publish completed", "reason", reason, "run_id", state.Manifest.RunID, "etag", state.Manifest.ETag)
 		}
 	}
 	if s.cache == nil {
@@ -886,14 +890,14 @@ func (s *Service) publishAppStateBestEffort(ctx context.Context, state AppState,
 	for attempt := 1; attempt <= 3; attempt++ {
 		if err := s.cache.PublishAppState(publishCtx, s.cfg.OwnerID, state); err != nil {
 			lastErr = err
-			s.logger.Warn("read model cache publish failed", "reason", reason, "run_id", state.Manifest.RunID, "attempt", attempt, "error", err)
+			s.log(ctx).Warn("read model cache publish failed", "reason", reason, "run_id", state.Manifest.RunID, "attempt", attempt, "error", err)
 			if publishCtx.Err() != nil {
 				break
 			}
 			time.Sleep(time.Duration(attempt) * 100 * time.Millisecond)
 			continue
 		}
-		s.logger.Info("read model cache publish completed", "reason", reason, "run_id", state.Manifest.RunID, "etag", state.Manifest.ETag)
+		s.log(ctx).Info("read model cache publish completed", "reason", reason, "run_id", state.Manifest.RunID, "etag", state.Manifest.ETag)
 		s.purgeEdgeCacheBestEffort(publishCtx, reason)
 		return snapshotErr
 	}
@@ -910,7 +914,7 @@ func (s *Service) writeRefreshStatusBestEffort(status RefreshStatus) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	if err := s.cache.WriteRefreshStatus(ctx, s.cfg.OwnerID, status); err != nil {
-		s.logger.Warn("write refresh status to read model cache failed", "status", status.Status, "error", err)
+		s.log(ctx).Warn("write refresh status to read model cache failed", "status", status.Status, "error", err)
 	}
 }
 
@@ -1000,7 +1004,7 @@ func (s *Service) GenerateDigest(ctx context.Context) (*DigestIssue, error) {
 	}
 	sourceRefs, summaries, insights, themes, insightClusters, connections, err := s.digestInputsForLatest(ctx, latest)
 	if errors.Is(err, ErrNoNewDigestSources) {
-		s.logger.Info("no new digest source refs; composing continuity digest from latest run")
+		s.log(ctx).Info("no new digest source refs; composing continuity digest from latest run")
 		sourceRefs = nil
 		summaries = latest.Summaries
 		insights = latest.Insights
@@ -1041,7 +1045,7 @@ func (s *Service) GenerateDigest(ctx context.Context) (*DigestIssue, error) {
 	if saved != nil {
 		latest.Digest = saved
 		if err := s.publishAppStateForResult(ctx, *latest, "", "digest_publish"); err != nil {
-			s.logger.Warn("digest saved but read model cache publish failed", "digest_id", saved.ID, "error", err)
+			s.log(ctx).Warn("digest saved but read model cache publish failed", "digest_id", saved.ID, "error", err)
 		}
 	}
 	if saved != nil {
@@ -1274,14 +1278,14 @@ func (s *Service) ReadDigests(ctx context.Context, limit int) ([]DigestIssue, er
 	if s.cache != nil {
 		digests, err := s.cache.ReadDigests(ctx, s.cfg.OwnerID, limit)
 		if err == nil {
-			s.logger.Info("read model cache hit", "surface", "digests")
+			s.log(ctx).Info("read model cache hit", "surface", "digests")
 			for index := range digests {
 				s.annotateDigestIllustration(&digests[index])
 			}
 			return digests, nil
 		}
 		if !errors.Is(err, ErrReadModelCacheMiss) {
-			s.logger.Warn("read model cache fallback", "surface", "digests", "error", err)
+			s.log(ctx).Warn("read model cache fallback", "surface", "digests", "error", err)
 		}
 	}
 	if state, ok := s.readAppStateSnapshot(ctx); ok {

@@ -2,19 +2,19 @@ package main
 
 import (
 	"context"
-	"log/slog"
 	"os"
 	"time"
 
 	"github.com/abhijitmohanty/second-brain/backend/internal/config"
 	"github.com/abhijitmohanty/second-brain/backend/internal/knowledge"
 	"github.com/abhijitmohanty/second-brain/backend/internal/platform/httpclient"
+	"github.com/abhijitmohanty/second-brain/backend/internal/platform/logging"
 	"github.com/abhijitmohanty/second-brain/backend/internal/store/localfile"
 )
 
 func main() {
-	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
 	cfg := config.Load()
+	logger := logging.NewForConfig("x-auth-check", cfg)
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 

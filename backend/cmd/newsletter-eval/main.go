@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
-	"log/slog"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -15,14 +14,15 @@ import (
 	"github.com/abhijitmohanty/second-brain/backend/internal/config"
 	"github.com/abhijitmohanty/second-brain/backend/internal/knowledge"
 	"github.com/abhijitmohanty/second-brain/backend/internal/platform/httpclient"
+	"github.com/abhijitmohanty/second-brain/backend/internal/platform/logging"
 	platformtracing "github.com/abhijitmohanty/second-brain/backend/internal/platform/tracing"
 	"github.com/abhijitmohanty/second-brain/backend/internal/store/localfile"
 	"github.com/abhijitmohanty/second-brain/backend/internal/store/postgres"
 )
 
 func main() {
-	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
 	cfg := config.Load()
+	logger := logging.NewForConfig("newsletter-eval", cfg)
 	shutdownTracing, _ := platformtracing.StartLangfuse(context.Background(), cfg, "second-brain-newsletter-eval", logger)
 	defer func() {
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -62,7 +62,7 @@ func main() {
 	service := knowledge.NewService(cfg, store, httpclient.New())
 	service.SetLogger(logger)
 	if *inspectInputs {
-		if err := printLatestInputCounts(ctx, service); err != nil {
+		if err := logLatestInputCounts(ctx, service, logger); err != nil {
 			logger.Error("inspect newsletter inputs", "error", err)
 			os.Exit(1)
 		}
@@ -85,7 +85,7 @@ func main() {
 			os.Exit(1)
 		}
 		logger.Info("newsletter experiment report written", "json", jsonPath, "markdown", mdPath)
-		printScoreTable(report)
+		logScoreTable(report, logger)
 	}
 	if err != nil {
 		logger.Error("newsletter experiment failed", "error", err)
@@ -93,7 +93,7 @@ func main() {
 	}
 }
 
-func printLatestInputCounts(ctx context.Context, service *knowledge.Service) error {
+func logLatestInputCounts(ctx context.Context, service *knowledge.Service, logger *logging.Logger) error {
 	latest, err := service.ReadLatest(ctx)
 	if err != nil {
 		return err
@@ -101,15 +101,19 @@ func printLatestInputCounts(ctx context.Context, service *knowledge.Service) err
 	if latest == nil {
 		return fmt.Errorf("no knowledge run is available")
 	}
-	fmt.Printf("generated_at=%s\n", latest.GeneratedAt.Format(time.RFC3339))
-	fmt.Printf("x_bookmarks=%d\n", len(latest.XBookmarks))
-	fmt.Printf("youtube_items=%d\n", len(latest.YouTubeItems))
-	fmt.Printf("summaries=%d\n", len(latest.Summaries))
-	fmt.Printf("insights=%d\n", len(latest.Insights))
-	fmt.Printf("themes=%d\n", len(latest.Themes))
-	fmt.Printf("insight_clusters=%d\n", len(latest.InsightClusters))
-	fmt.Printf("connections=%d\n", len(latest.Connections))
-	fmt.Printf("blockers=%d\n", len(latest.Blockers))
+	logger.InfoContext(
+		ctx,
+		"newsletter input counts inspected",
+		"generated_at", latest.GeneratedAt.Format(time.RFC3339),
+		"x_bookmarks", len(latest.XBookmarks),
+		"youtube_items", len(latest.YouTubeItems),
+		"summaries", len(latest.Summaries),
+		"insights", len(latest.Insights),
+		"themes", len(latest.Themes),
+		"insight_clusters", len(latest.InsightClusters),
+		"connections", len(latest.Connections),
+		"blockers", len(latest.Blockers),
+	)
 	return nil
 }
 
@@ -203,22 +207,22 @@ func renderExperimentMarkdown(report *knowledge.NewsletterExperimentReport) stri
 	return builder.String()
 }
 
-func printScoreTable(report *knowledge.NewsletterExperimentReport) {
-	fmt.Println("iteration overall grounding synthesis voice usefulness structure links subject")
+func logScoreTable(report *knowledge.NewsletterExperimentReport, logger *logging.Logger) {
 	for _, run := range report.Runs {
-		fmt.Printf("%d %.1f %.1f %.1f %.1f %.1f %.1f %.1f %q\n",
-			run.Iteration,
-			run.Score,
-			run.Judge.Grounding,
-			run.Judge.Synthesis,
-			run.Judge.EditorialVoice,
-			run.Judge.Usefulness,
-			run.Judge.Structure,
-			run.Judge.SourceLinking,
-			run.Subject,
+		logger.Info(
+			"newsletter experiment score",
+			"iteration", run.Iteration,
+			"overall", run.Score,
+			"grounding", run.Judge.Grounding,
+			"synthesis", run.Judge.Synthesis,
+			"voice", run.Judge.EditorialVoice,
+			"usefulness", run.Judge.Usefulness,
+			"structure", run.Judge.Structure,
+			"links", run.Judge.SourceLinking,
+			"subject", run.Subject,
 		)
 	}
-	fmt.Printf("baseline=%.1f final=%.1f improvement=%.1f\n", report.BaselineScore, report.FinalScore, report.Improvement)
+	logger.Info("newsletter experiment score summary", "baseline", report.BaselineScore, "final", report.FinalScore, "improvement", report.Improvement)
 }
 
 func escapeMarkdownTable(value string) string {

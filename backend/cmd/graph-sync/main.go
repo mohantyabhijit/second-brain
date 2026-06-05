@@ -3,11 +3,11 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"log/slog"
 	"os"
 	"time"
 
 	"github.com/abhijitmohanty/second-brain/backend/internal/config"
+	"github.com/abhijitmohanty/second-brain/backend/internal/platform/logging"
 	"github.com/abhijitmohanty/second-brain/backend/internal/store/postgres"
 	"github.com/neo4j/neo4j-go-driver/v5/neo4j"
 )
@@ -47,8 +47,8 @@ type sourceGraphPayload struct {
 }
 
 func main() {
-	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
 	cfg := config.Load()
+	logger := logging.NewForConfig("graph-sync", cfg)
 	if cfg.DatabaseURL == "" {
 		logger.Error("DATABASE_URL is required for graph sync")
 		os.Exit(1)

@@ -4,12 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log/slog"
 	"strings"
 	"time"
 
 	"github.com/abhijitmohanty/second-brain/backend/internal/config"
 	"github.com/abhijitmohanty/second-brain/backend/internal/knowledge"
+	"github.com/abhijitmohanty/second-brain/backend/internal/platform/logging"
 	goredis "github.com/redis/go-redis/v9"
 )
 
@@ -19,7 +19,7 @@ type Cache struct {
 	refreshTTL time.Duration
 }
 
-func Open(ctx context.Context, cfg config.Config, logger *slog.Logger) (knowledge.ReadModelCache, func()) {
+func Open(ctx context.Context, cfg config.Config, logger *logging.Logger) (knowledge.ReadModelCache, func()) {
 	if !cfg.RedisCacheEnabled || strings.TrimSpace(cfg.RedisURL) == "" {
 		return nil, func() {}
 	}

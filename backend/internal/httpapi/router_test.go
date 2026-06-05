@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -16,6 +15,7 @@ import (
 	"github.com/abhijitmohanty/second-brain/backend/internal/config"
 	"github.com/abhijitmohanty/second-brain/backend/internal/knowledge"
 	"github.com/abhijitmohanty/second-brain/backend/internal/platform/httputil"
+	"github.com/abhijitmohanty/second-brain/backend/internal/platform/logging"
 	"github.com/abhijitmohanty/second-brain/backend/internal/store/localfile"
 )
 
@@ -172,7 +172,7 @@ func TestRouterGeneratesLangfuseSampleDigestFromLatestSources(t *testing.T) {
 		return jsonResponse(`{"output_text":"{\"subject\":\"Sample digest\",\"body_markdown\":\"# Sample digest\\n\\nA generated Langfuse sample.\"}"}`), nil
 	})}
 	service := knowledge.NewService(cfg, store, client)
-	router := NewRouter(cfg, service, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	router := NewRouter(cfg, service, logging.Discard())
 
 	request := httptest.NewRequest(http.MethodPost, "/api/debug/langfuse/sample-digest?sources=3", nil)
 	request.Header.Set("X-Second-Brain-Profile-Token", "debug-secret")
@@ -637,8 +637,7 @@ func newTestRouterWithClient(t *testing.T, cfg config.Config, client *http.Clien
 	t.Helper()
 	store := localfile.New(cfg.KnowledgeRunPath)
 	service := knowledge.NewService(cfg, store, client)
-	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	return NewRouter(cfg, service, logger)
+	return NewRouter(cfg, service, logging.Discard())
 }
 
 func benchmarkRouter(b *testing.B) http.Handler {
@@ -691,8 +690,7 @@ func benchmarkRouter(b *testing.B) http.Handler {
 		b.Fatalf("seed benchmark store: %v", err)
 	}
 	service := knowledge.NewService(cfg, store, http.DefaultClient)
-	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	return NewRouter(cfg, service, logger)
+	return NewRouter(cfg, service, logging.Discard())
 }
 
 func clearProviderEnv(t *testing.T) {

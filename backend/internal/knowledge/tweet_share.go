@@ -46,7 +46,7 @@ func (s *Service) ShareTweet(ctx context.Context, input TweetShareRequest) (Twee
 		SourceURL:  input.SourceURL,
 	}
 	if err := s.SaveFeedback(ctx, feedback); err != nil {
-		s.logger.Warn("save tweet feedback failed", "error", err)
+		s.log(ctx).Warn("save tweet feedback failed", "error", err)
 	}
 	return TweetShareResult{ID: response.Data.ID, Text: response.Data.Text}, nil
 }

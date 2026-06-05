@@ -19,7 +19,7 @@ func (s *Service) readSourceMaterialStates(ctx context.Context, keys []SourceMat
 				states[key] = state
 			}
 		} else if !errors.Is(err, ErrReadModelCacheMiss) {
-			s.logger.Warn("source material cache fallback", "error", err)
+			s.log(ctx).Warn("source material cache fallback", "error", err)
 		}
 	}
 
@@ -57,6 +57,6 @@ func (s *Service) publishSourceMaterialStatesBestEffort(ctx context.Context, sta
 	cacheCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Second)
 	defer cancel()
 	if err := s.cache.PublishSourceMaterialStates(cacheCtx, s.cfg.OwnerID, values); err != nil {
-		s.logger.Warn("source material cache publish failed", "error", err)
+		s.log(ctx).Warn("source material cache publish failed", "error", err)
 	}
 }

@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"log/slog"
 	"os"
 	"strings"
 	"time"
@@ -10,12 +9,13 @@ import (
 	"github.com/abhijitmohanty/second-brain/backend/internal/config"
 	"github.com/abhijitmohanty/second-brain/backend/internal/knowledge"
 	"github.com/abhijitmohanty/second-brain/backend/internal/platform/httpclient"
+	"github.com/abhijitmohanty/second-brain/backend/internal/platform/logging"
 	"github.com/abhijitmohanty/second-brain/backend/internal/store/postgres"
 )
 
 func main() {
-	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
 	cfg := config.Load()
+	logger := logging.NewForConfig("x-token-import", cfg)
 	if strings.TrimSpace(cfg.DatabaseURL) == "" {
 		logger.Error("DATABASE_URL is required to import X OAuth tokens into the shared store")
 		os.Exit(1)

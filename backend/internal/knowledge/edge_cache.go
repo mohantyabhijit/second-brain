@@ -29,10 +29,10 @@ func (s *Service) purgeEdgeCacheBestEffort(ctx context.Context, reason string) {
 	purgeCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 	defer cancel()
 	if err := s.purgeCloudflareFiles(purgeCtx, files); err != nil {
-		s.logger.Warn("edge cache purge failed", "reason", reason, "error", err)
+		s.log(ctx).Warn("edge cache purge failed", "reason", reason, "error", err)
 		return
 	}
-	s.logger.Info("edge cache purge completed", "reason", reason, "files", len(files))
+	s.log(ctx).Info("edge cache purge completed", "reason", reason, "files", len(files))
 }
 
 func (s *Service) shouldPurgeEdgeCache(reason string) bool {

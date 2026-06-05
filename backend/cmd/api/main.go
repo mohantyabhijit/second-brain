@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
@@ -14,14 +13,15 @@ import (
 	"github.com/abhijitmohanty/second-brain/backend/internal/httpapi"
 	"github.com/abhijitmohanty/second-brain/backend/internal/knowledge"
 	"github.com/abhijitmohanty/second-brain/backend/internal/platform/httpclient"
+	"github.com/abhijitmohanty/second-brain/backend/internal/platform/logging"
 	platformtracing "github.com/abhijitmohanty/second-brain/backend/internal/platform/tracing"
 	"github.com/abhijitmohanty/second-brain/backend/internal/store/localfile"
 	"github.com/abhijitmohanty/second-brain/backend/internal/store/postgres"
 )
 
 func main() {
-	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
 	cfg := config.Load()
+	logger := logging.NewForConfig("api", cfg)
 	shutdownTracing, _ := platformtracing.StartLangfuse(context.Background(), cfg, "second-brain-api", logger)
 	defer func() {
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)

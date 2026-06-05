@@ -139,13 +139,13 @@ func (s *Service) CompleteXOAuth(ctx context.Context, state string, code string)
 		RefreshToken: tokenSet.RefreshToken,
 		Scope:        tokenSet.Scope,
 	}, tokenSet.UpdatedAt); err != nil {
-		s.logger.Warn("record X OAuth authorization metadata failed", "error", err)
+		s.log(ctx).Warn("record X OAuth authorization metadata failed", "error", err)
 	}
 	if err := persistXTokensToKeychain(ctx, s.cfg.XKeychainTokenSuffix, tokenSet.AccessToken, tokenSet.RefreshToken); err != nil {
-		s.logger.Warn("persist X OAuth tokens to Keychain failed", "error", err)
+		s.log(ctx).Warn("persist X OAuth tokens to Keychain failed", "error", err)
 	}
 	if err := s.rotateOneCLIXSecrets(ctx, tokenSet.AccessToken, tokenSet.RefreshToken); err != nil {
-		s.logger.Warn("persist X OAuth tokens to OneCLI failed", "error", err)
+		s.log(ctx).Warn("persist X OAuth tokens to OneCLI failed", "error", err)
 	}
 	return &XOAuthResult{Profile: *profile, AccessExpiresAt: tokenSet.AccessExpiresAt}, nil
 }
@@ -179,10 +179,10 @@ func (s *Service) ImportXRefreshToken(ctx context.Context, refreshToken string) 
 		return nil, err
 	}
 	if err := persistXTokensToKeychain(ctx, s.cfg.XKeychainTokenSuffix, tokenSet.AccessToken, tokenSet.RefreshToken); err != nil {
-		s.logger.Warn("persist imported X token refresh to Keychain failed", "error", err)
+		s.log(ctx).Warn("persist imported X token refresh to Keychain failed", "error", err)
 	}
 	if err := s.rotateOneCLIXSecrets(ctx, tokenSet.AccessToken, tokenSet.RefreshToken); err != nil {
-		s.logger.Warn("persist imported X token refresh to OneCLI failed", "error", err)
+		s.log(ctx).Warn("persist imported X token refresh to OneCLI failed", "error", err)
 	}
 	profile, err := s.fetchXAuthenticatedProfileDirect(ctx, tokenSet.AccessToken)
 	if err != nil {
@@ -231,10 +231,10 @@ func (s *Service) getValidXAccessToken(ctx context.Context) (string, bool, error
 		return "", true, err
 	}
 	if err := persistXTokensToKeychain(ctx, s.cfg.XKeychainTokenSuffix, refreshed.AccessToken, refreshed.RefreshToken); err != nil {
-		s.logger.Warn("persist stored X token refresh to Keychain failed", "error", err)
+		s.log(ctx).Warn("persist stored X token refresh to Keychain failed", "error", err)
 	}
 	if err := s.rotateOneCLIXSecrets(ctx, refreshed.AccessToken, refreshed.RefreshToken); err != nil {
-		s.logger.Warn("persist stored X token refresh to OneCLI failed", "error", err)
+		s.log(ctx).Warn("persist stored X token refresh to OneCLI failed", "error", err)
 	}
 	return refreshed.AccessToken, true, nil
 }
@@ -260,7 +260,7 @@ func (s *Service) refreshXTokenSet(ctx context.Context, refreshToken string) (XT
 		expiresAt = now.Add(time.Duration(payload.ExpiresIn) * time.Second)
 	}
 	if err := s.recordXTokenRotation(ctx, payload, now); err != nil {
-		s.logger.Warn("record X token rotation metadata failed", "error", err)
+		s.log(ctx).Warn("record X token rotation metadata failed", "error", err)
 	}
 	return XTokenSet{
 		AccessToken:     strings.TrimSpace(payload.AccessToken),

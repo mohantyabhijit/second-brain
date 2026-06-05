@@ -1,0 +1,14 @@
+.cache
+.env
+.env.*
+!.env.example
+.git
+.next
+data/runtime
+frontend/.next
+frontend/dist
+frontend/node_modules
+frontend/out
+node_modules
+outputs
+tmp

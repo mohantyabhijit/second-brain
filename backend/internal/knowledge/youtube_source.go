@@ -160,7 +160,7 @@ func (s *Service) completeYouTubeTranscriptRequest(ctx context.Context, videoID 
 		return
 	}
 	if err := store.CompleteYouTubeTranscriptRequest(ctx, s.cfg.OwnerID, strings.TrimSpace(videoID), transcript.TranscriptStatus, transcript.TranscriptError); err != nil && s.logger != nil {
-		s.logger.Warn("youtube transcript request ledger completion failed", "video_id", videoID, "status", transcript.TranscriptStatus, "error", err)
+		s.log(ctx).Warn("youtube transcript request ledger completion failed", "video_id", videoID, "status", transcript.TranscriptStatus, "error", err)
 	}
 }
 
@@ -225,7 +225,7 @@ func (s *Service) attachVideoDurations(ctx context.Context, items []YouTubeItem)
 	var payload videoDetailsResponse
 	if err := s.requestJSON(ctx, http.MethodGet, requestURL, headers, nil, &payload); err != nil {
 		if s.logger != nil {
-			s.logger.Warn("youtube duration fetch skipped", "error", err)
+			s.log(ctx).Warn("youtube duration fetch skipped", "error", err)
 		}
 		return items
 	}

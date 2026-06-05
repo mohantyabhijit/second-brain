@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"html"
-	"log/slog"
 	"net/http"
 	"slices"
 	"strconv"
@@ -17,7 +16,11 @@ import (
 	"github.com/abhijitmohanty/second-brain/backend/internal/config"
 	"github.com/abhijitmohanty/second-brain/backend/internal/knowledge"
 	"github.com/abhijitmohanty/second-brain/backend/internal/platform/httputil"
+	"github.com/abhijitmohanty/second-brain/backend/internal/platform/logging"
 	"github.com/golang-jwt/jwt/v5"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/propagation"
+	"go.opentelemetry.io/otel/trace"
 )
 
 type requestScope struct {
@@ -32,7 +35,7 @@ type supabaseAuthUser struct {
 	Email string `json:"email"`
 }
 
-func NewRouter(cfg config.Config, service *knowledge.Service, logger *slog.Logger) http.Handler {
+func NewRouter(cfg config.Config, service *knowledge.Service, logger *logging.Logger) http.Handler {
 	service.SetLogger(logger)
 	mux := http.NewServeMux()
 	publicOwnerID := strings.TrimSpace(cfg.PublicOwnerID)
@@ -81,14 +84,16 @@ func NewRouter(cfg config.Config, service *knowledge.Service, logger *slog.Logge
 				httputil.Error(w, http.StatusUnauthorized, "Sign in with Supabase to use this action.")
 				return nil, false
 			}
+			logging.SetUserID(r.Context(), publicOwnerID)
 			return &requestScope{service: serviceForOwner(publicOwnerID), ownerID: publicOwnerID, publicOwner: true}, true
 		}
 		ownerID, err := service.ResolveOwnerForAuthUser(r.Context(), authUser.ID, authUser.Email, publicOwnerID, cfg.PublicOwnerEmail)
 		if err != nil {
-			logger.Error("resolve authenticated owner", "error", err)
+			logger.ErrorContext(r.Context(), "resolve authenticated owner", "error", err)
 			httputil.Error(w, http.StatusUnauthorized, "Supabase user could not be mapped to a workspace.")
 			return nil, false
 		}
+		logging.SetUserID(r.Context(), ownerID)
 		return &requestScope{
 			service:       serviceForOwner(ownerID),
 			ownerID:       ownerID,
@@ -110,7 +115,7 @@ func NewRouter(cfg config.Config, service *knowledge.Service, logger *slog.Logge
 		}
 		latest, err := scope.service.ReadLatest(r.Context())
 		if err != nil {
-			logger.Error("read latest knowledge run", "error", err)
+			logger.ErrorContext(r.Context(), "read latest knowledge run", "error", err)
 			httputil.Error(w, http.StatusInternalServerError, "read latest knowledge run")
 			return
 		}
@@ -135,7 +140,7 @@ func NewRouter(cfg config.Config, service *knowledge.Service, logger *slog.Logge
 			state, cacheStatus, err = scope.service.ReadAppState(r.Context())
 		}
 		if err != nil {
-			logger.Error("read app state", "error", err)
+			logger.ErrorContext(r.Context(), "read app state", "error", err)
 			httputil.Error(w, http.StatusInternalServerError, "read app state")
 			return
 		}
@@ -199,7 +204,7 @@ func NewRouter(cfg config.Config, service *knowledge.Service, logger *slog.Logge
 		}
 		digests, err := scope.service.ReadDigests(r.Context(), 50)
 		if err != nil {
-			logger.Error("list digests", "error", err)
+			logger.ErrorContext(r.Context(), "list digests", "error", err)
 			httputil.Error(w, http.StatusInternalServerError, "list digests")
 			return
 		}
@@ -219,7 +224,7 @@ func NewRouter(cfg config.Config, service *knowledge.Service, logger *slog.Logge
 		}
 		illustration, err := scope.service.ReadDigestIllustration(r.Context(), digestID)
 		if err != nil {
-			logger.Error("read digest illustration", "error", err)
+			logger.ErrorContext(r.Context(), "read digest illustration", "digest_id", digestID, "error", err)
 			httputil.Error(w, http.StatusInternalServerError, "read digest illustration")
 			return
 		}
@@ -229,7 +234,7 @@ func NewRouter(cfg config.Config, service *knowledge.Service, logger *slog.Logge
 		}
 		raw, err := base64.StdEncoding.DecodeString(illustration.Base64)
 		if err != nil {
-			logger.Error("decode digest illustration", "digest_id", digestID, "error", err)
+			logger.ErrorContext(r.Context(), "decode digest illustration", "digest_id", digestID, "error", err)
 			httputil.Error(w, http.StatusInternalServerError, "decode digest illustration")
 			return
 		}
@@ -264,7 +269,7 @@ func NewRouter(cfg config.Config, service *knowledge.Service, logger *slog.Logge
 		}
 		result, err := scope.service.ShareTweet(r.Context(), input)
 		if err != nil {
-			logger.Error("share tweet", "error", err)
+			logger.ErrorContext(r.Context(), "share tweet", "error", err)
 			httputil.Error(w, http.StatusBadRequest, err.Error())
 			return
 		}
@@ -283,7 +288,7 @@ func NewRouter(cfg config.Config, service *knowledge.Service, logger *slog.Logge
 		}
 		result, err := scope.service.AskSecondBrain(r.Context(), input)
 		if err != nil {
-			logger.Error("ask second brain", "error", err)
+			logger.ErrorContext(r.Context(), "ask second brain", "error", err)
 			httputil.Error(w, http.StatusBadRequest, err.Error())
 			return
 		}
@@ -302,7 +307,7 @@ func NewRouter(cfg config.Config, service *knowledge.Service, logger *slog.Logge
 		}
 		graph, err := scope.service.ReadInsightGraph(r.Context(), limit)
 		if err != nil {
-			logger.Error("read insight graph", "error", err)
+			logger.ErrorContext(r.Context(), "read insight graph", "error", err)
 			httputil.Error(w, http.StatusServiceUnavailable, err.Error())
 			return
 		}
@@ -377,7 +382,7 @@ func NewRouter(cfg config.Config, service *knowledge.Service, logger *slog.Logge
 		xService := findXOAuthService(state)
 		result, err := xService.CompleteXOAuth(r.Context(), state, r.URL.Query().Get("code"))
 		if err != nil {
-			logger.Error("complete X OAuth", "error", err)
+			logger.ErrorContext(r.Context(), "complete X OAuth", "error", err)
 			httputil.Error(w, http.StatusBadRequest, err.Error())
 			return
 		}
@@ -405,7 +410,7 @@ func NewRouter(cfg config.Config, service *knowledge.Service, logger *slog.Logge
 		}
 		status, err := scope.service.WorkspaceStatus(r.Context(), scope.authenticated)
 		if err != nil {
-			logger.Error("read workspace", "error", err)
+			logger.ErrorContext(r.Context(), "read workspace", "error", err)
 			httputil.Error(w, http.StatusInternalServerError, "read workspace")
 			return
 		}
@@ -424,7 +429,7 @@ func NewRouter(cfg config.Config, service *knowledge.Service, logger *slog.Logge
 		}
 		connection, err := scope.service.SaveYouTubePlaylist(r.Context(), input)
 		if err != nil {
-			logger.Error("save YouTube playlist", "error", err)
+			logger.ErrorContext(r.Context(), "save YouTube playlist", "error", err)
 			httputil.Error(w, http.StatusBadRequest, err.Error())
 			return
 		}
@@ -574,28 +579,77 @@ func etagMatches(header string, etag string) bool {
 	return false
 }
 
+func fallback(value string, defaultValue string) string {
+	if strings.TrimSpace(value) == "" {
+		return defaultValue
+	}
+	return value
+}
+
 type statusRecorder struct {
 	http.ResponseWriter
-	status int
+	status      int
+	bytes       int
+	wroteHeader bool
 }
 
 func (r *statusRecorder) WriteHeader(status int) {
+	if r.wroteHeader {
+		return
+	}
+	r.wroteHeader = true
 	r.status = status
 	r.ResponseWriter.WriteHeader(status)
 }
 
-func requestLogger(logger *slog.Logger, next http.Handler) http.Handler {
+func (r *statusRecorder) Write(payload []byte) (int, error) {
+	if !r.wroteHeader {
+		r.wroteHeader = true
+	}
+	written, err := r.ResponseWriter.Write(payload)
+	r.bytes += written
+	return written, err
+}
+
+func requestLogger(logger *logging.Logger, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
+		requestID := logging.RequestIDFromHeaders(r.Header)
+		ctx := logging.WithRequestMetadata(r.Context(), requestID)
+		ctx = logging.WithContext(ctx, logger)
+		ctx = propagation.TraceContext{}.Extract(ctx, propagation.HeaderCarrier(r.Header))
+		if spanContext := trace.SpanContextFromContext(ctx); spanContext.IsValid() {
+			logging.SetTraceID(ctx, spanContext.TraceID().String())
+		}
+		ctx, span := otel.Tracer("second-brain/http").Start(ctx, r.Method+" "+r.URL.Path, trace.WithSpanKind(trace.SpanKindServer))
+		defer span.End()
+		if traceID := logging.TraceID(ctx); traceID != "" {
+			logging.SetTraceID(ctx, traceID)
+		}
+		r = r.WithContext(ctx)
+		w.Header().Set("X-Request-ID", requestID)
 		recorder := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
 		next.ServeHTTP(recorder, r)
-		logger.Info(
-			"http request completed",
+		latencyMS := time.Since(start).Milliseconds()
+		fields := []any{
 			"method", r.Method,
+			"route", fallback(r.Pattern, r.URL.Path),
 			"path", r.URL.Path,
 			"status", recorder.status,
-			"duration_ms", time.Since(start).Milliseconds(),
-		)
+			"latency_ms", latencyMS,
+			"latency", latencyMS,
+			"bytes", recorder.bytes,
+			"user_agent", r.UserAgent(),
+			"remote_addr", r.RemoteAddr,
+		}
+		switch {
+		case recorder.status >= http.StatusInternalServerError:
+			logger.ErrorContext(r.Context(), "http request completed", fields...)
+		case recorder.status >= http.StatusBadRequest:
+			logger.WarnContext(r.Context(), "http request completed", fields...)
+		default:
+			logger.InfoContext(r.Context(), "http request completed", fields...)
+		}
 	})
 }
 

@@ -81,11 +81,11 @@ func (s *Service) ReadInsightGraph(ctx context.Context, limit int) (InsightGraph
 	if graphCache, ok := s.cache.(insightGraphReadModelCache); ok {
 		graph, err := graphCache.ReadInsightGraph(ctx, s.cfg.OwnerID, limit)
 		if err == nil {
-			s.logger.Info("read model cache hit", "surface", "insight-graph")
+			s.log(ctx).Info("read model cache hit", "surface", "insight-graph")
 			return graph, nil
 		}
 		if !errors.Is(err, ErrReadModelCacheMiss) {
-			s.logger.Warn("read model cache fallback", "surface", "insight-graph", "error", err)
+			s.log(ctx).Warn("read model cache fallback", "surface", "insight-graph", "error", err)
 		}
 	}
 	if state, ok := s.readAppStateSnapshot(ctx); ok && state.Graph.InsightGraph != nil {
