@@ -70,6 +70,7 @@ jobs:
           CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o ../dist/second-brain-migrate ./cmd/migrate
           CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o ../dist/second-brain-refresh ./cmd/refresh
           CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o ../dist/second-brain-digest ./cmd/digest
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o ../dist/second-brain-newsletter-eval ./cmd/newsletter-eval
           CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o ../dist/second-brain-langfuse-prompts ./cmd/langfuse-prompts
           CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o ../dist/second-brain-precompute ./cmd/precompute
           CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o ../dist/second-brain-graph-sync ./cmd/graph-sync
@@ -80,7 +81,7 @@ jobs:
         run: |
           mkdir -p artifacts
           tar -C frontend/out -czf artifacts/frontend.tgz .
-          tar -C dist -czf artifacts/api.tgz second-brain-api second-brain-migrate second-brain-refresh second-brain-digest second-brain-langfuse-prompts second-brain-precompute second-brain-graph-sync second-brain-worker second-brain-x-token-import
+          tar -C dist -czf artifacts/api.tgz second-brain-api second-brain-migrate second-brain-refresh second-brain-digest second-brain-newsletter-eval second-brain-langfuse-prompts second-brain-precompute second-brain-graph-sync second-brain-worker second-brain-x-token-import
           tar -C supabase -czf artifacts/migrations.tgz migrations
 
       - name: Upload deployment artifacts

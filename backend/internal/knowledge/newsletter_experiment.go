@@ -84,7 +84,7 @@ func (s *Service) RunNewsletterPromptExperiment(ctx context.Context, opts Newsle
 		setSpanError(span, err)
 		return nil, err
 	}
-	if opts.Iterations <= 0 {
+	if opts.Iterations < 0 {
 		opts.Iterations = 5
 	}
 	if opts.Iterations > 10 {
@@ -196,15 +196,18 @@ func (s *Service) RunNewsletterPromptExperiment(ctx context.Context, opts Newsle
 }
 
 func (s *Service) generateExperimentNewsletter(ctx context.Context, model string, base DigestIssue, summaries []Summary, insights []Insight, themes []ThemeCluster, insightClusters []InsightCluster, connections []SourceConnection, addendum []string) (DigestIssue, error) {
-	promptLines := digestNewsletterPromptLines(base)
-	if len(addendum) > 0 {
+	inputJSON := truncate(digestPromptInput(summaries, insights, themes, insightClusters, connections), 16000)
+	var payload promptDigestResponse
+	var err error
+	if len(addendum) == 0 {
+		prompt := s.digestNewsletterPrompt(ctx, base, inputJSON)
+		payload, err = s.promptDigestWithPrompt(ctx, model, prompt, 3000)
+	} else {
+		promptLines := digestNewsletterPromptLines(base)
 		promptLines = prompts.AppendExperimentAddendum(promptLines, addendum)
+		promptLines = prompts.AppendInputJSON(promptLines, inputJSON)
+		payload, err = s.promptDigestWithLines(ctx, model, promptLines, 3000)
 	}
-	promptLines = prompts.AppendInputJSON(
-		promptLines,
-		truncate(digestPromptInput(summaries, insights, themes, insightClusters, connections), 16000),
-	)
-	payload, err := s.promptDigestWithLines(ctx, model, promptLines, 3000)
 	if err != nil {
 		return DigestIssue{}, err
 	}

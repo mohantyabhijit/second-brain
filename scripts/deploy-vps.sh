@@ -79,6 +79,7 @@ chmod +x \
   "$api_dir/second-brain-migrate" \
   "$api_dir/second-brain-refresh" \
   "$api_dir/second-brain-digest" \
+  "$api_dir/second-brain-newsletter-eval" \
   "$api_dir/second-brain-langfuse-prompts" \
   "$api_dir/second-brain-precompute" \
   "$api_dir/second-brain-graph-sync" \
