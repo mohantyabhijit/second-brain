@@ -58,6 +58,26 @@ Endpoints:
 
 Grafana defaults to `admin` / `admin` unless `GRAFANA_ADMIN_USER` and `GRAFANA_ADMIN_PASSWORD` are set.
 
+## Production Logs
+
+Production logs for `ubuntu-sgp` are available without Loki or Grafana through
+systemd's journal. The helper script reads only the Second Brain API and worker
+units over SSH, filters non-JSON systemd noise, and prints structured app logs:
+
+```bash
+npm run logs:prod
+npm run logs:prod -- --api -f
+npm run logs:prod -- --worker --since today
+npm run logs:prod -- --errors --since "24 hours ago"
+npm run logs:prod -- --request-id request-1
+```
+
+Use silent npm mode when piping JSON:
+
+```bash
+npm --silent run logs:prod -- --json --since "15 minutes ago" | jq .
+```
+
 ## Docker Compose
 
 The root `docker-compose.yml` includes:
