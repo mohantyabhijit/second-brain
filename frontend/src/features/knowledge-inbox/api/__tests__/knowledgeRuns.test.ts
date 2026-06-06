@@ -282,16 +282,8 @@ describe("knowledge run API client", () => {
     await expect(saveKnowledgeFeedback({ targetType: "insight", targetId: "insight-1", signal: "useful" })).rejects.toThrow("Local backend cannot reach Postgres.");
   });
 
-  it("attaches Supabase bearer tokens and skips public app-state etag reuse for signed-in users", async () => {
+  it("keeps app-state on the public owner path even if Supabase session helpers exist", async () => {
     vi.stubEnv("NEXT_PUBLIC_API_BASE_URL", "https://api.example.test");
-    vi.stubGlobal("window", {});
-    vi.doMock("../../../../utils/supabase/client", () => ({
-      tryCreateClient: () => ({
-        auth: {
-          getSession: async () => ({ data: { session: { access_token: "session-token" } } })
-        }
-      })
-    }));
     const payload = {
       manifest: {
         schemaVersion: "redis-read-model-v1",
@@ -314,6 +306,9 @@ describe("knowledge run API client", () => {
       askContext: null
     };
     const fetchMock = vi.fn(async () => {
+      if (fetchMock.mock.calls.length === 2) {
+        return new Response(null, { status: 304 });
+      }
       return new Response(JSON.stringify(payload), {
         status: 200,
         headers: { "Content-Type": "application/json", ETag: '"private-etag"' }
@@ -327,14 +322,13 @@ describe("knowledge run API client", () => {
 
     expect(fetchMock).toHaveBeenNthCalledWith(1, "https://api.example.test/api/app-state", {
       headers: {
-        "Content-Type": "application/json",
-        Authorization: "Bearer session-token"
+        "Content-Type": "application/json"
       }
     });
     expect(fetchMock).toHaveBeenNthCalledWith(2, "https://api.example.test/api/app-state", {
       headers: {
         "Content-Type": "application/json",
-        Authorization: "Bearer session-token"
+        "If-None-Match": '"private-etag"'
       }
     });
   });

@@ -1,5 +1,5 @@
-import { SecondBrainLanding } from "@/features/knowledge-inbox/ui/SecondBrainLanding";
+import KnowledgeInboxContainer from "@/features/knowledge-inbox/KnowledgeInboxContainer";
 
 export default function Home() {
-  return <SecondBrainLanding />;
+  return <KnowledgeInboxContainer initialPage="insights" />;
 }

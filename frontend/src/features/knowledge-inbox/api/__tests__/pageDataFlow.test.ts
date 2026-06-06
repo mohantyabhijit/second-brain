@@ -20,4 +20,18 @@ describe("knowledge inbox page data flow", () => {
     const consoleView = read("src/features/knowledge-inbox/ui/SecondBrainConsoleView.tsx");
     expect(consoleView).toContain("<KnowledgeGraphView graph={insightGraph}");
   });
+
+  it("loads the public owner feed directly without the Supabase landing flow", () => {
+    const homePage = read("app/page.tsx");
+    expect(homePage).toContain("<KnowledgeInboxContainer initialPage=\"insights\" />");
+    expect(homePage).not.toContain("SecondBrainLanding");
+
+    const apiClient = read("src/features/knowledge-inbox/api/knowledgeRuns.ts");
+    expect(apiClient).not.toContain("Authorization");
+    expect(apiClient).not.toContain("tryCreateClient");
+
+    const consoleView = read("src/features/knowledge-inbox/ui/SecondBrainConsoleView.tsx");
+    expect(consoleView).not.toContain("onFeedback");
+    expect(consoleView).not.toContain("AskSecondBrainWidget");
+  });
 });
