@@ -1,4 +1,3 @@
-import { tryCreateClient } from "../../../utils/supabase/client";
 import type { AppState, AskSecondBrainResponse, DigestIssue, FeedbackSignal, InsightGraphResponse, KnowledgeRunResult, RefreshStatus, SourceProviderConnection, WorkspaceStatus } from "../contracts";
 
 export type AppStateView = "insights" | "daily-newsletter" | "original-x-posts" | "original-youtube-posts" | "knowledge-graph";
@@ -7,12 +6,10 @@ const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:808
 const appStateResponseCache = new Map<string, { etag: string; state: AppState }>();
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const authHeaders = await getAuthHeaders();
   const response = await fetch(`${apiBaseUrl}${path}`, {
     ...init,
     headers: {
       "Content-Type": "application/json",
-      ...authHeaders,
       ...init?.headers
     }
   });
@@ -37,10 +34,8 @@ export async function readAppState(view?: AppStateView, limit = 25) {
     params.set("limit", String(limit));
   }
   const path = params.size ? `/api/app-state?${params.toString()}` : "/api/app-state";
-  const authHeaders = await getAuthHeaders();
-  const isAuthenticated = Boolean(authHeaders.Authorization);
-  const cached = isAuthenticated ? undefined : appStateResponseCache.get(path);
-  const headers: Record<string, string> = { "Content-Type": "application/json", ...authHeaders };
+  const cached = appStateResponseCache.get(path);
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
   if (cached?.etag) {
     headers["If-None-Match"] = cached.etag;
   }
@@ -54,7 +49,7 @@ export async function readAppState(view?: AppStateView, limit = 25) {
   }
   const state = normalizeAppState((await response.json()) as AppState);
   const etag = response.headers.get("ETag");
-  if (etag && !isAuthenticated) {
+  if (etag) {
     appStateResponseCache.set(path, { etag, state });
   }
   return state;
@@ -128,19 +123,6 @@ export async function saveYouTubePlaylist(input: { playlistId?: string; playlist
     method: "POST",
     body: JSON.stringify(input)
   });
-}
-
-async function getAuthHeaders(): Promise<Record<string, string>> {
-  if (typeof window === "undefined") {
-    return {};
-  }
-  const supabase = tryCreateClient();
-  if (!supabase) {
-    return {};
-  }
-  const { data } = await supabase.auth.getSession();
-  const token = data.session?.access_token;
-  return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
 function normalizeKnowledgeRun(result: KnowledgeRunResult): KnowledgeRunResult {

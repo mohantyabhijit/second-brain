@@ -1,29 +1,19 @@
 "use client";
 
-import { type FormEvent, type ReactNode, useEffect, useMemo, useRef, useState } from "react";
+import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import type { KnowledgeInboxPage } from "../KnowledgeInboxContainer";
-import type { ChatMessage } from "../model/useKnowledgeInboxController";
-import type { SupabaseAuthState } from "../model/useSupabaseAuth";
 import type { KnowledgeInboxViewModel, NavigationItemViewModel, SummaryCardViewModel } from "../presentation/viewModel";
-import type { DigestIssue, FeedbackSignal, ImportantTimeMarker, InsightGraphResponse, RefreshStatus, WorkspaceStatus } from "../contracts";
+import type { DigestIssue, ImportantTimeMarker, InsightGraphResponse, RefreshStatus } from "../contracts";
 import { KnowledgeGraphView } from "./KnowledgeGraphView";
-import { displayUsername } from "./authDisplay";
+import { formatUsername, publicOwnerHandle } from "./authDisplay";
 type SecondBrainConsoleViewProps = {
   activePage: KnowledgeInboxPage;
-  chatMessages: ChatMessage[];
   digestIssues: DigestIssue[];
-  isAsking: boolean;
   isLoading: boolean;
   insightGraph: InsightGraphResponse | null;
-  auth: SupabaseAuthState;
-  workspace: WorkspaceStatus | null;
   model: KnowledgeInboxViewModel;
   refreshStatus: RefreshStatus | null;
-  onConnectX: () => Promise<void>;
-  onSavePlaylist: (playlist: string) => Promise<void>;
-  onAsk: (question: string, useLatest?: boolean) => Promise<void>;
-  onFeedback: (targetType: string, targetId: string, signal: FeedbackSignal, sourceUrl?: string) => void;
 };
 
 type FeedSource = "Summary" | "Quote" | "Insight" | "Action" | "X" | "YouTube" | "Newsletter";
@@ -88,7 +78,7 @@ const themeStorageKey = "second-brain-theme";
 
 type ThemeMode = "light" | "dark";
 
-export function SecondBrainConsoleView({ activePage, auth, chatMessages, digestIssues, insightGraph, isAsking, isLoading, model, refreshStatus, workspace, onAsk, onConnectX, onSavePlaylist, onFeedback }: SecondBrainConsoleViewProps) {
+export function SecondBrainConsoleView({ activePage, digestIssues, insightGraph, isLoading, model, refreshStatus }: SecondBrainConsoleViewProps) {
   const [visibleCount, setVisibleCount] = useState(initialVisibleCount);
   const [copiedItems, setCopiedItems] = useState<Set<string>>(new Set());
   const [openSummaryItem, setOpenSummaryItem] = useState<FeedItem | null>(null);
@@ -116,14 +106,13 @@ export function SecondBrainConsoleView({ activePage, auth, chatMessages, digestI
     return () => observer.disconnect();
   }, [activePage]);
 
-  function toggleCopiedItem(key: string, quote: string, item: FeedItem) {
+  function toggleCopiedItem(key: string, quote: string) {
     setCopiedItems((items) => toggleSetItem(items, key));
     if (navigator.clipboard) {
       void navigator.clipboard.writeText(quote).catch(() => {
         setCopiedItems((items) => toggleSetItem(items, key));
       });
     }
-    onFeedback(item.source.toLowerCase(), item.id, "copied", item.sourceUrl);
   }
 
   return (
@@ -151,13 +140,10 @@ export function SecondBrainConsoleView({ activePage, auth, chatMessages, digestI
             <h1>{page.title}</h1>
           </div>
           <ThemeToggle mode={theme.mode} onToggle={theme.toggle} />
-          <IdentityBadge auth={auth} workspace={workspace} />
+          <IdentityBadge />
         </header>
 
         {model.error && activePage !== "knowledge-graph" ? <div className="error-banner">{model.error}</div> : null}
-        {auth.isAuthenticated && workspace && !workspace.onboarding.complete ? (
-          <OnboardingPanel isXConnected={workspace.x.authorized} isYouTubeConnected={workspace.youtube.configured} playlistId={workspace.youtube.playlistId} onConnectX={onConnectX} onSavePlaylist={onSavePlaylist} />
-        ) : null}
         {model.header.isRunning || refreshStatus?.status === "running" ? (
           <RefreshProgress status={refreshStatus} />
         ) : null}
@@ -183,7 +169,7 @@ export function SecondBrainConsoleView({ activePage, auth, chatMessages, digestI
                       index={index}
                       item={item}
                       itemKey={itemKey}
-                      onCopy={() => toggleCopiedItem(itemKey, shortText(item.quote ?? item.body, quotePreviewLength), item)}
+                      onCopy={() => toggleCopiedItem(itemKey, shortText(item.quote ?? item.body, quotePreviewLength))}
                       onOpen={() => setOpenSummaryItem(item)}
                       prioritizeImage={activePage === "daily-newsletter" && index === 0}
                     />
@@ -203,7 +189,6 @@ export function SecondBrainConsoleView({ activePage, auth, chatMessages, digestI
         </div>
       </section>
       {openSummaryItem ? <SummaryModal item={openSummaryItem} onClose={() => setOpenSummaryItem(null)} /> : null}
-      <AskSecondBrainWidget isAsking={isAsking} messages={chatMessages} onAsk={onAsk} />
     </main>
   );
 }
@@ -280,44 +265,11 @@ function ThemeToggle({ mode, onToggle }: { mode: ThemeMode; onToggle: () => void
   );
 }
 
-export function IdentityBadge({ auth, workspace }: { auth: SupabaseAuthState; workspace: WorkspaceStatus | null }) {
+export function IdentityBadge() {
   return (
     <div aria-label="Current workspace user" className="auth-compact user-badge">
-      {displayUsername(auth, workspace)}
+      {formatUsername(publicOwnerHandle)}
     </div>
-  );
-}
-
-function OnboardingPanel({ isXConnected, isYouTubeConnected, playlistId, onConnectX, onSavePlaylist }: { isXConnected: boolean; isYouTubeConnected: boolean; playlistId?: string; onConnectX: () => Promise<void>; onSavePlaylist: (playlist: string) => Promise<void> }) {
-  const [playlist, setPlaylist] = useState(playlistId ?? "");
-  const [message, setMessage] = useState<string | null>(null);
-
-  async function submitPlaylist(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setMessage(null);
-    try {
-      await onSavePlaylist(playlist);
-      setMessage("YouTube playlist saved.");
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : "YouTube playlist could not be saved.");
-    }
-  }
-
-  return (
-    <section className="onboarding-band" aria-label="Workspace onboarding">
-      <div>
-        <span className={isXConnected ? "status-pill ready" : "status-pill"}>X</span>
-        <button className="secondary-action" disabled={isXConnected} onClick={() => void onConnectX()} type="button">
-          {isXConnected ? "X Connected" : "Connect X"}
-        </button>
-      </div>
-      <form onSubmit={submitPlaylist}>
-        <span className={isYouTubeConnected ? "status-pill ready" : "status-pill"}>YouTube</span>
-        <input aria-label="Public YouTube playlist URL or ID" onChange={(event) => setPlaylist(event.target.value)} placeholder="Playlist URL or ID" value={playlist} />
-        <button type="submit">{isYouTubeConnected ? "Update Playlist" : "Save Playlist"}</button>
-      </form>
-      {message ? <p role="status">{message}</p> : null}
-    </section>
   );
 }
 
@@ -573,88 +525,6 @@ function TimeMarkerRow({ markers, sourceUrl }: { markers: ImportantTimeMarker[];
   );
 }
 
-function AskSecondBrainWidget({
-  isAsking,
-  messages,
-  onAsk
-}: {
-  isAsking: boolean;
-  messages: ChatMessage[];
-  onAsk: (question: string, useLatest?: boolean) => Promise<void>;
-}) {
-  const [open, setOpen] = useState(false);
-  const [question, setQuestion] = useState("");
-  const [useLatest, setUseLatest] = useState(false);
-
-  function submitQuestion(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const trimmed = question.trim();
-    if (!trimmed || isAsking) return;
-    setQuestion("");
-    void onAsk(trimmed, useLatest);
-  }
-
-  return (
-    <section className={`ask-brain ${open ? "open" : ""}`} aria-label="Ask Your Second Brain">
-      {open ? (
-        <div className="ask-panel">
-          <header>
-            <span>
-              <strong>Ask Your Second Brain</strong>
-              <small>Ask across saved X bookmarks, YouTube videos, and knowledge graph signals.</small>
-            </span>
-            <button aria-label="Close Ask Your Second Brain" onClick={() => setOpen(false)} type="button">
-              ×
-            </button>
-          </header>
-          <div className="ask-messages">
-            {messages.length ? (
-              messages.map((message) => (
-                <div key={message.id} className={`ask-message ${message.role}`}>
-                  <p>{formatChatContent(message.content)}</p>
-                </div>
-              ))
-            ) : (
-              <div className="ask-empty">
-                Ask about a saved source, a repeated idea, or what your bookmarks suggest you should do next.
-              </div>
-            )}
-            {isAsking ? (
-              <div className="ask-message assistant pending">
-                <span className="loading-spinner" aria-hidden="true" />
-                Thinking with your knowledge base
-              </div>
-            ) : null}
-          </div>
-          <form onSubmit={submitQuestion}>
-            <label className="latest-toggle">
-              <input checked={useLatest} onChange={(event) => setUseLatest(event.target.checked)} type="checkbox" />
-              Use latest web context
-            </label>
-            <div className="ask-input-row">
-              <input
-                aria-label="Question for Ask Your Second Brain"
-                maxLength={1200}
-                onChange={(event) => setQuestion(event.target.value)}
-                placeholder="Ask about your insights..."
-                value={question}
-              />
-              <button disabled={isAsking || !question.trim()} type="submit">
-                Ask
-              </button>
-            </div>
-          </form>
-        </div>
-      ) : null}
-      {open ? null : (
-        <button className="ask-launcher" onClick={() => setOpen(true)} type="button">
-          Ask Your Second Brain
-        </button>
-      )}
-    </section>
-  );
-}
-
 function toggleSetItem<T>(items: Set<T>, item: T) {
   const next = new Set(items);
   if (next.has(item)) {
@@ -671,13 +541,6 @@ function formatElapsed(seconds: number) {
   const rest = safeSeconds % 60;
   if (minutes === 0) return `${rest}s`;
   return `${minutes}m ${String(rest).padStart(2, "0")}s`;
-}
-
-function formatChatContent(value: string) {
-  return value
-    .replace(/\*\*/g, "")
-    .replace(/^#{1,4}\s+/gm, "")
-    .replace(/^\s*-\s+/gm, "• ");
 }
 
 function sourceMark(source: FeedSource) {
