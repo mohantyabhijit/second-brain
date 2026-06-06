@@ -1,10 +1,11 @@
 "use client";
 
-import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
+import { type FormEvent, type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import type { KnowledgeInboxPage } from "../KnowledgeInboxContainer";
 import type { KnowledgeInboxViewModel, NavigationItemViewModel, SummaryCardViewModel } from "../presentation/viewModel";
-import type { DigestIssue, ImportantTimeMarker, InsightGraphResponse, RefreshStatus } from "../contracts";
+import type { AskSecondBrainSource, DigestIssue, ImportantTimeMarker, InsightGraphResponse, RefreshStatus } from "../contracts";
+import { askSecondBrain } from "../api/knowledgeRuns";
 import { KnowledgeGraphView } from "./KnowledgeGraphView";
 import { formatUsername, publicOwnerHandle } from "./authDisplay";
 type SecondBrainConsoleViewProps = {
@@ -189,6 +190,7 @@ export function SecondBrainConsoleView({ activePage, digestIssues, insightGraph,
         </div>
       </section>
       {openSummaryItem ? <SummaryModal item={openSummaryItem} onClose={() => setOpenSummaryItem(null)} /> : null}
+      <AskChatWidget />
     </main>
   );
 }
@@ -695,5 +697,119 @@ function isActiveNav(item: NavigationItemViewModel, activePage: KnowledgeInboxPa
     (activePage === "daily-newsletter" && item.href === "/daily-newsletter") ||
     (activePage === "original-x-posts" && (item.href === "/original-x-posts" || item.href === "/original-x-bookmarks")) ||
     (activePage === "original-youtube-posts" && (item.href === "/original-youtube-posts" || item.href === "/original-youtube-videos"))
+  );
+}
+
+type AskMessage = { role: "user" | "assistant" | "pending"; text: string; sources?: AskSecondBrainSource[] };
+
+function AskChatWidget() {
+  const [open, setOpen] = useState(false);
+  const [question, setQuestion] = useState("");
+  const [useLatest, setUseLatest] = useState(false);
+  const [pending, setPending] = useState(false);
+  const [messages, setMessages] = useState<AskMessage[]>([]);
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (scrollRef.current) {
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    }
+  }, [messages]);
+
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const q = question.trim();
+    if (!q || pending) return;
+    setQuestion("");
+    setMessages((prev) => [...prev, { role: "user", text: q }, { role: "pending", text: "" }]);
+    setPending(true);
+    try {
+      const result = await askSecondBrain({ question: q, useLatest });
+      setMessages((prev) => [
+        ...prev.filter((m) => m.role !== "pending"),
+        { role: "assistant", text: result.answer, sources: result.sources }
+      ]);
+    } catch (error) {
+      setMessages((prev) => [
+        ...prev.filter((m) => m.role !== "pending"),
+        { role: "assistant", text: error instanceof Error ? error.message : "Something went wrong. Try again." }
+      ]);
+    } finally {
+      setPending(false);
+    }
+  }
+
+  return (
+    <div className="ask-brain">
+      {open ? (
+        <div className="ask-panel" role="dialog" aria-label="Ask Second Brain">
+          <header>
+            <div>
+              <strong>Ask Second Brain</strong>
+              <small>Source-grounded answers from your knowledge base</small>
+            </div>
+            <button aria-label="Close" onClick={() => setOpen(false)} type="button">×</button>
+          </header>
+          <div className="ask-messages" ref={scrollRef}>
+            {messages.length === 0 ? (
+              <p className="ask-empty">Ask anything about your saved X bookmarks, YouTube videos, insights, or themes.</p>
+            ) : (
+              messages.map((msg, index) => {
+                if (msg.role === "pending") {
+                  return (
+                    <div key={index} className="ask-message pending">
+                      <span className="loading-spinner" aria-hidden="true" />
+                      Thinking…
+                    </div>
+                  );
+                }
+                return (
+                  <div key={index} className={`ask-message ${msg.role}`}>
+                    <p>{msg.text}</p>
+                    {msg.sources?.length ? (
+                      <ul style={{ margin: "6px 0 0", padding: "0 0 0 14px", fontSize: "0.76rem", color: "var(--muted)" }}>
+                        {msg.sources.slice(0, 4).map((s) => (
+                          <li key={s.id}>
+                            {s.sourceUrl ? (
+                              <a href={s.sourceUrl} rel="noreferrer" target="_blank">{s.title}</a>
+                            ) : (
+                              s.title
+                            )}
+                          </li>
+                        ))}
+                      </ul>
+                    ) : null}
+                  </div>
+                );
+              })
+            )}
+          </div>
+          <form onSubmit={handleSubmit}>
+            <label className="latest-toggle">
+              <input
+                checked={useLatest}
+                onChange={(e) => setUseLatest(e.target.checked)}
+                type="checkbox"
+              />
+              <span>Include live web search</span>
+            </label>
+            <div className="ask-input-row">
+              <input
+                aria-label="Your question"
+                disabled={pending}
+                onChange={(e) => setQuestion(e.target.value)}
+                placeholder="What have you learned about…"
+                type="text"
+                value={question}
+              />
+              <button disabled={pending || !question.trim()} type="submit">Ask</button>
+            </div>
+          </form>
+        </div>
+      ) : null}
+      <button className="ask-launcher" onClick={() => setOpen((v) => !v)} type="button">
+        Ask Second Brain
+      </button>
+    </div>
   );
 }
