@@ -490,6 +490,7 @@ func (s *Service) StartRefresh() RefreshStatus {
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), s.refreshTimeout())
 		defer cancel()
+		ctx = withTraceSession(ctx, status.ID)
 		_, err := s.Run(ctx)
 		finishedAt := time.Now().UTC()
 
@@ -981,7 +982,9 @@ func (s *Service) SaveFeedback(ctx context.Context, event FeedbackEvent) error {
 }
 
 func (s *Service) GenerateDigest(ctx context.Context) (*DigestIssue, error) {
-	ctx, span := s.startOperationSpan(ctx, "generate-digest", "digest")
+	generatedAt := time.Now().UTC()
+	digestDate := digestDateFor(s.cfg.DigestTimezone, s.cfg.DigestTime, generatedAt)
+	ctx, span := s.startOperationSpanWithSession(ctx, "generate-digest", "digest:"+digestDate, "digest")
 	defer span.End()
 	latest, err := s.readLatestCanonical(ctx)
 	if err != nil {
@@ -993,7 +996,7 @@ func (s *Service) GenerateDigest(ctx context.Context) (*DigestIssue, error) {
 		setSpanError(span, err)
 		return nil, err
 	}
-	if isSentDigestForDate(latest.Digest, digestDateFor(s.cfg.DigestTimezone, s.cfg.DigestTime, time.Now().UTC())) {
+	if isSentDigestForDate(latest.Digest, digestDate) {
 		setSpanOutputSummary(span, map[string]any{"status": "already_sent", "digest_date": latest.Digest.DigestDate})
 		return latest.Digest, nil
 	}
@@ -1021,7 +1024,7 @@ func (s *Service) GenerateDigest(ctx context.Context) (*DigestIssue, error) {
 		setSpanError(span, ErrNoNewDigestSources)
 		return nil, ErrNoNewDigestSources
 	}
-	digest, err := s.composeDigestIssue(ctx, time.Now().UTC(), summaries, insights, themes, insightClusters, connections)
+	digest, err := s.composeDigestIssue(ctx, generatedAt, summaries, insights, themes, insightClusters, connections)
 	if err != nil {
 		setSpanError(span, err)
 		return nil, err
@@ -1032,12 +1035,37 @@ func (s *Service) GenerateDigest(ctx context.Context) (*DigestIssue, error) {
 		setSpanError(span, err)
 		return nil, err
 	}
-	s.annotateDigestIllustration(&digest)
-	digest.Deliveries = append(digest.Deliveries, s.deliverDigest(ctx, digest))
+	saved, err := s.store.SaveDigest(ctx, digest)
+	if err != nil {
+		setSpanError(span, err)
+		return nil, err
+	}
+	if saved != nil {
+		digest = *saved
+	}
+
+	delivery := s.deliverDigest(ctx, digest)
+	digest.Deliveries = append(digest.Deliveries, delivery)
 	if len(digest.Deliveries) > 0 {
 		digest.Status = digest.Deliveries[0].Status
 	}
-	saved, err := s.store.SaveDigest(ctx, digest)
+	deliveryScore := 0.0
+	if strings.EqualFold(delivery.Status, "sent") {
+		deliveryScore = 1
+	}
+	s.scoreTrace(ctx, span, "digest_delivery_success", deliveryScore, "BOOLEAN", delivery.Error)
+
+	digestInsights := selectDigestInsights(generatedAt, insights, digestMaxInsightCount)
+	illustrationScore := 1.0
+	if err := s.addDigestIllustration(ctx, &digest, digestInsights, themes, connections); err != nil {
+		illustrationScore = 0
+		s.log(ctx).Warn("digest delivered without illustration", "digest_id", digest.ID, "error", err)
+	} else {
+		s.annotateDigestIllustration(&digest)
+	}
+	s.scoreTrace(ctx, span, "digest_illustration_success", illustrationScore, "BOOLEAN", digest.IllustrationModel)
+
+	saved, err = s.store.SaveDigest(ctx, digest)
 	if err != nil {
 		setSpanError(span, err)
 		return nil, err

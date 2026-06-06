@@ -136,6 +136,16 @@ create_langfuse_secret() {
     --header-name "Authorization" \
     --value-format "Basic {value}" \
     --path-pattern "${LANGFUSE_PROMPT_API_PATH_PATTERN:-/api/public/v2/prompts*}"
+
+  "$ONECLI" secrets create \
+    --project "$PROJECT" \
+    --name "Second Brain Langfuse Score API credentials" \
+    --type generic \
+    --value "$value" \
+    --host-pattern "$host_pattern" \
+    --header-name "Authorization" \
+    --value-format "Basic {value}" \
+    --path-pattern "${LANGFUSE_SCORE_API_PATH_PATTERN:-/api/public/scores*}"
 }
 
 create_secret X_USER_ACCESS_TOKEN "Second Brain X user access token" "api.x.com" "Authorization" "Bearer {value}" "/2/users/*"

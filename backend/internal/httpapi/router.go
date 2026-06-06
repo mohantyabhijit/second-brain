@@ -19,6 +19,7 @@ import (
 	"github.com/abhijitmohanty/second-brain/backend/internal/platform/logging"
 	"github.com/golang-jwt/jwt/v5"
 	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/trace"
 )
@@ -455,7 +456,7 @@ func NewRouter(cfg config.Config, service *knowledge.Service, logger *logging.Lo
 	mux.HandleFunc("POST /api/debug/langfuse/sample-digest", generateLangfuseSampleDigest)
 	registerProfilingRoutes(mux, cfg, logger)
 
-	return requestLogger(logger, cors(cfg.AllowedOrigins, mux))
+	return requestLogger(cfg, logger, cors(cfg.AllowedOrigins, mux))
 }
 
 func setSessionCookie(w http.ResponseWriter, cfg config.Config, ownerID string, xUserID string) error {
@@ -611,7 +612,7 @@ func (r *statusRecorder) Write(payload []byte) (int, error) {
 	return written, err
 }
 
-func requestLogger(logger *logging.Logger, next http.Handler) http.Handler {
+func requestLogger(cfg config.Config, logger *logging.Logger, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
 		requestID := logging.RequestIDFromHeaders(r.Header)
@@ -621,15 +622,26 @@ func requestLogger(logger *logging.Logger, next http.Handler) http.Handler {
 		if spanContext := trace.SpanContextFromContext(ctx); spanContext.IsValid() {
 			logging.SetTraceID(ctx, spanContext.TraceID().String())
 		}
-		ctx, span := otel.Tracer("second-brain/http").Start(ctx, r.Method+" "+r.URL.Path, trace.WithSpanKind(trace.SpanKindServer))
-		defer span.End()
-		if traceID := logging.TraceID(ctx); traceID != "" {
-			logging.SetTraceID(ctx, traceID)
+		var span trace.Span
+		if cfg.LangfuseHTTPTracingEnabled && shouldTraceHTTPRequest(r) {
+			ctx, span = otel.Tracer("second-brain/http").Start(ctx, r.Method+" "+r.URL.Path, trace.WithSpanKind(trace.SpanKindServer))
+			defer span.End()
+		}
+		if spanContext := trace.SpanContextFromContext(ctx); spanContext.IsValid() {
+			logging.SetTraceID(ctx, spanContext.TraceID().String())
 		}
 		r = r.WithContext(ctx)
 		w.Header().Set("X-Request-ID", requestID)
 		recorder := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
 		next.ServeHTTP(recorder, r)
+		if span != nil {
+			route := fallback(r.Pattern, r.Method+" "+r.URL.Path)
+			span.SetName(route)
+			span.SetAttributes(
+				attribute.String("http.route", route),
+				attribute.Int("http.response.status_code", recorder.status),
+			)
+		}
 		latencyMS := time.Since(start).Milliseconds()
 		fields := []any{
 			"method", r.Method,
@@ -651,6 +663,18 @@ func requestLogger(logger *logging.Logger, next http.Handler) http.Handler {
 			logger.InfoContext(r.Context(), "http request completed", fields...)
 		}
 	})
+}
+
+func shouldTraceHTTPRequest(r *http.Request) bool {
+	if r == nil || r.Method != http.MethodPost {
+		return false
+	}
+	switch r.URL.Path {
+	case "/api/ask", "/api/knowledge-runs/refresh", "/api/debug/langfuse/sample-digest":
+		return true
+	default:
+		return false
+	}
 }
 
 func cors(allowedOrigins []string, next http.Handler) http.Handler {

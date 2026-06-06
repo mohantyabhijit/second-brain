@@ -22,6 +22,7 @@ type openAIImageResponse struct {
 		URL           string `json:"url"`
 		RevisedPrompt string `json:"revised_prompt"`
 	} `json:"data"`
+	Usage openAIUsage `json:"usage"`
 	Error *struct {
 		Message string `json:"message"`
 	} `json:"error"`
@@ -81,6 +82,10 @@ func (s *Service) generateDigestIllustration(ctx context.Context, digest DigestI
 	if model == "" {
 		model = "gpt-image-1"
 	}
+	quality := strings.TrimSpace(s.cfg.OpenAIImageQuality)
+	if quality == "" {
+		quality = "medium"
+	}
 	prompt := digestIllustrationPrompt(digest, insights, themes, connections)
 	ctx, span := s.startObservationSpan(ctx, observationOptions{
 		Name:          "digest-illustration-generation",
@@ -99,15 +104,18 @@ func (s *Service) generateDigestIllustration(ctx context.Context, digest DigestI
 			"themes":       len(themes),
 			"connections":  len(connections),
 		},
+		InputContent: prompt,
 		ModelParams: map[string]any{
-			"size": "1024x1024",
+			"size":    "1024x1024",
+			"quality": quality,
 		},
 	})
 	defer span.End()
 	body := map[string]any{
-		"model":  model,
-		"prompt": prompt,
-		"size":   "1024x1024",
+		"model":   model,
+		"prompt":  prompt,
+		"size":    "1024x1024",
+		"quality": quality,
 	}
 	raw, err := json.Marshal(body)
 	if err != nil {
@@ -126,6 +134,10 @@ func (s *Service) generateDigestIllustration(ctx context.Context, digest DigestI
 		err := fmt.Errorf("%s", response.Error.Message)
 		setSpanError(span, err)
 		return generatedIllustration{}, err
+	}
+	setOpenAIUsage(span, response.Usage)
+	if model == "gpt-image-1" && quality == "medium" {
+		setOpenAICost(span, s.cfg.OpenAIImageCostUSD)
 	}
 	if len(response.Data) == 0 {
 		err := fmt.Errorf("OpenAI image response returned no data")
@@ -153,7 +165,7 @@ func (s *Service) generateDigestIllustration(ctx context.Context, digest DigestI
 		setSpanError(span, err)
 		return generatedIllustration{}, err
 	}
-	setSpanOutputSummary(span, map[string]any{"mime_type": mimeType, "base64_chars": len(imageBase64), "revised_prompt": strings.TrimSpace(image.RevisedPrompt) != ""})
+	s.setSpanOutput(span, map[string]any{"mime_type": mimeType, "base64_chars": len(imageBase64), "revised_prompt": strings.TrimSpace(image.RevisedPrompt) != ""}, image.RevisedPrompt)
 	return generatedIllustration{
 		prompt:   prompt,
 		alt:      digestIllustrationAlt(digest, insights, themes),

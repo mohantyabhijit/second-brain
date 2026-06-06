@@ -3,7 +3,7 @@ package prompts
 import "strings"
 
 const (
-	DigestPromptVersion         = "newsletter-stratechery-story-v6"
+	DigestPromptVersion         = "newsletter-stratechery-story-v8"
 	SynthesisPromptVersion      = "source-grounded-insights-v6-compact-retry"
 	AskSecondBrainPromptVersion = "ask-second-brain-rag-v1"
 
@@ -105,7 +105,7 @@ func DigestNewsletterLines(digestDate string) []string {
 		"Return one sharp subject and one coherent markdown body.",
 		"The body starts with exactly one H1: '# Abhijit's Second Brain - <date>'.",
 		"After the H1, write 7-11 short paragraphs that read as a single story.",
-		"Paragraph 1 is a strong hook: one crisp sentence naming the tension, surprise, or question that connects today's saved sources.",
+		"Paragraph 1 is a strong, source-backed hook: one crisp sentence naming the tension, surprise, or question that connects today's saved sources without making a broader claim than the evidence supports.",
 		"Paragraph 2 creates context: why this pattern matters now, what changed, and what a smart reader might otherwise miss.",
 		"Paragraphs 3-7 build the argument with source-grounded facts. Move from the strongest idea to supporting evidence, then to contrast, then to synthesis.",
 		"The final paragraph resolves the story and gives Abhijit one concrete next move: a note to write, a decision to revisit, or an experiment to run. Do not label it as a conclusion or action item.",
@@ -126,6 +126,12 @@ func DigestNewsletterLines(digestDate string) []string {
 		"Treat themes, clusters, and connections as connective tissue. Use them to explain why sources belong together, not as labels to recite.",
 		"Phone-first structure: paragraphs should be short, direct, and individually readable, with source links close to the exact claim they support.",
 		"End with one practical Abhijit-specific next move that follows from the evidence, not generic advice.",
+		"Before drafting, write one private one-sentence thesis. Every paragraph must either sharpen that thesis, provide linked evidence for it, explain the mechanism, complicate it with contrast, or resolve it. Omit inputs that cannot serve that argument.",
+		"Use paragraph-local reasoning: claim, linked evidence, then a narrow interpretation. Do not widen a source into claims about an entire market, ecosystem, or industry unless the supplied evidence supports that scale.",
+		"When multiple sources support the same point, fuse them into one synthesized paragraph instead of giving each source a standalone recap.",
+		"When comparing sources, state the connection explicitly: explain why the sources belong together and how the second source sharpens, complicates, or extends the first.",
+		"Attach links to the exact factual, numerical, or interpretive claim they support in the same paragraph. Avoid stacking several links in one sentence unless each link supports a distinct claim.",
+		"Frame the final next move as an immediately usable decision or filter for Abhijit, and use it to resolve the central thesis rather than introduce a new idea.",
 		"",
 		"GROUNDING RULES",
 		"Use only facts, claims, named entities, numbers, quotes, and links from the supplied summaries, insights, evidence, themes, clusters, and connections.",
@@ -213,6 +219,9 @@ func NewsletterExperimentJudge(inputJSON string, newsletterJSON string) string {
 		"You are a strict but fair newsletter quality judge.",
 		"Evaluate the candidate issue against the source inputs and the rubric. Penalize unsupported claims, generic summary dumps, missing source links, weak synthesis, and unreadable phone-first structure.",
 		"Use the full 0-100 scale. A score above 85 means the issue is genuinely publishable for a smart personal research newsletter.",
+		"Every score must be an integer from 0 to 100. Never use a 0-10 scale.",
+		"Set overall to the arithmetic mean of grounding, synthesis, editorialVoice, usefulness, structure, and sourceLinking, rounded to the nearest integer. Verify the arithmetic before returning.",
+		"Scores, rationale, strengths, and improvements must agree. Do not describe a dimension as strong while assigning it a failing score, or describe it as weak while assigning it a near-perfect score.",
 		"Return JSON only with this exact shape: {\"overall\":0,\"grounding\":0,\"synthesis\":0,\"editorialVoice\":0,\"usefulness\":0,\"structure\":0,\"sourceLinking\":0,\"rationale\":\"short rationale\",\"strengths\":[\"...\"],\"improvements\":[\"...\"]}",
 		"",
 		"RUBRIC",
@@ -228,6 +237,19 @@ func NewsletterExperimentJudge(inputJSON string, newsletterJSON string) string {
 		"",
 		"CANDIDATE NEWSLETTER JSON:",
 		newsletterJSON,
+	}, "\n")
+}
+
+func NewsletterExperimentJudgeRepair(originalPrompt string, invalidJSON string) string {
+	return strings.Join([]string{
+		originalPrompt,
+		"",
+		"JUDGE OUTPUT CORRECTION",
+		"The previous judge JSON was internally inconsistent:",
+		invalidJSON,
+		"Return a corrected JSON object only.",
+		"Use integers from 0 to 100 for every score. Never use a 0-10 scale.",
+		"Recompute overall as the rounded arithmetic mean of the six dimension scores, and make the rationale agree with those scores.",
 	}, "\n")
 }
 

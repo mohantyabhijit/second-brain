@@ -2,6 +2,7 @@ package config
 
 import (
 	"os"
+	"strconv"
 	"strings"
 )
 
@@ -13,6 +14,7 @@ const (
 
 type Config struct {
 	Env                             string
+	AppRelease                      string
 	Port                            string
 	OwnerID                         string
 	PublicOwnerID                   string
@@ -54,7 +56,11 @@ type Config struct {
 	OpenAIChatModel                 string
 	OpenAIEmbeddingModel            string
 	OpenAIImageModel                string
+	OpenAIImageQuality              string
+	OpenAIImageCostUSD              float64
 	LangfuseTracingEnabled          bool
+	LangfuseHTTPTracingEnabled      bool
+	LangfuseCaptureContent          bool
 	LangfusePublicKey               string
 	LangfuseSecretKey               string
 	LangfuseBaseURL                 string
@@ -94,6 +100,7 @@ type Config struct {
 func Load() Config {
 	return Config{
 		Env:                             value("APP_ENV", "development"),
+		AppRelease:                      os.Getenv("APP_RELEASE"),
 		Port:                            value("PORT", "8080"),
 		OwnerID:                         value("APP_USER_ID", value("PUBLIC_OWNER_ID", DefaultOwnerID)),
 		PublicOwnerID:                   value("PUBLIC_OWNER_ID", DefaultOwnerID),
@@ -135,7 +142,11 @@ func Load() Config {
 		OpenAIChatModel:                 value("OPENAI_CHAT_MODEL", "gpt-5.4"),
 		OpenAIEmbeddingModel:            value("OPENAI_EMBEDDING_MODEL", "text-embedding-3-small"),
 		OpenAIImageModel:                value("OPENAI_IMAGE_MODEL", "gpt-image-1"),
+		OpenAIImageQuality:              value("OPENAI_IMAGE_QUALITY", "medium"),
+		OpenAIImageCostUSD:              floatValue("OPENAI_IMAGE_COST_USD", 0.042),
 		LangfuseTracingEnabled:          value("LANGFUSE_TRACING_ENABLED", "true") == "true",
+		LangfuseHTTPTracingEnabled:      value("LANGFUSE_HTTP_TRACING_ENABLED", "false") == "true",
+		LangfuseCaptureContent:          value("LANGFUSE_CAPTURE_CONTENT", "false") == "true",
 		LangfusePublicKey:               os.Getenv("LANGFUSE_PUBLIC_KEY"),
 		LangfuseSecretKey:               os.Getenv("LANGFUSE_SECRET_KEY"),
 		LangfuseBaseURL:                 os.Getenv("LANGFUSE_BASE_URL"),
@@ -209,6 +220,18 @@ func intValue(key string, fallback int) int {
 		value = value*10 + int(r-'0')
 	}
 	return value
+}
+
+func floatValue(key string, fallback float64) float64 {
+	raw := strings.TrimSpace(os.Getenv(key))
+	if raw == "" {
+		return fallback
+	}
+	parsed, err := strconv.ParseFloat(raw, 64)
+	if err != nil || parsed < 0 {
+		return fallback
+	}
+	return parsed
 }
 
 func csv(raw string) []string {

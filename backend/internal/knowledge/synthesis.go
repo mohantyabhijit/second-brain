@@ -205,6 +205,12 @@ func (s *Service) promptSynthesis(ctx context.Context, candidate sourceCandidate
 	if model == extractiveSynthesisModel {
 		return promptSynthesisResponse{}, fmt.Errorf("OPENAI_API_KEY is not present")
 	}
+	promptText := prompts.SourceSynthesis(
+		string(candidate.sourceType),
+		candidate.title,
+		candidate.sourceURL,
+		truncate(candidate.body, 12000),
+	)
 	ctx, span := s.startObservationSpan(ctx, observationOptions{
 		Name:          "source-synthesis",
 		Type:          "generation",
@@ -213,6 +219,7 @@ func (s *Service) promptSynthesis(ctx context.Context, candidate sourceCandidate
 		Tags:          []string{"refresh", "source-synthesis", string(candidate.sourceType)},
 		Metadata:      sourceCandidateMetadata(candidate),
 		InputSummary:  sourceCandidateInputSummary(candidate),
+		InputContent:  promptText,
 		ModelParams: map[string]any{
 			"max_output_tokens": 4500,
 			"response_format":   "json_object",
@@ -220,14 +227,9 @@ func (s *Service) promptSynthesis(ctx context.Context, candidate sourceCandidate
 	})
 	defer span.End()
 	requestBody := map[string]any{
-		"model": model,
-		"text":  map[string]any{"format": map[string]any{"type": "json_object"}},
-		"input": prompts.SourceSynthesis(
-			string(candidate.sourceType),
-			candidate.title,
-			candidate.sourceURL,
-			truncate(candidate.body, 12000),
-		),
+		"model":             model,
+		"text":              map[string]any{"format": map[string]any{"type": "json_object"}},
+		"input":             promptText,
 		"max_output_tokens": 4500,
 	}
 	raw, err := json.Marshal(requestBody)
@@ -265,16 +267,23 @@ func (s *Service) promptSynthesis(ctx context.Context, candidate sourceCandidate
 		setSpanError(span, err)
 		compactPayload, retryErr := s.promptCompactSynthesis(ctx, candidate, model, err)
 		if retryErr == nil {
-			setSpanOutputSummary(span, map[string]any{"decision": compactPayload.Decision, "repaired": true, "insights": len(compactPayload.Insights)})
+			s.setSpanOutput(span, map[string]any{"decision": compactPayload.Decision, "repaired": true, "insights": len(compactPayload.Insights)}, text)
 			return compactPayload, nil
 		}
 		return promptSynthesisResponse{}, err
 	}
-	setSpanOutputSummary(span, map[string]any{"decision": payload.Decision, "insights": len(payload.Insights), "actions": len(payload.ActionItems)})
+	s.setSpanOutput(span, map[string]any{"decision": payload.Decision, "insights": len(payload.Insights), "actions": len(payload.ActionItems)}, text)
 	return payload, nil
 }
 
 func (s *Service) promptCompactSynthesis(ctx context.Context, candidate sourceCandidate, model string, parseErr error) (promptSynthesisResponse, error) {
+	promptText := prompts.CompactSourceSynthesis(
+		string(candidate.sourceType),
+		candidate.title,
+		candidate.sourceURL,
+		truncate(candidate.body, 5000),
+		parseErr.Error(),
+	)
 	ctx, span := s.startObservationSpan(ctx, observationOptions{
 		Name:          "source-synthesis-compact-retry",
 		Type:          "generation",
@@ -287,6 +296,7 @@ func (s *Service) promptCompactSynthesis(ctx context.Context, candidate sourceCa
 			"body_chars":  len(candidate.body),
 			"parse_error": truncateTelemetryValue(parseErr.Error()),
 		},
+		InputContent: promptText,
 		ModelParams: map[string]any{
 			"max_output_tokens": 1600,
 			"response_format":   "json_object",
@@ -294,15 +304,9 @@ func (s *Service) promptCompactSynthesis(ctx context.Context, candidate sourceCa
 	})
 	defer span.End()
 	requestBody := map[string]any{
-		"model": model,
-		"text":  map[string]any{"format": map[string]any{"type": "json_object"}},
-		"input": prompts.CompactSourceSynthesis(
-			string(candidate.sourceType),
-			candidate.title,
-			candidate.sourceURL,
-			truncate(candidate.body, 5000),
-			parseErr.Error(),
-		),
+		"model":             model,
+		"text":              map[string]any{"format": map[string]any{"type": "json_object"}},
+		"input":             promptText,
 		"max_output_tokens": 1600,
 	}
 	raw, err := json.Marshal(requestBody)
@@ -340,7 +344,7 @@ func (s *Service) promptCompactSynthesis(ctx context.Context, candidate sourceCa
 		setSpanError(span, err)
 		return promptSynthesisResponse{}, err
 	}
-	setSpanOutputSummary(span, map[string]any{"decision": payload.Decision, "insights": len(payload.Insights), "actions": len(payload.ActionItems)})
+	s.setSpanOutput(span, map[string]any{"decision": payload.Decision, "insights": len(payload.Insights), "actions": len(payload.ActionItems)}, text)
 	return payload, nil
 }
 
@@ -348,6 +352,17 @@ func (s *Service) judgeSynthesis(ctx context.Context, candidate sourceCandidate,
 	if !s.synthesisJudgeEnabled(model) {
 		return payload, nil
 	}
+	payloadJSON, err := json.Marshal(payload)
+	if err != nil {
+		return payload, err
+	}
+	promptText := prompts.SourceSynthesisJudge(
+		string(candidate.sourceType),
+		candidate.title,
+		candidate.sourceURL,
+		truncate(candidate.body, 9000),
+		string(payloadJSON),
+	)
 	ctx, span := s.startObservationSpan(ctx, observationOptions{
 		Name:          "source-synthesis-judge",
 		Type:          "generation",
@@ -360,27 +375,17 @@ func (s *Service) judgeSynthesis(ctx context.Context, candidate sourceCandidate,
 			"body_chars":  len(candidate.body),
 			"insights":    len(payload.Insights),
 		},
+		InputContent: promptText,
 		ModelParams: map[string]any{
 			"max_output_tokens": 2500,
 			"response_format":   "json_object",
 		},
 	})
 	defer span.End()
-	payloadJSON, err := json.Marshal(payload)
-	if err != nil {
-		setSpanError(span, err)
-		return payload, err
-	}
 	requestBody := map[string]any{
-		"model": model,
-		"text":  map[string]any{"format": map[string]any{"type": "json_object"}},
-		"input": prompts.SourceSynthesisJudge(
-			string(candidate.sourceType),
-			candidate.title,
-			candidate.sourceURL,
-			truncate(candidate.body, 9000),
-			string(payloadJSON),
-		),
+		"model":             model,
+		"text":              map[string]any{"format": map[string]any{"type": "json_object"}},
+		"input":             promptText,
 		"max_output_tokens": 2500,
 	}
 	raw, err := json.Marshal(requestBody)
@@ -419,6 +424,13 @@ func (s *Service) judgeSynthesis(ctx context.Context, candidate sourceCandidate,
 		setSpanError(span, err)
 		return payload, err
 	}
+	qualityScore := normalizeLangfuseScore(judge.OverallScore)
+	revisedScore := 0.0
+	if judge.RevisedResponse != nil {
+		revisedScore = 1
+	}
+	s.scoreSpan(ctx, span, "source_synthesis_quality", qualityScore, "NUMERIC", judge.Rationale)
+	s.scoreSpan(ctx, span, "source_synthesis_revised", revisedScore, "BOOLEAN", fallback(judge.Verdict, "unknown"))
 	if judge.RevisedResponse != nil {
 		revised := *judge.RevisedResponse
 		if revised.Quality.Overall == 0 {
@@ -432,7 +444,7 @@ func (s *Service) judgeSynthesis(ctx context.Context, candidate sourceCandidate,
 				Rationale:   judge.Rationale,
 			}
 		}
-		setSpanOutputSummary(span, map[string]any{"verdict": fallback(judge.Verdict, "revised"), "overall_score": judge.OverallScore, "revised": true})
+		s.setSpanOutput(span, map[string]any{"verdict": fallback(judge.Verdict, "revised"), "overall_score": judge.OverallScore, "revised": true}, text)
 		return revised, nil
 	}
 	if payload.Quality.Overall == 0 {
@@ -446,7 +458,7 @@ func (s *Service) judgeSynthesis(ctx context.Context, candidate sourceCandidate,
 			Rationale:   judge.Rationale,
 		}
 	}
-	setSpanOutputSummary(span, map[string]any{"verdict": fallback(judge.Verdict, "pass"), "overall_score": judge.OverallScore, "revised": false})
+	s.setSpanOutput(span, map[string]any{"verdict": fallback(judge.Verdict, "pass"), "overall_score": judge.OverallScore, "revised": false}, text)
 	return payload, nil
 }
 

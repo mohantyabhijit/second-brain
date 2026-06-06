@@ -182,6 +182,7 @@ type noNewDigestSourceStore struct {
 	latest       *Result
 	saved        *DigestIssue
 	readNewCalls int
+	saveCalls    int
 }
 
 func (s *noNewDigestSourceStore) ReadLatest(ctx context.Context) (*Result, error) {
@@ -194,6 +195,7 @@ func (s *noNewDigestSourceStore) ReadNewDigestSources(ctx context.Context, owner
 }
 
 func (s *noNewDigestSourceStore) SaveDigest(ctx context.Context, digest DigestIssue) (*DigestIssue, error) {
+	s.saveCalls++
 	s.saved = &digest
 	return &digest, nil
 }
@@ -271,6 +273,12 @@ func TestGenerateDigestFallsBackToLatestRunWhenNoNewDigestSources(t *testing.T) 
 		!slices.Contains(requests, "https://api.resend.com/emails") {
 		t.Fatalf("expected synthesis, illustration, and delivery requests, got %#v", requests)
 	}
+	if slices.Index(requests, "https://api.resend.com/emails") > slices.Index(requests, "https://api.openai.com/v1/images/generations") {
+		t.Fatalf("expected digest delivery before illustration generation, got %#v", requests)
+	}
+	if store.saveCalls != 2 {
+		t.Fatalf("expected generated and final digest saves, got %d", store.saveCalls)
+	}
 }
 
 func TestGenerateDigestDoesNotResendAlreadySentDigestForToday(t *testing.T) {
@@ -300,6 +308,9 @@ func TestGenerateDigestDoesNotResendAlreadySentDigestForToday(t *testing.T) {
 	}
 	if store.saved != nil {
 		t.Fatal("expected no duplicate save for already-sent digest")
+	}
+	if store.saveCalls != 0 {
+		t.Fatalf("expected no duplicate save for already-sent digest, got %d", store.saveCalls)
 	}
 	if store.readNewCalls != 0 {
 		t.Fatalf("expected no new-source lookup, got %d", store.readNewCalls)

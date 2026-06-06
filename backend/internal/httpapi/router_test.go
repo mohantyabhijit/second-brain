@@ -721,6 +721,27 @@ func clearProviderEnvForBenchmark(b *testing.B) {
 	}
 }
 
+func TestShouldTraceHTTPRequestOnlyIncludesAIWorkflows(t *testing.T) {
+	tests := []struct {
+		method string
+		path   string
+		want   bool
+	}{
+		{method: http.MethodPost, path: "/api/ask", want: true},
+		{method: http.MethodPost, path: "/api/knowledge-runs/refresh", want: true},
+		{method: http.MethodPost, path: "/api/debug/langfuse/sample-digest", want: true},
+		{method: http.MethodGet, path: "/api/app-state", want: false},
+		{method: http.MethodGet, path: "/api/digests/digest-1/illustration", want: false},
+		{method: http.MethodPost, path: "/api/feedback", want: false},
+	}
+	for _, test := range tests {
+		request := httptest.NewRequest(test.method, test.path, nil)
+		if got := shouldTraceHTTPRequest(request); got != test.want {
+			t.Fatalf("%s %s: expected %t, got %t", test.method, test.path, test.want, got)
+		}
+	}
+}
+
 type roundTripFunc func(*http.Request) (*http.Response, error)
 
 func (fn roundTripFunc) RoundTrip(request *http.Request) (*http.Response, error) {

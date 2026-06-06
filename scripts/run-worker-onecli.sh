@@ -12,6 +12,7 @@ if [[ -f "$BACKEND_DIR/.env" ]]; then
   . "$BACKEND_DIR/.env"
   set +a
 fi
+export APP_RELEASE="${APP_RELEASE:-$(git -C "$ROOT_DIR" rev-parse --short HEAD 2>/dev/null || printf 'development')}"
 
 for key in \
   DATABASE_URL \

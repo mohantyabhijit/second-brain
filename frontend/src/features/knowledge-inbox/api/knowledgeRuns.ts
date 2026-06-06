@@ -97,7 +97,7 @@ export async function shareInsightToX(input: {
   });
 }
 
-export async function askSecondBrain(input: { question: string; useLatest?: boolean }) {
+export async function askSecondBrain(input: { question: string; useLatest?: boolean; sessionId?: string }) {
   return request<AskSecondBrainResponse>("/api/ask", {
     method: "POST",
     body: JSON.stringify(input)

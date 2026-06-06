@@ -171,7 +171,14 @@ func renderExperimentMarkdown(report *knowledge.NewsletterExperimentReport) stri
 			escapeMarkdownTable(run.Subject),
 		)
 	}
-	fmt.Fprintf(&builder, "\nBaseline: %.1f\n\nFinal: %.1f\n\nImprovement: %.1f\n\n", report.BaselineScore, report.FinalScore, report.Improvement)
+	fmt.Fprintf(&builder, "\nBaseline: %.1f\n\nFinal: %.1f\n\nFinal improvement: %.1f\n\nChampion: %.1f at iteration %d\n\nChampion improvement: %.1f\n\n",
+		report.BaselineScore,
+		report.FinalScore,
+		report.Improvement,
+		report.BestScore,
+		report.BestIteration,
+		report.ChampionImprovement,
+	)
 
 	fmt.Fprintf(&builder, "## Iteration notes\n\n")
 	for _, run := range report.Runs {
@@ -193,12 +200,11 @@ func renderExperimentMarkdown(report *knowledge.NewsletterExperimentReport) stri
 	}
 
 	if len(report.Runs) > 0 {
-		final := report.Runs[len(report.Runs)-1]
-		fmt.Fprintf(&builder, "## Final experimental addendum\n\n")
-		if len(final.PromptAddendum) == 0 {
-			fmt.Fprintf(&builder, "No addendum was applied to the final run.\n")
+		fmt.Fprintf(&builder, "## Champion experimental addendum\n\n")
+		if len(report.ChampionAddendum) == 0 {
+			fmt.Fprintf(&builder, "No addendum was applied to the champion run.\n")
 		} else {
-			for _, line := range final.PromptAddendum {
+			for _, line := range report.ChampionAddendum {
 				fmt.Fprintf(&builder, "- %s\n", line)
 			}
 		}
@@ -222,7 +228,15 @@ func logScoreTable(report *knowledge.NewsletterExperimentReport, logger *logging
 			"subject", run.Subject,
 		)
 	}
-	logger.Info("newsletter experiment score summary", "baseline", report.BaselineScore, "final", report.FinalScore, "improvement", report.Improvement)
+	logger.Info(
+		"newsletter experiment score summary",
+		"baseline", report.BaselineScore,
+		"final", report.FinalScore,
+		"improvement", report.Improvement,
+		"champion", report.BestScore,
+		"champion_iteration", report.BestIteration,
+		"champion_improvement", report.ChampionImprovement,
+	)
 }
 
 func escapeMarkdownTable(value string) string {

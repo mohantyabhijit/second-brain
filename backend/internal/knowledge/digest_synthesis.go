@@ -72,9 +72,6 @@ func (s *Service) composeDigestIssue(ctx context.Context, generatedAt time.Time,
 		return DigestIssue{}, fmt.Errorf("digest newsletter synthesis returned an empty body")
 	}
 	digest.IdempotencyKey = "daily:" + digest.DigestDate
-	if err := s.addDigestIllustration(ctx, &digest, digestInsights, themes, connections); err != nil {
-		return DigestIssue{}, err
-	}
 	return digest, nil
 }
 
@@ -148,6 +145,7 @@ func (s *Service) promptDigestOnce(ctx context.Context, model string, prompt dig
 			"prompt_lines": len(prompt.Lines),
 			"prompt_chars": len(promptText),
 		},
+		InputContent: promptText,
 		ModelParams: map[string]any{
 			"max_output_tokens": maxOutputTokens,
 			"response_format":   "json_object",
@@ -211,11 +209,11 @@ func (s *Service) promptDigestOnce(ctx context.Context, model string, prompt dig
 		setSpanError(span, formatErr)
 		return promptDigestResponse{}, formatErr
 	}
-	setSpanOutputSummary(span, map[string]any{
+	s.setSpanOutput(span, map[string]any{
 		"subject_chars": len(payload.Subject),
 		"body_lines":    len(payload.BodyLines),
 		"body_chars":    len(payload.BodyMarkdown),
-	})
+	}, text)
 	return payload, nil
 }
 

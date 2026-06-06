@@ -84,7 +84,19 @@ Run a local experiment that creates a newsletter, scores it with a smaller LLM j
 
 ## Prompt promotion
 
-- The production newsletter prompt was promoted to `newsletter-stratechery-story-v6`.
+- The May 24 production newsletter prompt was promoted to `newsletter-stratechery-story-v6`.
 - The promoted instructions come from the best prod champion pattern, not from the final iteration.
 - The incorporated prompt learning asks the digest generator to keep numerical claims precise, keep the central thesis visible across paragraphs, use graph themes/clusters/connections as connective tissue, preserve phone-first paragraph flow, tie judgments to linked evidence, and end with one practical Abhijit-specific next move.
 - Backend prompt bodies were moved into `backend/prompts` so production prompts, experiment prompts, Ask Second Brain prompts, source synthesis prompts, and digest illustration prompts can be reviewed in one place.
+
+## June 6 Langfuse rerun
+
+- The production database was unreachable from the local machine at `10.104.0.3:5432`, so the controlled rerun used `data/runtime/latest-knowledge-run.json`: 14 summaries and no populated insight/graph collections.
+- The observability fix produced stable Langfuse traces with one root name, a session ID, release and version, fixed trace tags, named child observations, token/cost data, and programmatic scores.
+- The first calibrated v7 run scored 72.5 at baseline and 78.3 after one revision, a +5.8 point champion improvement.
+- The champion feedback asked for a source-backed opening tension, links adjacent to factual and interpretive claims, explicit cross-source connections, and a final Abhijit-specific decision filter.
+- Those instructions were promoted into `newsletter-stratechery-story-v8`.
+- A baseline-only v8 verification scored 77.5, five points above the calibrated v7 baseline and within 0.8 points of the v7 optimized champion.
+- The managed prompt `second-brain/digest-newsletter` is Langfuse version 3 with `production` and `latest` labels.
+- The final verification trace is `3360fa2218e5ed16e5e62679f6a5e39f`: 3 observations, 11 scores, $0.0087786 total model cost, and 21.934 seconds latency.
+- The eval harness now rejects internally inconsistent judge scales, retries transient provider failures once, preserves partial-run scores, and selects the highest-scoring prompt addendum instead of blindly treating the final iteration as the champion.

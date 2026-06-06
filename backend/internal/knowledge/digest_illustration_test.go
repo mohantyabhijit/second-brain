@@ -30,7 +30,7 @@ func TestGenerateDigestIllustrationUsesOpenAIImagesAPI(t *testing.T) {
 		image := base64.StdEncoding.EncodeToString([]byte("fake image bytes"))
 		return jsonResponse(`{"data":[{"b64_json":` + string(mustJSON(t, image)) + `}]}`), nil
 	})}
-	service := NewService(config.Config{OpenAIImageModel: "test-image-model"}, cacheStore{}, client)
+	service := NewService(config.Config{OpenAIImageModel: "test-image-model", OpenAIImageQuality: "medium"}, cacheStore{}, client)
 
 	illustration, err := service.generateDigestIllustration(context.Background(), DigestIssue{
 		Subject:      "Build better learning loops",
@@ -42,7 +42,7 @@ func TestGenerateDigestIllustrationUsesOpenAIImagesAPI(t *testing.T) {
 	if illustration.model != "test-image-model" || illustration.mimeType != "image/png" || illustration.base64 == "" {
 		t.Fatalf("unexpected illustration: %#v", illustration)
 	}
-	if !strings.Contains(requestBody, "Excalidraw-like") || !strings.Contains(requestBody, "black ink only") || !strings.Contains(requestBody, `"size":"1024x1024"`) {
+	if !strings.Contains(requestBody, "Excalidraw-like") || !strings.Contains(requestBody, "black ink only") || !strings.Contains(requestBody, `"size":"1024x1024"`) || !strings.Contains(requestBody, `"quality":"medium"`) {
 		t.Fatalf("expected black-on-white illustration prompt and size, got %s", requestBody)
 	}
 }

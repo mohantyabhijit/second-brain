@@ -709,6 +709,7 @@ function AskChatWidget() {
   const [pending, setPending] = useState(false);
   const [messages, setMessages] = useState<AskMessage[]>([]);
   const scrollRef = useRef<HTMLDivElement | null>(null);
+  const sessionIdRef = useRef("");
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -724,7 +725,10 @@ function AskChatWidget() {
     setMessages((prev) => [...prev, { role: "user", text: q }, { role: "pending", text: "" }]);
     setPending(true);
     try {
-      const result = await askSecondBrain({ question: q, useLatest });
+      if (!sessionIdRef.current) {
+        sessionIdRef.current = createAskSessionId();
+      }
+      const result = await askSecondBrain({ question: q, useLatest, sessionId: sessionIdRef.current });
       setMessages((prev) => [
         ...prev.filter((m) => m.role !== "pending"),
         { role: "assistant", text: result.answer, sources: result.sources }
@@ -812,4 +816,11 @@ function AskChatWidget() {
       </button>
     </div>
   );
+}
+
+function createAskSessionId() {
+  if (typeof globalThis.crypto?.randomUUID === "function") {
+    return `ask:${globalThis.crypto.randomUUID()}`;
+  }
+  return `ask:${Date.now()}:${Math.random().toString(36).slice(2)}`;
 }

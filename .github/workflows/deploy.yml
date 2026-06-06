@@ -202,7 +202,12 @@ jobs:
           write_var OPENAI_CHAT_MODEL gpt-5.4
           write_var OPENAI_EMBEDDING_MODEL text-embedding-3-small
           write_var OPENAI_IMAGE_MODEL gpt-image-1
+          write_var OPENAI_IMAGE_QUALITY medium
+          write_var OPENAI_IMAGE_COST_USD 0.042
+          write_var APP_RELEASE "$GITHUB_SHA"
           write_var LANGFUSE_TRACING_ENABLED true
+          write_var LANGFUSE_HTTP_TRACING_ENABLED false
+          write_var LANGFUSE_CAPTURE_CONTENT false
           write_var LANGFUSE_BASE_URL "https://jp.cloud.langfuse.com"
           write_var LANGFUSE_PROMPT_MANAGEMENT_ENABLED true
           write_var LANGFUSE_PROMPT_LABEL production

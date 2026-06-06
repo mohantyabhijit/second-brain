@@ -7,7 +7,9 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -29,7 +31,7 @@ type exaSearchResponse struct {
 }
 
 func (s *Service) AskSecondBrain(ctx context.Context, request AskSecondBrainRequest) (AskSecondBrainResponse, error) {
-	ctx, span := s.startOperationSpan(ctx, "ask-second-brain", "ask", "rag")
+	ctx, span := s.startOperationSpanWithSession(ctx, "ask-second-brain", request.SessionID, "ask", "rag")
 	defer span.End()
 	question := strings.TrimSpace(request.Question)
 	if question == "" {
@@ -116,7 +118,9 @@ func (s *Service) AskSecondBrain(ctx context.Context, request AskSecondBrainRequ
 		GeneratedAt:  time.Now().UTC(),
 		SearchStatus: searchStatus,
 	}
-	setSpanOutputSummary(span, map[string]any{"model": model, "sources": len(localSources), "used_latest": usedLatest, "search_status": searchStatus, "answer_chars": len(response.Answer)})
+	citationScore, citationComment := askCitationValidity(response.Answer, len(localSources))
+	s.scoreTrace(ctx, span, "ask_citation_validity", citationScore, "BOOLEAN", citationComment)
+	s.setSpanOutput(span, map[string]any{"model": model, "sources": len(localSources), "used_latest": usedLatest, "search_status": searchStatus, "answer_chars": len(response.Answer)}, response.Answer)
 	return response, nil
 }
 
@@ -128,6 +132,16 @@ func (s *Service) promptAskSecondBrain(ctx context.Context, question string, sou
 	if model == "" {
 		model = s.cfg.OpenAISynthesisModel
 	}
+	payload, err := json.Marshal(map[string]any{
+		"question":      question,
+		"used_latest":   usedLatest,
+		"search_status": searchStatus,
+		"sources":       sources,
+	})
+	if err != nil {
+		return "", model, err
+	}
+	promptText := prompts.AskSecondBrain(string(payload))
 	ctx, span := s.startObservationSpan(ctx, observationOptions{
 		Name:          "ask-second-brain-response",
 		Type:          "generation",
@@ -140,24 +154,15 @@ func (s *Service) promptAskSecondBrain(ctx context.Context, question string, sou
 			"used_latest":    usedLatest,
 			"search_status":  searchStatus,
 		},
+		InputContent: promptText,
 		ModelParams: map[string]any{
 			"max_output_tokens": 900,
 		},
 	})
 	defer span.End()
-	payload, err := json.Marshal(map[string]any{
-		"question":      question,
-		"used_latest":   usedLatest,
-		"search_status": searchStatus,
-		"sources":       sources,
-	})
-	if err != nil {
-		setSpanError(span, err)
-		return "", model, err
-	}
 	requestBody := map[string]any{
 		"model":             model,
-		"input":             prompts.AskSecondBrain(string(payload)),
+		"input":             promptText,
 		"max_output_tokens": 900,
 	}
 	raw, err := json.Marshal(requestBody)
@@ -196,8 +201,25 @@ func (s *Service) promptAskSecondBrain(ctx context.Context, question string, sou
 		return "", model, err
 	}
 	answer := strings.TrimSpace(text)
-	setSpanOutputSummary(span, map[string]any{"answer_chars": len(answer)})
+	s.setSpanOutput(span, map[string]any{"answer_chars": len(answer)}, answer)
 	return answer, model, nil
+}
+
+func askCitationValidity(answer string, sourceCount int) (float64, string) {
+	if sourceCount == 0 {
+		return 1, "no sources required"
+	}
+	matches := regexp.MustCompile(`\[S([0-9]+)\]`).FindAllStringSubmatch(answer, -1)
+	if len(matches) == 0 {
+		return 0, "answer contains no source citations"
+	}
+	for _, match := range matches {
+		index, err := strconv.Atoi(match[1])
+		if err != nil || index < 1 || index > sourceCount {
+			return 0, "answer contains an invalid source citation"
+		}
+	}
+	return 1, "all source citations reference available inputs"
 }
 
 func (s *Service) exaSearch(ctx context.Context, question string, limit int) ([]AskSecondBrainSource, string) {

@@ -29,6 +29,16 @@ type TextPrompt struct {
 	Config  map[string]any
 }
 
+type ScoreInput struct {
+	TraceID       string
+	ObservationID string
+	SessionID     string
+	Name          string
+	Value         any
+	DataType      string
+	Comment       string
+}
+
 type APIError struct {
 	StatusCode int
 	Status     string
@@ -131,6 +141,41 @@ func (c *Client) EnsureTextPrompt(ctx context.Context, name string, prompt strin
 	return created, true, nil
 }
 
+func (c *Client) CreateScore(ctx context.Context, input ScoreInput) error {
+	if !c.Enabled() {
+		return fmt.Errorf("LANGFUSE_BASE_URL is not configured")
+	}
+	input.Name = strings.TrimSpace(input.Name)
+	if input.Name == "" {
+		return fmt.Errorf("score name is required")
+	}
+	if strings.TrimSpace(input.TraceID) == "" && strings.TrimSpace(input.SessionID) == "" {
+		return fmt.Errorf("trace id or session id is required")
+	}
+	request := map[string]any{
+		"name":     input.Name,
+		"value":    input.Value,
+		"dataType": fallback(strings.ToUpper(strings.TrimSpace(input.DataType)), "NUMERIC"),
+	}
+	if value := strings.TrimSpace(input.TraceID); value != "" {
+		request["traceId"] = value
+	}
+	if value := strings.TrimSpace(input.ObservationID); value != "" {
+		request["observationId"] = value
+	}
+	if value := strings.TrimSpace(input.SessionID); value != "" {
+		request["sessionId"] = value
+	}
+	if value := strings.TrimSpace(input.Comment); value != "" {
+		request["comment"] = value
+	}
+	raw, err := json.Marshal(request)
+	if err != nil {
+		return err
+	}
+	return c.requestJSON(ctx, http.MethodPost, c.baseURL+"/api/public/scores", bytes.NewReader(raw), nil)
+}
+
 func CompileTextPrompt(template string, values map[string]string) string {
 	compiled := template
 	for key, value := range values {
@@ -222,4 +267,12 @@ func isAPIStatus(err error, status int, target **APIError) bool {
 		*target = apiErr
 	}
 	return apiErr.StatusCode == status
+}
+
+func fallback(value string, defaultValue string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return defaultValue
+	}
+	return value
 }

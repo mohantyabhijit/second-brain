@@ -58,6 +58,7 @@ func StartLangfuse(ctx context.Context, cfg config.Config, serviceName string, l
 		resource.NewWithAttributes(
 			"",
 			attribute.String("service.name", fallback(serviceName, "second-brain-backend")),
+			attribute.String("service.version", fallback(cfg.AppRelease, "development")),
 			attribute.String("deployment.environment", fallback(cfg.Env, "development")),
 		),
 	)

@@ -7,6 +7,7 @@ import (
 
 func TestLoadAppliesDefaultsAndParsesCSV(t *testing.T) {
 	t.Setenv("APP_ENV", "test")
+	t.Setenv("APP_RELEASE", "release-123")
 	t.Setenv("PORT", "9090")
 	t.Setenv("DATABASE_URL", "postgres://primary")
 	t.Setenv("SUPABASE_DB_URL", "postgres://example")
@@ -31,11 +32,15 @@ func TestLoadAppliesDefaultsAndParsesCSV(t *testing.T) {
 	t.Setenv("OPENAI_SYNTHESIS_MODEL", "synthesis-model")
 	t.Setenv("OPENAI_CHAT_MODEL", "chat-model")
 	t.Setenv("OPENAI_IMAGE_MODEL", "image-model")
+	t.Setenv("OPENAI_IMAGE_QUALITY", "high")
+	t.Setenv("OPENAI_IMAGE_COST_USD", "0.123")
+	t.Setenv("LANGFUSE_HTTP_TRACING_ENABLED", "true")
+	t.Setenv("LANGFUSE_CAPTURE_CONTENT", "true")
 	t.Setenv("PUBLIC_BASE_URL", "https://example.com/second-brain")
 
 	cfg := Load()
 
-	if cfg.Env != "test" || cfg.Port != "9090" || cfg.OneCLIBin != "/tmp/onecli" || !cfg.OneCLIGateway {
+	if cfg.Env != "test" || cfg.AppRelease != "release-123" || cfg.Port != "9090" || cfg.OneCLIBin != "/tmp/onecli" || !cfg.OneCLIGateway {
 		t.Fatalf("unexpected basic config: %#v", cfg)
 	}
 	if cfg.DatabaseURL != "postgres://primary" {
@@ -65,8 +70,11 @@ func TestLoadAppliesDefaultsAndParsesCSV(t *testing.T) {
 	if cfg.SupadataMonthlyRequestLimit != 90 {
 		t.Fatalf("unexpected Supadata monthly request limit: %d", cfg.SupadataMonthlyRequestLimit)
 	}
-	if cfg.OpenAITranslationModel != "translation-model" || cfg.OpenAISynthesisModel != "synthesis-model" || cfg.OpenAIChatModel != "chat-model" || cfg.OpenAIImageModel != "image-model" {
+	if cfg.OpenAITranslationModel != "translation-model" || cfg.OpenAISynthesisModel != "synthesis-model" || cfg.OpenAIChatModel != "chat-model" || cfg.OpenAIImageModel != "image-model" || cfg.OpenAIImageQuality != "high" || cfg.OpenAIImageCostUSD != 0.123 {
 		t.Fatalf("unexpected OpenAI config: %#v", cfg)
+	}
+	if !cfg.LangfuseHTTPTracingEnabled || !cfg.LangfuseCaptureContent {
+		t.Fatalf("unexpected Langfuse config: %#v", cfg)
 	}
 	if cfg.PublicBaseURL != "https://example.com/second-brain" {
 		t.Fatalf("unexpected public base URL: %#v", cfg)
@@ -91,6 +99,10 @@ func TestLoadFallsBackForBlankValues(t *testing.T) {
 	t.Setenv("OPENAI_SYNTHESIS_MODEL", "")
 	t.Setenv("OPENAI_CHAT_MODEL", "")
 	t.Setenv("OPENAI_IMAGE_MODEL", "")
+	t.Setenv("OPENAI_IMAGE_QUALITY", "")
+	t.Setenv("OPENAI_IMAGE_COST_USD", "")
+	t.Setenv("LANGFUSE_HTTP_TRACING_ENABLED", "")
+	t.Setenv("LANGFUSE_CAPTURE_CONTENT", "")
 	t.Setenv("PUBLIC_BASE_URL", "")
 
 	cfg := Load()
@@ -107,8 +119,11 @@ func TestLoadFallsBackForBlankValues(t *testing.T) {
 	if !reflect.DeepEqual(cfg.AllowedOrigins, []string{"http://localhost:3000", "http://127.0.0.1:3000"}) {
 		t.Fatalf("unexpected default allowed origins: %#v", cfg.AllowedOrigins)
 	}
-	if cfg.YouTubePlaylistID == "" || cfg.OpenAITranslationModel != "gpt-4o-mini" || cfg.OpenAISynthesisModel != "gpt-5.4-mini" || cfg.OpenAIChatModel != "gpt-5.4" || cfg.OpenAIImageModel != "gpt-image-1" {
+	if cfg.YouTubePlaylistID == "" || cfg.OpenAITranslationModel != "gpt-4o-mini" || cfg.OpenAISynthesisModel != "gpt-5.4-mini" || cfg.OpenAIChatModel != "gpt-5.4" || cfg.OpenAIImageModel != "gpt-image-1" || cfg.OpenAIImageQuality != "medium" || cfg.OpenAIImageCostUSD != 0.042 {
 		t.Fatalf("expected model and playlist defaults, got %#v", cfg)
+	}
+	if cfg.LangfuseHTTPTracingEnabled || cfg.LangfuseCaptureContent {
+		t.Fatalf("expected HTTP tracing and content capture to default off, got %#v", cfg)
 	}
 	if cfg.SupadataMonthlyRequestLimit != 100 {
 		t.Fatalf("expected free-tier Supadata request limit, got %d", cfg.SupadataMonthlyRequestLimit)

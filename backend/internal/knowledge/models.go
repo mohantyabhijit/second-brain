@@ -356,6 +356,7 @@ type RefreshStatus struct {
 type AskSecondBrainRequest struct {
 	Question  string `json:"question"`
 	UseLatest bool   `json:"useLatest,omitempty"`
+	SessionID string `json:"sessionId,omitempty"`
 }
 
 type AskSecondBrainSource struct {
