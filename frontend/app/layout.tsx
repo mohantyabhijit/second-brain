@@ -74,8 +74,10 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
         <head>
           <script async src={`https://www.googletagmanager.com/gtag/js?id=${googleAnalyticsMeasurementId}`} />
           <script dangerouslySetInnerHTML={{ __html: googleAnalyticsScript }} />
+          <script async src="https://js.stripe.com/v3/buy-button.js" />
         </head>
       ) : null}
+      {!googleAnalyticsMeasurementId || !googleAnalyticsScript ? <head><script async src="https://js.stripe.com/v3/buy-button.js" /></head> : null}
       <body className={inter.variable}>
         {googleAnalyticsMeasurementId ? <GoogleAnalytics measurementId={googleAnalyticsMeasurementId} /> : null}
         {children}

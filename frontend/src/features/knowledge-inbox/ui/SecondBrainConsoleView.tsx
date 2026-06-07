@@ -188,6 +188,24 @@ export function SecondBrainConsoleView({ activePage, digestIssues, insightGraph,
           )}
 
         </div>
+        <footer className="app-footer">
+          <p className="app-footer-credit">
+            <span>Made with</span>
+            <span aria-hidden="true" className="app-footer-heart">
+              <HeartIcon />
+            </span>
+            <span>by</span>
+            <a href="https://www.linkedin.com/in/mohantyabhijit/" rel="noreferrer" target="_blank">
+              Abhijit Mohanty
+            </a>
+          </p>
+          <div className="coffee-button-slot" aria-label="Support via Stripe">
+            <stripe-buy-button
+              buy-button-id="buy_btn_1TfXKIRWkJ6QCdjhHqKmr2xi"
+              publishable-key="pk_live_51TOyiQRWkJ6QCdjhlLKvkb0gUa5kT8kku8R5A1LzigLjUp5obbdvTvp30e9gSwHacwuuR5yulsAUEpjcF2KrcXeo00DQKYShcF"
+            />
+          </div>
+        </footer>
       </section>
       {openSummaryItem ? <SummaryModal item={openSummaryItem} onClose={() => setOpenSummaryItem(null)} /> : null}
       <AskChatWidget />
@@ -264,6 +282,14 @@ function ThemeToggle({ mode, onToggle }: { mode: ThemeMode; onToggle: () => void
         <path d="M8.7 14.7c-1.2-.9-2-2.4-2-4.1C6.7 7.7 9.1 5.3 12 5.3s5.3 2.4 5.3 5.3c0 1.7-.8 3.2-2 4.1-.8.6-1.2 1.2-1.4 2.1h-3.8c-.2-.9-.6-1.5-1.4-2.1Z" />
       </svg>
     </button>
+  );
+}
+
+function HeartIcon() {
+  return (
+    <svg aria-hidden="true" className="footer-icon heart-icon" viewBox="0 0 24 24">
+      <path d="M12 20.4 4.95 13.6A4.87 4.87 0 0 1 3.5 10.1C3.5 7.57 5.48 5.6 8.01 5.6c1.57 0 3.05.78 3.99 2.08A4.9 4.9 0 0 1 16 5.6c2.52 0 4.5 1.97 4.5 4.5 0 1.34-.52 2.61-1.45 3.5Z" />
+    </svg>
   );
 }
 
