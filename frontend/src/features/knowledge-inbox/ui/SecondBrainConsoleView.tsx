@@ -140,7 +140,6 @@ export function SecondBrainConsoleView({ activePage, digestIssues, insightGraph,
             <span className="section-label">{page.kicker}</span>
             <h1>{page.title}</h1>
           </div>
-          <HomeLink />
           <ThemeToggle mode={theme.mode} onToggle={theme.toggle} />
           <IdentityBadge />
         </header>
@@ -209,6 +208,7 @@ export function SecondBrainConsoleView({ activePage, digestIssues, insightGraph,
         </footer>
       </section>
       {openSummaryItem ? <SummaryModal item={openSummaryItem} onClose={() => setOpenSummaryItem(null)} /> : null}
+      <HomeLink />
       <AskChatWidget />
     </main>
   );
