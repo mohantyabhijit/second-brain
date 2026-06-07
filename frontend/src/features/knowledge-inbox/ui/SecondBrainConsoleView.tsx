@@ -140,6 +140,7 @@ export function SecondBrainConsoleView({ activePage, digestIssues, insightGraph,
             <span className="section-label">{page.kicker}</span>
             <h1>{page.title}</h1>
           </div>
+          <HomeLink />
           <ThemeToggle mode={theme.mode} onToggle={theme.toggle} />
           <IdentityBadge />
         </header>
@@ -263,6 +264,24 @@ function useThemeMode() {
     mode,
     toggle: () => setMode((current) => (current === "dark" ? "light" : "dark"))
   };
+}
+
+function HomeLink() {
+  return (
+    <a
+      aria-label="Go to abhijitmohanty.com"
+      className="home-link"
+      href="https://www.abhijitmohanty.com"
+      rel="noreferrer"
+      title="Home"
+    >
+      <svg aria-hidden="true" className="home-link-icon" viewBox="0 0 24 24">
+        <path d="M4 11.5 12 4l8 7.5" />
+        <path d="M6 10v9.5h12V10" />
+        <path d="M10 19.5v-5h4v5" />
+      </svg>
+    </a>
+  );
 }
 
 function ThemeToggle({ mode, onToggle }: { mode: ThemeMode; onToggle: () => void }) {
