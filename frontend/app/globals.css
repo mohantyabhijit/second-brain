@@ -1999,7 +1999,7 @@ blockquote {
   }
 
   .wall-workspace {
-    padding: 14px;
+    padding: 14px 14px calc(124px + env(safe-area-inset-bottom, 0px));
   }
 
   h1 {
@@ -2022,11 +2022,17 @@ blockquote {
 
   .ask-brain {
     right: 12px;
-    bottom: 12px;
-    left: 12px;
+    bottom: calc(76px + env(safe-area-inset-bottom, 0px));
+    left: auto;
   }
 
   .ask-panel {
-    width: 100%;
+    width: min(360px, calc(100vw - 24px));
+  }
+
+  .ask-launcher {
+    min-height: 48px;
+    min-width: 176px;
+    padding: 0 20px;
   }
 }
