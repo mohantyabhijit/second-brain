@@ -362,6 +362,69 @@ p {
   padding: 28px clamp(20px, 2.2vw, 36px) 44px;
 }
 
+.app-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-top: 28px;
+  padding-top: 20px;
+  border-top: 1px solid var(--line);
+}
+
+.app-footer-credit {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.92rem;
+  font-weight: 620;
+}
+
+.app-footer-credit a {
+  color: var(--ink);
+  font-weight: 780;
+  text-decoration: none;
+}
+
+.app-footer-credit a:hover {
+  color: var(--blue-dark);
+}
+
+.app-footer-heart {
+  display: inline-flex;
+  align-items: center;
+  color: #d04a72;
+}
+
+.footer-icon {
+  width: 18px;
+  height: 18px;
+  fill: currentColor;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.5;
+  flex: 0 0 auto;
+}
+
+.heart-icon {
+  width: 16px;
+  height: 16px;
+}
+
+.coffee-button-slot {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.coffee-button-slot stripe-buy-button {
+  display: inline-flex;
+}
+
 .wall-topbar {
   min-height: 104px;
   display: grid;
@@ -1796,6 +1859,11 @@ blockquote {
 
   .graph-viewport {
     min-height: 520px;
+  }
+
+  .app-footer {
+    flex-direction: column;
+    align-items: flex-start;
   }
 }
 
