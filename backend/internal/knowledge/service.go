@@ -449,7 +449,7 @@ func (s *Service) readLatestViewCanonical(ctx context.Context, view string, limi
 		return s.readLatestCanonical(ctx)
 	}
 	if reader, ok := s.store.(ownerLatestViewReader); ok {
-		latest, err := reader.ReadLatestViewForOwner(ctx, s.cfg.OwnerID, view, NormalizePageStateLimit(limit))
+		latest, err := reader.ReadLatestViewForOwner(ctx, s.cfg.OwnerID, view, NormalizeAppStateViewLimit(view, limit))
 		if err == nil {
 			normalizeResultInsightEngine(latest)
 			normalizeResultCollections(latest)
@@ -458,7 +458,7 @@ func (s *Service) readLatestViewCanonical(ctx context.Context, view string, limi
 		s.log(ctx).Warn("view-scoped latest fallback", "view", view, "error", err)
 	}
 	if reader, ok := s.store.(latestViewReader); ok {
-		latest, err := reader.ReadLatestView(ctx, view, NormalizePageStateLimit(limit))
+		latest, err := reader.ReadLatestView(ctx, view, NormalizeAppStateViewLimit(view, limit))
 		if err == nil {
 			normalizeResultInsightEngine(latest)
 			normalizeResultCollections(latest)

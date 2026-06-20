@@ -144,7 +144,7 @@ func (s *Store) ReadLatestViewForOwner(ctx context.Context, ownerID string, view
 						select value, ordinality
 						from jsonb_array_elements(coalesce(payload->'%[1]s', '[]'::jsonb)) with ordinality as item(value, ordinality)
 						order by %[2]s
-						limit $1
+						limit $2
 					) item
 				), '[]'::jsonb)
 			)
