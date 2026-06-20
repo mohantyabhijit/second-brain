@@ -75,7 +75,7 @@ export function useKnowledgeInboxController(activePage: KnowledgeInboxPage = "in
     } finally {
       setIsLoadingMore(false);
     }
-  }, [activePage, applyAppState, isLoadingMore, run]);
+  }, [activePage, applyAppState, isLoadingMore]);
 
   useEffect(() => {
     let ignore = false;
