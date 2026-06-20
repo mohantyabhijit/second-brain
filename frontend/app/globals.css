@@ -770,7 +770,34 @@ h1 {
   display: grid;
   gap: 0;
   min-width: 0;
-  content-visibility: auto;
+}
+
+.source-feed-summary {
+  min-height: 46px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-bottom: 1px solid var(--line);
+  padding: 0 0 12px;
+  color: var(--ink);
+}
+
+.source-feed-summary span,
+.source-feed-summary small {
+  display: block;
+  line-height: 1.25;
+}
+
+.source-feed-summary span {
+  font-size: 0.92rem;
+  font-weight: 850;
+}
+
+.source-feed-summary small {
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 760;
 }
 
 .feed-card {
@@ -784,6 +811,8 @@ h1 {
   border-bottom: 1px solid var(--line);
   padding: 16px 0;
   background: transparent;
+  contain-intrinsic-size: 0 168px;
+  content-visibility: auto;
   cursor: pointer;
   transition: background 160ms ease, border-color 160ms ease;
 }
@@ -805,6 +834,7 @@ h1 {
   border-radius: 8px;
   padding: 18px;
   background: var(--newsletter-card-bg);
+  contain-intrinsic-size: 0 196px;
   box-shadow: var(--soft-shadow);
 }
 
@@ -1909,11 +1939,19 @@ blockquote {
     height: 40px;
   }
 
+  .source-feed-summary {
+    min-height: 58px;
+    display: grid;
+    align-items: start;
+    gap: 4px;
+  }
+
   .feed-card {
     height: 240px;
     grid-template-columns: 42px minmax(0, 1fr);
     grid-template-rows: auto auto;
     gap: 12px;
+    contain-intrinsic-size: 0 240px;
   }
 
   .feed-card.empty-feed {

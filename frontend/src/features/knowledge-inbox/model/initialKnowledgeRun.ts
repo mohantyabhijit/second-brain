@@ -7,6 +7,10 @@ export const initialKnowledgeRun: KnowledgeRunResult = {
     youtube: "needs_secrets",
     onecli: "needs_secrets"
   },
+  sourceCounts: {
+    xBookmarks: 0,
+    youtubeItems: 0
+  },
   xBookmarks: [],
   youtubeItems: [],
   summaries: [],

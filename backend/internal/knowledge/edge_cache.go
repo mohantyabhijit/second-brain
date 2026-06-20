@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/url"
 	"strings"
@@ -104,6 +105,11 @@ func edgeCachePurgeURLs(baseURL string) []string {
 		"/api/app-state?view=knowledge-graph&limit=180",
 		"/api/digests",
 		"/api/knowledge-graph/insights?limit=180",
+	}
+	for _, view := range []string{"original-x-posts", "original-youtube-posts"} {
+		for limit := 25; limit <= MaxSourceStateLimit; limit += 25 {
+			paths = append(paths, fmt.Sprintf("/api/app-state?view=%s&limit=%d", view, limit))
+		}
 	}
 	urls := make([]string, 0, len(paths))
 	for _, path := range paths {

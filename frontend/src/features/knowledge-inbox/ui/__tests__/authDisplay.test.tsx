@@ -22,7 +22,9 @@ describe("auth display surfaces", () => {
         digestIssues={[]}
         insightGraph={null}
         isLoading={false}
+        isLoadingMore={false}
         model={toKnowledgeInboxViewModel(initialKnowledgeRun, false, null)}
+        onLoadMoreSources={() => undefined}
         refreshStatus={null}
       />
     );

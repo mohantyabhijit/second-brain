@@ -11,8 +11,8 @@ func TestCompactAppStateForViewKeepsOnlyRequestedSurface(t *testing.T) {
 	state := BuildAppState("owner-1", &Result{
 		GeneratedAt: now,
 		XBookmarks: []XBookmark{
-			{ID: "x1", SourceURL: "https://x.example/1", Body: "one"},
-			{ID: "x2", SourceURL: "https://x.example/2", Body: "two"},
+			{ID: "x1", SourceURL: "https://x.example/1", Body: "one", CreatedAt: "2026-05-30T05:00:00Z"},
+			{ID: "x2", SourceURL: "https://x.example/2", Body: "two", CreatedAt: "2026-05-31T05:00:00Z"},
 		},
 		YouTubeItems: []YouTubeItem{
 			{VideoID: "y1", SourceURL: "https://youtube.example/1", TranscriptPreview: "video one"},
@@ -63,6 +63,15 @@ func TestCompactAppStateForViewKeepsOnlyRequestedSurface(t *testing.T) {
 	if got := len(xState.Latest.XBookmarks); got != 1 {
 		t.Fatalf("expected 1 x bookmark, got %d", got)
 	}
+	if got := xState.Latest.XBookmarks[0].ID; got != "x2" {
+		t.Fatalf("expected newest x bookmark first, got %q", got)
+	}
+	if got := xState.SourceCounts.XBookmarks; got != 2 {
+		t.Fatalf("expected full x bookmark count to be preserved, got %d", got)
+	}
+	if got := xState.SourceCounts.YouTubeItems; got != 1 {
+		t.Fatalf("expected full youtube count to be preserved, got %d", got)
+	}
 	if got := len(xState.Latest.Summaries); got != 1 {
 		t.Fatalf("expected 1 matching x summary, got %d", got)
 	}
@@ -99,6 +108,12 @@ func TestCompactAppStateForViewKeepsOnlyRequestedSurface(t *testing.T) {
 func TestNormalizeAppStateViewLimitAllowsLargeGraphViews(t *testing.T) {
 	if got := NormalizeAppStateViewLimit("insights", 180); got != 50 {
 		t.Fatalf("expected non-graph page limit capped at 50, got %d", got)
+	}
+	if got := NormalizeAppStateViewLimit("original-x-posts", 180); got != 180 {
+		t.Fatalf("expected source page limit to preserve 180, got %d", got)
+	}
+	if got := NormalizeAppStateViewLimit("original-youtube-posts", 999); got != MaxSourceStateLimit {
+		t.Fatalf("expected source page limit capped at %d, got %d", MaxSourceStateLimit, got)
 	}
 	if got := NormalizeAppStateViewLimit("knowledge-graph", 180); got != 180 {
 		t.Fatalf("expected graph page limit to preserve 180, got %d", got)

@@ -110,7 +110,8 @@ func (c *Cache) ReadAppViewState(ctx context.Context, ownerID string, view strin
 			OriginalXBookmarks:   []knowledge.XBookmark{},
 			OriginalYouTubePosts: []knowledge.YouTubeItem{},
 		},
-		Digests: []knowledge.DigestIssue{},
+		SourceCounts: knowledge.AppStateSourceCounts{},
+		Digests:      []knowledge.DigestIssue{},
 		RefreshStatus: knowledge.RefreshStatus{
 			ID:        "idle",
 			Status:    "idle",
@@ -164,13 +165,15 @@ func (c *Cache) ReadAppViewState(ctx context.Context, ownerID string, view strin
 		if err := c.readRunJSON(ctx, ownerID, manifest.RunID, "original-x-bookmarks", &bookmarks); err != nil {
 			return nil, err
 		}
-		state.Latest.XBookmarks = firstN(bookmarks, limit)
+		state.SourceCounts.XBookmarks = len(bookmarks)
+		state.Latest.XBookmarks = firstN(knowledge.SortXBookmarksNewestFirst(bookmarks), limit)
 	case "original-youtube-posts", "original-youtube-videos":
 		var videos []knowledge.YouTubeItem
 		if err := c.readRunJSON(ctx, ownerID, manifest.RunID, "original-youtube-posts", &videos); err != nil {
 			return nil, err
 		}
-		state.Latest.YouTubeItems = firstN(videos, limit)
+		state.SourceCounts.YouTubeItems = len(videos)
+		state.Latest.YouTubeItems = firstN(knowledge.SortYouTubeItemsNewestFirst(videos), limit)
 	case "knowledge-graph":
 		var graph knowledge.AppStateGraph
 		if err := c.readRunJSON(ctx, ownerID, manifest.RunID, "graph", &graph); err != nil {
@@ -184,6 +187,7 @@ func (c *Cache) ReadAppViewState(ctx context.Context, ownerID string, view strin
 	default:
 		return nil, knowledge.ErrReadModelCacheMiss
 	}
+	state.Latest.SourceCounts = state.SourceCounts
 	return &state, nil
 }
 

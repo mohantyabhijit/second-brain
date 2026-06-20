@@ -15,7 +15,9 @@ export default function KnowledgeInboxContainer({ initialPage = "insights" }: Kn
   const {
     run,
     isLoading,
+    isLoadingMore,
     isRunning,
+    loadMoreSources,
     refreshStatus,
     digestIssues,
     insightGraph,
@@ -27,6 +29,8 @@ export default function KnowledgeInboxContainer({ initialPage = "insights" }: Kn
     <SecondBrainConsoleView
       activePage={initialPage}
       isLoading={isLoading}
+      isLoadingMore={isLoadingMore}
+      onLoadMoreSources={loadMoreSources}
       refreshStatus={refreshStatus}
       digestIssues={digestIssues}
       insightGraph={insightGraph}

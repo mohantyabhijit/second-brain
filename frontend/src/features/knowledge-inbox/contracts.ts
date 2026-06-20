@@ -43,6 +43,11 @@ export type SavedYouTubeItem = {
   importantTimeMarkers?: ImportantTimeMarker[];
 };
 
+export type SourceCounts = {
+  xBookmarks: number;
+  youtubeItems: number;
+};
+
 export type QualityScore = {
   overall?: number;
   conciseness?: number;
@@ -290,6 +295,7 @@ export type KnowledgeRunResult = {
     youtube: SourceStatus;
     onecli: SourceStatus;
   };
+  sourceCounts?: SourceCounts;
   xBookmarks: SavedXItem[];
   youtubeItems: SavedYouTubeItem[];
   summaries: KnowledgeSummary[];
@@ -339,6 +345,7 @@ export type AppState = {
   manifest: AppStateManifest;
   latest: KnowledgeRunResult | null;
   views: AppStateViews;
+  sourceCounts: SourceCounts;
   digests: DigestIssue[];
   refreshStatus: RefreshStatus;
   graph: AppStateGraph;

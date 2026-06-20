@@ -929,6 +929,16 @@ func (s *Service) normalizeAppState(state *AppState) {
 			s.annotateDigestIllustration(state.Latest.Digest)
 		}
 	}
+	fallbackCounts := sourceCountsFromResult(state.Latest)
+	if state.SourceCounts.XBookmarks == 0 && fallbackCounts.XBookmarks > 0 {
+		state.SourceCounts.XBookmarks = fallbackCounts.XBookmarks
+	}
+	if state.SourceCounts.YouTubeItems == 0 && fallbackCounts.YouTubeItems > 0 {
+		state.SourceCounts.YouTubeItems = fallbackCounts.YouTubeItems
+	}
+	if state.Latest != nil {
+		state.Latest.SourceCounts = state.SourceCounts
+	}
 	if state.Digests == nil {
 		state.Digests = []DigestIssue{}
 	}

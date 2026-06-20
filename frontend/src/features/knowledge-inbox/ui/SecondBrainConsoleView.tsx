@@ -12,8 +12,10 @@ type SecondBrainConsoleViewProps = {
   activePage: KnowledgeInboxPage;
   digestIssues: DigestIssue[];
   isLoading: boolean;
+  isLoadingMore: boolean;
   insightGraph: InsightGraphResponse | null;
   model: KnowledgeInboxViewModel;
+  onLoadMoreSources: () => void;
   refreshStatus: RefreshStatus | null;
 };
 
@@ -29,6 +31,7 @@ type FeedItem = {
   author: string;
   timestamp: string;
   sourceUrl?: string;
+  sortTimestamp?: string;
   stats?: string;
   timeMarkers?: ImportantTimeMarker[];
   fullBody?: string;
@@ -79,7 +82,7 @@ const themeStorageKey = "second-brain-theme";
 
 type ThemeMode = "light" | "dark";
 
-export function SecondBrainConsoleView({ activePage, digestIssues, insightGraph, isLoading, model, refreshStatus }: SecondBrainConsoleViewProps) {
+export function SecondBrainConsoleView({ activePage, digestIssues, insightGraph, isLoading, isLoadingMore, model, onLoadMoreSources, refreshStatus }: SecondBrainConsoleViewProps) {
   const [visibleCount, setVisibleCount] = useState(initialVisibleCount);
   const [copiedItems, setCopiedItems] = useState<Set<string>>(new Set());
   const [openSummaryItem, setOpenSummaryItem] = useState<FeedItem | null>(null);
@@ -89,6 +92,8 @@ export function SecondBrainConsoleView({ activePage, digestIssues, insightGraph,
   const isSourceLoadingPage = isExternalSourcePage(activePage);
   const baseItems = useMemo(() => getFeedItems(model, activePage, digestIssues), [model, activePage, digestIssues]);
   const feedItems = useMemo(() => sliceItems(baseItems, visibleCount), [baseItems, visibleCount]);
+  const sourceTotal = sourceTotalForPage(model, activePage);
+  const hasMoreSourceItems = isSourceLoadingPage && baseItems.length < sourceTotal;
 
   useEffect(() => {
     const sentinel = sentinelRef.current;
@@ -97,7 +102,13 @@ export function SecondBrainConsoleView({ activePage, digestIssues, insightGraph,
     const observer = new IntersectionObserver(
       (entries) => {
         if (entries[0]?.isIntersecting) {
-          setVisibleCount((count) => count + loadMoreCount);
+          if (visibleCount < baseItems.length) {
+            setVisibleCount((count) => Math.min(count + loadMoreCount, baseItems.length));
+            return;
+          }
+          if (hasMoreSourceItems && !isLoadingMore) {
+            onLoadMoreSources();
+          }
         }
       },
       { rootMargin: "720px 0px" }
@@ -105,7 +116,7 @@ export function SecondBrainConsoleView({ activePage, digestIssues, insightGraph,
 
     observer.observe(sentinel);
     return () => observer.disconnect();
-  }, [activePage]);
+  }, [activePage, baseItems.length, hasMoreSourceItems, isLoadingMore, onLoadMoreSources, visibleCount]);
 
   function toggleCopiedItem(key: string, quote: string) {
     setCopiedItems((items) => toggleSetItem(items, key));
@@ -160,6 +171,15 @@ export function SecondBrainConsoleView({ activePage, digestIssues, insightGraph,
             <KnowledgeGraphView graph={insightGraph} isLoading={isLoading} />
           ) : (
             <section className="feed-column" aria-label={`${page.title} feed`}>
+              {isSourceLoadingPage && (!isLoading || sourceTotal > 0) ? (
+                <SourceFeedSummary
+                  activePage={activePage}
+                  isLoadingMore={isLoadingMore}
+                  loaded={baseItems.length}
+                  total={sourceTotal}
+                  visible={feedItems.length}
+                />
+              ) : null}
               {feedItems.length ? (
                 feedItems.map((item, index) => {
                   const itemKey = `${item.id}-${index}`;
@@ -181,7 +201,11 @@ export function SecondBrainConsoleView({ activePage, digestIssues, insightGraph,
               )}
               {baseItems.length ? (
                 <div ref={sentinelRef} className="feed-sentinel" aria-hidden="true">
-                  {feedItems.length < baseItems.length ? "Loading more sourced items" : "End of sourced items"}
+                  {feedItems.length < baseItems.length || hasMoreSourceItems
+                    ? isLoadingMore
+                      ? "Loading more sourced items"
+                      : "Scroll for more sourced items"
+                    : "End of sourced items"}
                 </div>
               ) : null}
             </section>
@@ -211,6 +235,33 @@ export function SecondBrainConsoleView({ activePage, digestIssues, insightGraph,
       <HomeLink />
       <AskChatWidget />
     </main>
+  );
+}
+
+function SourceFeedSummary({
+  activePage,
+  isLoadingMore,
+  loaded,
+  total,
+  visible
+}: {
+  activePage: KnowledgeInboxPage;
+  isLoadingMore: boolean;
+  loaded: number;
+  total: number;
+  visible: number;
+}) {
+  const label = activePage === "original-youtube-posts" ? "YouTube sources" : "X bookmarks";
+  const safeTotal = Math.max(total, loaded);
+  const shown = Math.min(visible, safeTotal);
+  return (
+    <div className="source-feed-summary" role="status">
+      <span>{formatNumber(safeTotal)} total {label}</span>
+      <small>
+        {formatNumber(shown)} shown{loaded < safeTotal ? `, ${formatNumber(loaded)} loaded` : ""}
+        {isLoadingMore ? " - loading more" : ""}
+      </small>
+    </div>
   );
 }
 
@@ -633,23 +684,28 @@ function getFeedItems(model: KnowledgeInboxViewModel, activePage: KnowledgeInbox
         quote: synthesis?.quote ?? (item.body.length > 130 ? `${item.body.slice(0, 130).trim()}...` : item.body),
         author: item.author,
         timestamp: item.timestamp,
+        sortTimestamp: item.sortTimestamp,
         sourceUrl: item.sourceUrl,
         stats: item.stats ?? item.status
       };
-    });
-  const youtubePosts = model.transcripts.items.map((item): FeedItem => ({
-    id: item.id,
-    source: "YouTube",
-    eyebrow: item.statusLabel,
-    title: summariesBySourceUrl.get(item.sourceUrl)?.title ?? item.title,
-    body: summariesBySourceUrl.get(item.sourceUrl)?.body ?? item.detail,
-    quote: summariesBySourceUrl.get(item.sourceUrl)?.quote ?? (item.detail.length > 150 ? `${item.detail.slice(0, 150).trim()}...` : item.detail),
-    author: item.author,
-    timestamp: item.timestamp,
-    sourceUrl: item.sourceUrl,
-    stats: item.statusLabel,
-    timeMarkers: item.timeMarkers?.length ? item.timeMarkers : summariesBySourceUrl.get(item.sourceUrl)?.timeMarkers
-  }));
+    })
+    .sort(compareFeedItemsNewestFirst);
+  const youtubePosts = model.transcripts.items
+    .map((item): FeedItem => ({
+      id: item.id,
+      source: "YouTube",
+      eyebrow: item.statusLabel,
+      title: summariesBySourceUrl.get(item.sourceUrl)?.title ?? item.title,
+      body: summariesBySourceUrl.get(item.sourceUrl)?.body ?? item.detail,
+      quote: summariesBySourceUrl.get(item.sourceUrl)?.quote ?? (item.detail.length > 150 ? `${item.detail.slice(0, 150).trim()}...` : item.detail),
+      author: item.author,
+      timestamp: item.timestamp,
+      sortTimestamp: item.sortTimestamp,
+      sourceUrl: item.sourceUrl,
+      stats: item.statusLabel,
+      timeMarkers: item.timeMarkers?.length ? item.timeMarkers : summariesBySourceUrl.get(item.sourceUrl)?.timeMarkers
+    }))
+    .sort(compareFeedItemsNewestFirst);
 
   if (activePage === "insights") return insightItems;
   if (activePage === "knowledge-graph") return [];
@@ -731,8 +787,34 @@ function shortText(value: string, maxLength: number) {
   return `${plain.slice(0, maxLength).trim()}...`;
 }
 
+function compareFeedItemsNewestFirst(a: FeedItem, b: FeedItem) {
+  const diff = feedSortTime(b) - feedSortTime(a);
+  if (diff !== 0) return diff;
+  return a.id.localeCompare(b.id);
+}
+
+function feedSortTime(item: FeedItem) {
+  if (!item.sortTimestamp) return 0;
+  const time = Date.parse(item.sortTimestamp);
+  return Number.isFinite(time) ? time : 0;
+}
+
 function sliceItems(items: FeedItem[], visibleCount: number) {
   return items.slice(0, visibleCount);
+}
+
+function sourceTotalForPage(model: KnowledgeInboxViewModel, activePage: KnowledgeInboxPage) {
+  if (activePage === "original-x-posts") {
+    return model.sourceCounts.xBookmarks;
+  }
+  if (activePage === "original-youtube-posts") {
+    return model.sourceCounts.youtubeItems;
+  }
+  return 0;
+}
+
+function formatNumber(value: number) {
+  return new Intl.NumberFormat("en").format(value);
 }
 
 function isActiveNav(item: NavigationItemViewModel, activePage: KnowledgeInboxPage) {

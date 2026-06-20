@@ -7,11 +7,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 )
 
 const AppStateSchemaVersion = "redis-read-model-v1"
+const MaxPageStateLimit = 50
+const MaxSourceStateLimit = 500
 
 var ErrReadModelCacheMiss = errors.New("read model cache miss")
 
@@ -62,6 +65,7 @@ func BuildAppState(ownerID string, latest *Result, digests []DigestIssue, refres
 			DigestStatus:  digestStatus,
 		},
 		Latest:        latestCopy,
+		SourceCounts:  sourceCountsFromResult(latestCopy),
 		Digests:       digests,
 		RefreshStatus: refresh,
 	}
@@ -114,10 +118,10 @@ func CompactAppStateForView(state *AppState, view string, limit int) *AppState {
 			compact.Digests = []DigestIssue{}
 		}
 	case "original-x-posts", "original-x-bookmarks":
-		latest.XBookmarks = firstN(state.Latest.XBookmarks, limit)
+		latest.XBookmarks = firstN(SortXBookmarksNewestFirst(state.Latest.XBookmarks), limit)
 		latest.Summaries = summariesForSourceURLs(state.Latest.Summaries, "x", xBookmarkURLs(latest.XBookmarks))
 	case "original-youtube-posts", "original-youtube-videos":
-		latest.YouTubeItems = firstN(state.Latest.YouTubeItems, limit)
+		latest.YouTubeItems = firstN(SortYouTubeItemsNewestFirst(state.Latest.YouTubeItems), limit)
 		latest.Summaries = summariesForSourceURLs(state.Latest.Summaries, "youtube", youtubeItemURLs(latest.YouTubeItems))
 	case "knowledge-graph":
 		compact.Graph = AppStateGraph{
@@ -138,19 +142,28 @@ func NormalizePageStateLimit(limit int) int {
 	if limit <= 0 {
 		return 25
 	}
-	if limit > 50 {
-		return 50
+	if limit > MaxPageStateLimit {
+		return MaxPageStateLimit
 	}
 	return limit
 }
 
 func NormalizeAppStateViewLimit(view string, limit int) int {
-	if strings.TrimSpace(view) == "knowledge-graph" {
+	switch strings.TrimSpace(view) {
+	case "knowledge-graph":
 		if limit <= 0 {
 			return DefaultInsightGraphLimit
 		}
 		if limit > MaxInsightGraphLimit {
 			return MaxInsightGraphLimit
+		}
+		return limit
+	case "original-x-posts", "original-x-bookmarks", "original-youtube-posts", "original-youtube-videos":
+		if limit <= 0 {
+			return 25
+		}
+		if limit > MaxSourceStateLimit {
+			return MaxSourceStateLimit
 		}
 		return limit
 	}
@@ -165,6 +178,7 @@ func NormalizeResultForReadModel(result *Result) {
 func resultShell(latest *Result) Result {
 	result := Result{
 		GeneratedAt:     latest.GeneratedAt,
+		SourceCounts:    sourceCountsFromResult(latest),
 		XBookmarks:      []XBookmark{},
 		YouTubeItems:    []YouTubeItem{},
 		Summaries:       []Summary{},
@@ -222,6 +236,39 @@ func firstN[T any](items []T, limit int) []T {
 	return items
 }
 
+func SortXBookmarksNewestFirst(items []XBookmark) []XBookmark {
+	if items == nil {
+		return []XBookmark{}
+	}
+	sorted := append([]XBookmark(nil), items...)
+	sort.SliceStable(sorted, func(i int, j int) bool {
+		return sourceTime(sorted[i].CreatedAt).After(sourceTime(sorted[j].CreatedAt))
+	})
+	return sorted
+}
+
+func SortYouTubeItemsNewestFirst(items []YouTubeItem) []YouTubeItem {
+	if items == nil {
+		return []YouTubeItem{}
+	}
+	sorted := append([]YouTubeItem(nil), items...)
+	sort.SliceStable(sorted, func(i int, j int) bool {
+		return sourceTime(sorted[i].PublishedAt).After(sourceTime(sorted[j].PublishedAt))
+	})
+	return sorted
+}
+
+func sourceTime(value string) time.Time {
+	if strings.TrimSpace(value) == "" {
+		return time.Time{}
+	}
+	parsed, err := time.Parse(time.RFC3339Nano, value)
+	if err != nil {
+		return time.Time{}
+	}
+	return parsed
+}
+
 func summariesForSourceURLs(summaries []Summary, source string, urls map[string]struct{}) []Summary {
 	if len(summaries) == 0 || len(urls) == 0 {
 		return []Summary{}
@@ -268,6 +315,12 @@ func normalizeResultCollections(result *Result) {
 	if result.YouTubeItems == nil {
 		result.YouTubeItems = []YouTubeItem{}
 	}
+	if result.SourceCounts.XBookmarks == 0 && len(result.XBookmarks) > 0 {
+		result.SourceCounts.XBookmarks = len(result.XBookmarks)
+	}
+	if result.SourceCounts.YouTubeItems == 0 && len(result.YouTubeItems) > 0 {
+		result.SourceCounts.YouTubeItems = len(result.YouTubeItems)
+	}
 	if result.Summaries == nil {
 		result.Summaries = []Summary{}
 	}
@@ -312,6 +365,20 @@ func normalizeDigests(digests []DigestIssue) []DigestIssue {
 		return []DigestIssue{}
 	}
 	return digests
+}
+
+func sourceCountsFromResult(latest *Result) AppStateSourceCounts {
+	if latest == nil {
+		return AppStateSourceCounts{}
+	}
+	counts := latest.SourceCounts
+	if counts.XBookmarks == 0 && len(latest.XBookmarks) > 0 {
+		counts.XBookmarks = len(latest.XBookmarks)
+	}
+	if counts.YouTubeItems == 0 && len(latest.YouTubeItems) > 0 {
+		counts.YouTubeItems = len(latest.YouTubeItems)
+	}
+	return counts
 }
 
 func buildAppStateViews(latest *Result) AppStateViews {
@@ -469,18 +536,20 @@ func graphStatusFor(latest *Result) string {
 
 func appStateETag(ownerID string, state AppState) string {
 	payload := struct {
-		OwnerID       string             `json:"ownerId"`
-		SchemaVersion string             `json:"schemaVersion"`
-		RunID         string             `json:"runId"`
-		Latest        *Result            `json:"latest"`
-		Digests       []DigestIssue      `json:"digests"`
-		Graph         AppStateGraph      `json:"graph"`
-		AskContext    AppStateAskContext `json:"askContext"`
+		OwnerID       string               `json:"ownerId"`
+		SchemaVersion string               `json:"schemaVersion"`
+		RunID         string               `json:"runId"`
+		Latest        *Result              `json:"latest"`
+		SourceCounts  AppStateSourceCounts `json:"sourceCounts"`
+		Digests       []DigestIssue        `json:"digests"`
+		Graph         AppStateGraph        `json:"graph"`
+		AskContext    AppStateAskContext   `json:"askContext"`
 	}{
 		OwnerID:       ownerID,
 		SchemaVersion: state.Manifest.SchemaVersion,
 		RunID:         state.Manifest.RunID,
 		Latest:        state.Latest,
+		SourceCounts:  state.SourceCounts,
 		Digests:       state.Digests,
 		Graph:         state.Graph,
 		AskContext:    state.AskContext,

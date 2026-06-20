@@ -1,4 +1,4 @@
-import type { AppState, AskSecondBrainResponse, DigestIssue, FeedbackSignal, InsightGraphResponse, KnowledgeRunResult, RefreshStatus, SourceProviderConnection, WorkspaceStatus } from "../contracts";
+import type { AppState, AskSecondBrainResponse, DigestIssue, FeedbackSignal, InsightGraphResponse, KnowledgeRunResult, RefreshStatus, SourceCounts, SourceProviderConnection, WorkspaceStatus } from "../contracts";
 
 export type AppStateView = "insights" | "daily-newsletter" | "original-x-posts" | "original-youtube-posts" | "knowledge-graph";
 
@@ -126,10 +126,13 @@ export async function saveYouTubePlaylist(input: { playlistId?: string; playlist
 }
 
 function normalizeKnowledgeRun(result: KnowledgeRunResult): KnowledgeRunResult {
+  const xBookmarks = result.xBookmarks ?? [];
+  const youtubeItems = result.youtubeItems ?? [];
   return {
     ...result,
-    xBookmarks: result.xBookmarks ?? [],
-    youtubeItems: result.youtubeItems ?? [],
+    sourceCounts: normalizeSourceCounts(result.sourceCounts, xBookmarks.length, youtubeItems.length),
+    xBookmarks,
+    youtubeItems,
     summaries: result.summaries ?? [],
     insights: result.insights ?? [],
     actionItems: result.actionItems ?? [],
@@ -142,10 +145,17 @@ function normalizeKnowledgeRun(result: KnowledgeRunResult): KnowledgeRunResult {
 }
 
 function normalizeAppState(state: AppState): AppState {
-  const latest = state.latest ? normalizeKnowledgeRun(state.latest) : null;
+  const normalizedLatest = state.latest ? normalizeKnowledgeRun(state.latest) : null;
+  const sourceCounts = normalizeSourceCounts(
+    state.sourceCounts ?? normalizedLatest?.sourceCounts,
+    normalizedLatest?.xBookmarks.length ?? state.views?.originalXBookmarks?.length ?? 0,
+    normalizedLatest?.youtubeItems.length ?? state.views?.originalYouTubePosts?.length ?? 0
+  );
+  const latest = normalizedLatest ? { ...normalizedLatest, sourceCounts } : null;
   return {
     ...state,
     latest,
+    sourceCounts,
     digests: state.digests ?? [],
     views: {
       insights: state.views?.insights ?? latest?.insights ?? [],
@@ -165,6 +175,15 @@ function normalizeAppState(state: AppState): AppState {
       sources: state.askContext?.sources ?? [],
       updatedAt: state.askContext?.updatedAt ?? state.manifest?.publishedAt ?? new Date(0).toISOString()
     }
+  };
+}
+
+function normalizeSourceCounts(counts: SourceCounts | undefined, xFallback: number, youtubeFallback: number): SourceCounts {
+  const xBookmarks = typeof counts?.xBookmarks === "number" ? counts.xBookmarks : xFallback;
+  const youtubeItems = typeof counts?.youtubeItems === "number" ? counts.youtubeItems : youtubeFallback;
+  return {
+    xBookmarks: xBookmarks === 0 && xFallback > 0 ? xFallback : xBookmarks,
+    youtubeItems: youtubeItems === 0 && youtubeFallback > 0 ? youtubeFallback : youtubeItems
   };
 }
 
