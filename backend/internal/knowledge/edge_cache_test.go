@@ -98,10 +98,10 @@ func TestEdgeCachePurgeURLsIncludesApexAndWWWVariants(t *testing.T) {
 	}
 
 	fromWWW := edgeCachePurgeURLs("https://www.abhijitmohanty.com/second-brain")
-	if !containsString(fromWWW, "https://www.abhijitmohanty.com/second-brain/api/app-state?view=original-x-posts&limit=500") {
+	if !containsString(fromWWW, "https://www.abhijitmohanty.com/second-brain/api/app-state?view=original-x-posts&limit=1000") {
 		t.Fatalf("expected www source purge URL, got %#v", fromWWW)
 	}
-	if !containsString(fromWWW, "https://abhijitmohanty.com/second-brain/api/app-state?view=original-x-posts&limit=500") {
+	if !containsString(fromWWW, "https://abhijitmohanty.com/second-brain/api/app-state?view=original-x-posts&limit=1000") {
 		t.Fatalf("expected apex source purge URL, got %#v", fromWWW)
 	}
 }
