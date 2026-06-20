@@ -2,6 +2,7 @@ package knowledge
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -108,6 +109,73 @@ func TestFetchSupadataTranscriptDoesNotRetryMissingTranscript(t *testing.T) {
 	if !strings.Contains(transcript.TranscriptError, "single Supadata native auto-language request") {
 		t.Fatalf("expected one-request budget detail, got %q", transcript.TranscriptError)
 	}
+}
+
+func TestFetchPlaylistItemsPaginatesUpToLimit(t *testing.T) {
+	t.Setenv("YOUTUBE_API_KEY", "test-key")
+
+	playlistRequests := []string{}
+	service := NewService(config.Config{}, cacheStore{}, &http.Client{Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
+		switch request.URL.Host + request.URL.Path {
+		case "www.googleapis.com/youtube/v3/playlistItems":
+			playlistRequests = append(playlistRequests, request.URL.RawQuery)
+			if request.URL.Query().Get("pageToken") == "" {
+				if got := request.URL.Query().Get("maxResults"); got != "50" {
+					t.Fatalf("expected first playlist page size 50, got %q", got)
+				}
+				return jsonResponse(testPlaylistPageJSON(1, 50, "next-page")), nil
+			}
+			if got := request.URL.Query().Get("pageToken"); got != "next-page" {
+				t.Fatalf("expected next page token, got %q", got)
+			}
+			if got := request.URL.Query().Get("maxResults"); got != "1" {
+				t.Fatalf("expected second playlist page size 1, got %q", got)
+			}
+			return jsonResponse(testPlaylistPageJSON(51, 1, "")), nil
+		case "www.googleapis.com/youtube/v3/videos":
+			return jsonResponse(`{"items":[]}`), nil
+		default:
+			t.Fatalf("unexpected provider request: %s", request.URL.String())
+			return nil, nil
+		}
+	})})
+
+	items, err := service.fetchPlaylistItems(context.Background(), "PL123", 51)
+	if err != nil {
+		t.Fatalf("fetch playlist items: %v", err)
+	}
+	if len(playlistRequests) != 2 {
+		t.Fatalf("expected two playlist page requests, got %d", len(playlistRequests))
+	}
+	if len(items) != 51 {
+		t.Fatalf("expected 51 playlist items, got %d", len(items))
+	}
+	if items[0].VideoID != "video-1" || items[50].VideoID != "video-51" {
+		t.Fatalf("unexpected playlist item range: first=%q last=%q", items[0].VideoID, items[50].VideoID)
+	}
+}
+
+func testPlaylistPageJSON(start int, count int, nextPageToken string) string {
+	var builder strings.Builder
+	builder.WriteString(`{`)
+	if nextPageToken != "" {
+		fmt.Fprintf(&builder, `"nextPageToken":%q,`, nextPageToken)
+	}
+	builder.WriteString(`"items":[`)
+	for index := 0; index < count; index++ {
+		if index > 0 {
+			builder.WriteByte(',')
+		}
+		number := start + index
+		fmt.Fprintf(
+			&builder,
+			`{"snippet":{"title":"Video %d","description":"","channelTitle":"Channel","publishedAt":"2026-05-24T00:00:00Z","resourceId":{"videoId":"video-%d"}}}`,
+			number,
+			number,
+		)
+	}
+	builder.WriteString(`]}`)
+	return builder.String()
 }
 
 func TestFetchSupadataTranscriptKeepsTimedSegments(t *testing.T) {

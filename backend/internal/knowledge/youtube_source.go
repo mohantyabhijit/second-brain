@@ -14,7 +14,8 @@ import (
 )
 
 type playlistResponse struct {
-	Items []struct {
+	NextPageToken string `json:"nextPageToken"`
+	Items         []struct {
 		Snippet *struct {
 			Title        string `json:"title"`
 			Description  string `json:"description"`
@@ -48,6 +49,11 @@ type supadataTranscriptResponse struct {
 
 var youtubeDurationPattern = regexp.MustCompile(`^P(?:\d+Y)?(?:\d+M)?(?:\d+W)?(?:\d+D)?T?(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?$`)
 
+const (
+	youtubePlaylistFetchLimit = 50
+	youtubePlaylistPageSize   = 50
+)
+
 type openAIResponse struct {
 	OutputText string `json:"output_text"`
 	Output     []struct {
@@ -72,7 +78,7 @@ type transcriptAttempt struct {
 }
 
 func (s *Service) fetchYouTubeInboxItems(ctx context.Context, playlistID string, transcriptVideoID string) ([]YouTubeItem, error) {
-	items, err := s.fetchPlaylistItems(ctx, playlistID, 5)
+	items, err := s.fetchPlaylistItems(ctx, playlistID, youtubePlaylistFetchLimit)
 	if err != nil {
 		return nil, err
 	}
@@ -177,32 +183,45 @@ func (s *Service) fetchPlaylistItems(ctx context.Context, playlistID string, lim
 		return nil, fmt.Errorf(credentialHint("YOUTUBE_API_KEY or YOUTUBE_ACCESS_TOKEN"))
 	}
 
-	requestURL := "https://www.googleapis.com/youtube/v3/playlistItems"
-	requestURL = appendQueryValue(requestURL, "part", "snippet")
-	requestURL = appendQueryValue(requestURL, "playlistId", playlistID)
-	requestURL = appendQueryValue(requestURL, "maxResults", fmt.Sprintf("%d", limit))
-	requestURL = appendQueryValue(requestURL, "key", os.Getenv("YOUTUBE_API_KEY"))
-
 	headers := authHeader("YOUTUBE_ACCESS_TOKEN", "Bearer {value}")
-	var payload playlistResponse
-	if err := s.requestJSON(ctx, http.MethodGet, requestURL, headers, nil, &payload); err != nil {
-		return nil, fmt.Errorf("YouTube playlist validation failed: %w", err)
-	}
-
 	items := []YouTubeItem{}
-	for _, item := range payload.Items {
-		if item.Snippet == nil || item.Snippet.ResourceID == nil || item.Snippet.ResourceID.VideoID == "" {
-			continue
+	pageToken := ""
+	for len(items) < limit {
+		pageSize := minInt(youtubePlaylistPageSize, limit-len(items))
+		requestURL := "https://www.googleapis.com/youtube/v3/playlistItems"
+		requestURL = appendQueryValue(requestURL, "part", "snippet")
+		requestURL = appendQueryValue(requestURL, "playlistId", playlistID)
+		requestURL = appendQueryValue(requestURL, "maxResults", fmt.Sprintf("%d", pageSize))
+		requestURL = appendQueryValue(requestURL, "key", os.Getenv("YOUTUBE_API_KEY"))
+		if pageToken != "" {
+			requestURL = appendQueryValue(requestURL, "pageToken", pageToken)
 		}
-		items = append(items, YouTubeItem{
-			VideoID:          item.Snippet.ResourceID.VideoID,
-			Title:            fallback(item.Snippet.Title, "Untitled YouTube video"),
-			Description:      strings.TrimSpace(item.Snippet.Description),
-			ChannelTitle:     item.Snippet.ChannelTitle,
-			PublishedAt:      item.Snippet.PublishedAt,
-			SourceURL:        "https://www.youtube.com/watch?v=" + item.Snippet.ResourceID.VideoID,
-			TranscriptStatus: "untested",
-		})
+
+		var payload playlistResponse
+		if err := s.requestJSON(ctx, http.MethodGet, requestURL, headers, nil, &payload); err != nil {
+			return nil, fmt.Errorf("YouTube playlist validation failed: %w", err)
+		}
+		for _, item := range payload.Items {
+			if item.Snippet == nil || item.Snippet.ResourceID == nil || item.Snippet.ResourceID.VideoID == "" {
+				continue
+			}
+			items = append(items, YouTubeItem{
+				VideoID:          item.Snippet.ResourceID.VideoID,
+				Title:            fallback(item.Snippet.Title, "Untitled YouTube video"),
+				Description:      strings.TrimSpace(item.Snippet.Description),
+				ChannelTitle:     item.Snippet.ChannelTitle,
+				PublishedAt:      item.Snippet.PublishedAt,
+				SourceURL:        "https://www.youtube.com/watch?v=" + item.Snippet.ResourceID.VideoID,
+				TranscriptStatus: "untested",
+			})
+			if len(items) >= limit {
+				break
+			}
+		}
+		if payload.NextPageToken == "" || len(payload.Items) == 0 {
+			break
+		}
+		pageToken = payload.NextPageToken
 	}
 	items = s.attachVideoDurations(ctx, items)
 	return items, nil

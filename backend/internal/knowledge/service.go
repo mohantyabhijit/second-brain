@@ -607,7 +607,7 @@ func (s *Service) RunCycle(ctx context.Context) (RunOutcome, error) {
 	} else {
 		go func() {
 			youtubeStart := time.Now()
-			items, err := s.fetchPlaylistItems(ctx, youtubePlaylistID, 5)
+			items, err := s.fetchPlaylistItems(ctx, youtubePlaylistID, youtubePlaylistFetchLimit)
 			youtubeFetch <- youtubeFetchResult{items: items, err: err, blocked: err != nil, duration: time.Since(youtubeStart)}
 		}()
 	}
