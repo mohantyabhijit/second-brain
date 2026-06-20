@@ -8,7 +8,7 @@ import { initialKnowledgeRun } from "./initialKnowledgeRun";
 
 const sourcePageInitialLimit = 25;
 const sourcePageBatchSize = 25;
-const sourcePageMaxLimit = 500;
+const sourcePageMaxLimit = 1000;
 
 export function useKnowledgeInboxController(activePage: KnowledgeInboxPage = "insights") {
   const [run, setRun] = useState<KnowledgeRunResult>(() => initialKnowledgeRun);

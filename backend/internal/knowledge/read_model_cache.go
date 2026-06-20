@@ -14,7 +14,7 @@ import (
 
 const AppStateSchemaVersion = "redis-read-model-v1"
 const MaxPageStateLimit = 50
-const MaxSourceStateLimit = 500
+const MaxSourceStateLimit = 1000
 
 var ErrReadModelCacheMiss = errors.New("read model cache miss")
 
