@@ -181,7 +181,7 @@ jobs:
           redis_url="${REDIS_URL:-redis://127.0.0.1:6379/0}"
           write_var REDIS_URL "$redis_url"
           write_var REDIS_CACHE_ENABLED "${REDIS_CACHE_ENABLED:-true}"
-          write_var REDIS_CACHE_TTL "${REDIS_CACHE_TTL:-720h}"
+          write_var REDIS_CACHE_TTL "${REDIS_CACHE_TTL:-24h}"
           write_var REDIS_REFRESH_STATUS_TTL "${REDIS_REFRESH_STATUS_TTL:-24h}"
           write_var REDIS_ASK_ANSWER_TTL "${REDIS_ASK_ANSWER_TTL:-1h}"
           write_var CLOUDFLARE_API_TOKEN "$CLOUDFLARE_API_TOKEN"

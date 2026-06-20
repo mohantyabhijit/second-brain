@@ -153,7 +153,7 @@ func Load() Config {
 		WorkerRefreshInterval:           value("WORKER_REFRESH_INTERVAL", "2h"),
 		RedisURL:                        os.Getenv("REDIS_URL"),
 		RedisCacheEnabled:               value("REDIS_CACHE_ENABLED", "false") == "true",
-		RedisCacheTTL:                   value("REDIS_CACHE_TTL", "720h"),
+		RedisCacheTTL:                   value("REDIS_CACHE_TTL", "24h"),
 		RedisRefreshStatusTTL:           value("REDIS_REFRESH_STATUS_TTL", "24h"),
 		RedisAskAnswerTTL:               value("REDIS_ASK_ANSWER_TTL", "1h"),
 		CloudflareAPIToken:              os.Getenv("CLOUDFLARE_API_TOKEN"),
