@@ -20,7 +20,10 @@ type cloudflarePurgeResponse struct {
 	} `json:"errors"`
 }
 
-const cloudflarePurgeFileBatchSize = 30
+const (
+	cloudflarePurgeFileBatchSize = 30
+	cloudflarePurgeTimeout       = 30 * time.Second
+)
 
 func (s *Service) purgeEdgeCacheBestEffort(ctx context.Context, reason string) {
 	if !s.shouldPurgeEdgeCache(reason) {
@@ -30,7 +33,7 @@ func (s *Service) purgeEdgeCacheBestEffort(ctx context.Context, reason string) {
 	if len(files) == 0 {
 		return
 	}
-	purgeCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+	purgeCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), cloudflarePurgeTimeout)
 	defer cancel()
 	if err := s.purgeCloudflareFiles(purgeCtx, files); err != nil {
 		s.log(ctx).Warn("edge cache purge failed", "reason", reason, "error", err)
