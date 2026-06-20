@@ -2,6 +2,7 @@ package knowledge
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -48,6 +49,50 @@ func TestReadAppStateViewChecksReadModelBeforeMemo(t *testing.T) {
 	}
 	if got := state.Latest.Insights[0].ID; got != "redis" {
 		t.Fatalf("expected redis insight, got %q", got)
+	}
+}
+
+func TestReadAppStateViewPreservesLargeSourceLimitForCanonicalFallback(t *testing.T) {
+	now := time.Date(2026, 5, 31, 6, 0, 0, 0, time.UTC)
+	bookmarks := make([]XBookmark, 180)
+	for index := range bookmarks {
+		bookmarks[index] = XBookmark{
+			ID:        fmt.Sprintf("x-%03d", index),
+			SourceURL: fmt.Sprintf("https://x.example/%03d", index),
+			Body:      fmt.Sprintf("bookmark %03d", index),
+			CreatedAt: now.Add(time.Duration(index) * time.Minute).Format(time.RFC3339),
+		}
+	}
+	store := &cacheOrderStore{
+		latestView: &Result{
+			GeneratedAt: now,
+			SourceCounts: AppStateSourceCounts{
+				XBookmarks:   523,
+				YouTubeItems: 33,
+			},
+			XBookmarks: bookmarks,
+		},
+	}
+	service := NewService(config.Config{OwnerID: "owner-1"}, store, nil)
+
+	state, status, err := service.ReadAppStateView(context.Background(), "original-x-posts", 180)
+	if err != nil {
+		t.Fatalf("read source view: %v", err)
+	}
+	if status != "fallback" {
+		t.Fatalf("expected canonical fallback status, got %q", status)
+	}
+	if store.latestViewLimit != 180 {
+		t.Fatalf("expected source view limit 180 to reach store, got %d", store.latestViewLimit)
+	}
+	if got := len(state.Latest.XBookmarks); got != 180 {
+		t.Fatalf("expected 180 x bookmarks, got %d", got)
+	}
+	if got := state.SourceCounts.XBookmarks; got != 523 {
+		t.Fatalf("expected full x source count to be preserved, got %d", got)
+	}
+	if got := state.SourceCounts.YouTubeItems; got != 33 {
+		t.Fatalf("expected youtube source count to be preserved, got %d", got)
 	}
 }
 
@@ -104,14 +149,33 @@ func TestGenerateDigestUsesCanonicalLatestInsteadOfRedisLatest(t *testing.T) {
 }
 
 type cacheOrderStore struct {
-	latest          *Result
-	digests         []DigestIssue
-	readLatestCalls int
+	latest              *Result
+	latestView          *Result
+	latestViewLimit     int
+	latestViewView      string
+	latestViewOwnerID   string
+	readLatestViewCalls int
+	digests             []DigestIssue
+	readLatestCalls     int
 }
 
 func (s *cacheOrderStore) ReadLatest(context.Context) (*Result, error) {
 	s.readLatestCalls++
 	return s.latest, nil
+}
+
+func (s *cacheOrderStore) ReadLatestViewForOwner(_ context.Context, ownerID string, view string, limit int) (*Result, error) {
+	s.readLatestViewCalls++
+	s.latestViewOwnerID = ownerID
+	s.latestViewView = view
+	s.latestViewLimit = limit
+	if s.latestView != nil {
+		return s.latestView, nil
+	}
+	if s.latest != nil {
+		return s.latest, nil
+	}
+	return nil, ErrReadModelCacheMiss
 }
 
 func (s *cacheOrderStore) ReadCachedSyntheses(context.Context, []SynthesisCacheKey) (map[string]SynthesisRecord, error) {
