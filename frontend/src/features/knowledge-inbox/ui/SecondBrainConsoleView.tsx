@@ -1,6 +1,6 @@
 "use client";
 
-import { type FormEvent, type ReactNode, useEffect, useMemo, useRef, useState } from "react";
+import { type FormEvent, type ReactNode, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import type { KnowledgeInboxPage } from "../KnowledgeInboxContainer";
 import type { KnowledgeInboxViewModel, NavigationItemViewModel, SummaryCardViewModel } from "../presentation/viewModel";
@@ -83,40 +83,90 @@ const themeStorageKey = "second-brain-theme";
 type ThemeMode = "light" | "dark";
 
 export function SecondBrainConsoleView({ activePage, digestIssues, insightGraph, isLoading, isLoadingMore, model, onLoadMoreSources, refreshStatus }: SecondBrainConsoleViewProps) {
-  const [visibleCount, setVisibleCount] = useState(initialVisibleCount);
+  const [visibleCountState, setVisibleCountState] = useState({ page: activePage, query: "", count: initialVisibleCount });
   const [copiedItems, setCopiedItems] = useState<Set<string>>(new Set());
   const [openSummaryItem, setOpenSummaryItem] = useState<FeedItem | null>(null);
+  const [sourceSearchState, setSourceSearchState] = useState({ page: activePage, query: "" });
+  const sourceSearch = sourceSearchState.page === activePage ? sourceSearchState.query : "";
+  const deferredSourceSearch = useDeferredValue(sourceSearch);
   const theme = useThemeMode();
+  const feedScrollerRef = useRef<HTMLElement | null>(null);
   const sentinelRef = useRef<HTMLDivElement | null>(null);
   const page = pageCopy[activePage];
   const isSourceLoadingPage = isExternalSourcePage(activePage);
   const baseItems = useMemo(() => getFeedItems(model, activePage, digestIssues), [model, activePage, digestIssues]);
-  const feedItems = useMemo(() => sliceItems(baseItems, visibleCount), [baseItems, visibleCount]);
+  const normalizedSourceSearch = useMemo(() => normalizeSearchTerm(deferredSourceSearch), [deferredSourceSearch]);
+  const searchedItems = useMemo(
+    () => (isSourceLoadingPage ? filterFeedItems(baseItems, normalizedSourceSearch) : baseItems),
+    [baseItems, isSourceLoadingPage, normalizedSourceSearch]
+  );
+  const visibleCount =
+    visibleCountState.page === activePage && visibleCountState.query === normalizedSourceSearch
+      ? visibleCountState.count
+      : initialVisibleCount;
+  const feedItems = useMemo(() => sliceItems(searchedItems, visibleCount), [searchedItems, visibleCount]);
   const sourceTotal = sourceTotalForPage(model, activePage);
   const hasMoreSourceItems = isSourceLoadingPage && baseItems.length < sourceTotal;
+  const hasActiveSourceSearch = isSourceLoadingPage && sourceSearch.trim().length > 0;
+  const shouldRenderSentinel = baseItems.length > 0 && (!hasActiveSourceSearch || feedItems.length > 0);
+
+  useEffect(() => {
+    const frame = window.requestAnimationFrame(() => {
+      if (feedScrollerRef.current) {
+        feedScrollerRef.current.scrollTop = 0;
+      }
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [activePage, normalizedSourceSearch]);
 
   useEffect(() => {
     const sentinel = sentinelRef.current;
     if (!sentinel) return;
+    const root = isSourceLoadingPage ? feedScrollerRef.current : null;
 
     const observer = new IntersectionObserver(
       (entries) => {
         if (entries[0]?.isIntersecting) {
-          if (visibleCount < baseItems.length) {
-            setVisibleCount((count) => Math.min(count + loadMoreCount, baseItems.length));
+          if (visibleCount < searchedItems.length) {
+            setVisibleCountState((state) => {
+              const count =
+                state.page === activePage && state.query === normalizedSourceSearch
+                  ? state.count
+                  : initialVisibleCount;
+              return {
+                page: activePage,
+                query: normalizedSourceSearch,
+                count: Math.min(count + loadMoreCount, searchedItems.length)
+              };
+            });
             return;
           }
-          if (hasMoreSourceItems && !isLoadingMore) {
+          if (hasMoreSourceItems && !isLoadingMore && (!hasActiveSourceSearch || feedItems.length > 0)) {
             onLoadMoreSources();
           }
         }
       },
-      { rootMargin: "720px 0px" }
+      { root, rootMargin: isSourceLoadingPage ? "220px 0px" : "720px 0px" }
     );
 
     observer.observe(sentinel);
     return () => observer.disconnect();
-  }, [activePage, baseItems.length, hasMoreSourceItems, isLoadingMore, onLoadMoreSources, visibleCount]);
+  }, [
+    activePage,
+    feedItems.length,
+    hasActiveSourceSearch,
+    hasMoreSourceItems,
+    isLoadingMore,
+    isSourceLoadingPage,
+    normalizedSourceSearch,
+    onLoadMoreSources,
+    searchedItems.length,
+    visibleCount
+  ]);
+
+  function updateSourceSearch(query: string) {
+    setSourceSearchState({ page: activePage, query });
+  }
 
   function toggleCopiedItem(key: string, quote: string) {
     setCopiedItems((items) => toggleSetItem(items, key));
@@ -170,12 +220,20 @@ export function SecondBrainConsoleView({ activePage, digestIssues, insightGraph,
           {activePage === "knowledge-graph" ? (
             <KnowledgeGraphView graph={insightGraph} isLoading={isLoading} />
           ) : (
-            <section className="feed-column" aria-label={`${page.title} feed`}>
+            <section
+              className={`feed-column${isSourceLoadingPage ? " source-feed-column" : ""}`}
+              aria-label={`${page.title} feed`}
+              ref={feedScrollerRef}
+            >
               {isSourceLoadingPage && (!isLoading || sourceTotal > 0) ? (
                 <SourceFeedSummary
                   activePage={activePage}
                   isLoadingMore={isLoadingMore}
                   loaded={baseItems.length}
+                  matched={searchedItems.length}
+                  onSearchChange={updateSourceSearch}
+                  searchIsStale={sourceSearch !== deferredSourceSearch}
+                  searchQuery={sourceSearch}
                   total={sourceTotal}
                   visible={feedItems.length}
                 />
@@ -196,15 +254,25 @@ export function SecondBrainConsoleView({ activePage, digestIssues, insightGraph,
                     />
                   );
                 })
+              ) : hasActiveSourceSearch ? (
+                <SourceSearchEmpty
+                  activePage={activePage}
+                  hasMoreSourceItems={hasMoreSourceItems}
+                  isLoadingMore={isLoadingMore}
+                  loaded={baseItems.length}
+                  onLoadMoreSources={onLoadMoreSources}
+                />
               ) : (
                 <EmptyFeedState activePage={activePage} emptyTitle={page.emptyTitle} />
               )}
-              {baseItems.length ? (
-                <div ref={sentinelRef} className="feed-sentinel" aria-hidden="true">
-                  {feedItems.length < baseItems.length || hasMoreSourceItems
+              {shouldRenderSentinel ? (
+                <div ref={sentinelRef} className="feed-sentinel">
+                  {feedItems.length < searchedItems.length || hasMoreSourceItems
                     ? isLoadingMore
                       ? "Loading more sourced items"
-                      : "Scroll for more sourced items"
+                      : hasActiveSourceSearch
+                        ? "Scroll for more matching sources"
+                        : "Scroll for more sourced items"
                     : "End of sourced items"}
                 </div>
               ) : null}
@@ -242,25 +310,55 @@ function SourceFeedSummary({
   activePage,
   isLoadingMore,
   loaded,
+  matched,
+  onSearchChange,
+  searchIsStale,
+  searchQuery,
   total,
   visible
 }: {
   activePage: KnowledgeInboxPage;
   isLoadingMore: boolean;
   loaded: number;
+  matched: number;
+  onSearchChange: (query: string) => void;
+  searchIsStale: boolean;
+  searchQuery: string;
   total: number;
   visible: number;
 }) {
   const label = activePage === "original-youtube-posts" ? "YouTube sources" : "X bookmarks";
   const safeTotal = Math.max(total, loaded);
-  const shown = Math.min(visible, safeTotal);
+  const hasSearch = searchQuery.trim().length > 0;
+  const shown = hasSearch ? Math.min(visible, matched) : Math.min(visible, safeTotal);
+  const searchLabel = activePage === "original-youtube-posts" ? "Search YouTube sources" : "Search X bookmarks";
   return (
-    <div className="source-feed-summary" role="status">
-      <span>{formatNumber(safeTotal)} total {label}</span>
-      <small>
-        {formatNumber(shown)} shown{loaded < safeTotal ? `, ${formatNumber(loaded)} loaded` : ""}
-        {isLoadingMore ? " - loading more" : ""}
-      </small>
+    <div className="source-feed-summary">
+      <div className="source-feed-counts">
+        <span>{formatNumber(safeTotal)} total {label}</span>
+        <small>
+          {hasSearch
+            ? `${formatNumber(shown)} of ${formatNumber(matched)} matches shown from ${formatNumber(loaded)} loaded`
+            : `${formatNumber(shown)} shown${loaded < safeTotal ? `, ${formatNumber(loaded)} loaded` : ""}`}
+          {searchIsStale ? " - updating" : ""}
+          {isLoadingMore ? " - loading more" : ""}
+        </small>
+      </div>
+      <form className="source-search" onSubmit={(event) => event.preventDefault()} role="search">
+        <input
+          aria-label={searchLabel}
+          autoComplete="off"
+          onChange={(event) => onSearchChange(event.target.value)}
+          placeholder={activePage === "original-youtube-posts" ? "Search videos" : "Search bookmarks"}
+          type="search"
+          value={searchQuery}
+        />
+        {searchQuery ? (
+          <button aria-label="Clear source search" onClick={() => onSearchChange("")} type="button">
+            Clear
+          </button>
+        ) : null}
+      </form>
     </div>
   );
 }
@@ -284,6 +382,38 @@ function EmptyFeedState({ activePage, emptyTitle }: { activePage: KnowledgeInbox
       <span className="feed-source">Source required</span>
       <h2>{emptyTitle}</h2>
       <p>No sourced items are available for this view yet. Refresh the inbox after X or YouTube credentials are connected.</p>
+    </div>
+  );
+}
+
+function SourceSearchEmpty({
+  activePage,
+  hasMoreSourceItems,
+  isLoadingMore,
+  loaded,
+  onLoadMoreSources
+}: {
+  activePage: KnowledgeInboxPage;
+  hasMoreSourceItems: boolean;
+  isLoadingMore: boolean;
+  loaded: number;
+  onLoadMoreSources: () => void;
+}) {
+  const label = activePage === "original-youtube-posts" ? "YouTube videos" : "X bookmarks";
+  return (
+    <div className="feed-card empty-feed source-search-empty">
+      <span className="feed-source">No matches</span>
+      <h2>No loaded {label} match this search</h2>
+      <p>
+        {hasMoreSourceItems
+          ? `${formatNumber(loaded)} sources are loaded. Load another batch or try a broader query.`
+          : "Try a broader query."}
+      </p>
+      {hasMoreSourceItems ? (
+        <button className="source-load-button" disabled={isLoadingMore} onClick={onLoadMoreSources} type="button">
+          {isLoadingMore ? "Loading" : "Load more sources"}
+        </button>
+      ) : null}
     </div>
   );
 }
@@ -801,6 +931,75 @@ function feedSortTime(item: FeedItem) {
 
 function sliceItems(items: FeedItem[], visibleCount: number) {
   return items.slice(0, visibleCount);
+}
+
+function filterFeedItems(items: FeedItem[], normalizedQuery: string) {
+  if (!normalizedQuery) return items;
+
+  const results: Array<{ item: FeedItem; score: number }> = [];
+  for (const item of items) {
+    const score = feedItemSearchScore(item, normalizedQuery);
+    if (score > 0) {
+      results.push({ item, score });
+    }
+  }
+
+  return results
+    .sort((a, b) => b.score - a.score || compareFeedItemsNewestFirst(a.item, b.item))
+    .map((result) => result.item);
+}
+
+function feedItemSearchScore(item: FeedItem, normalizedQuery: string) {
+  const terms = normalizedQuery.split(" ").filter(Boolean);
+  if (!terms.length) return 0;
+
+  const fields = [
+    { text: item.title, weight: 6 },
+    { text: item.author, weight: 4 },
+    { text: item.body, weight: 3 },
+    { text: item.quote ?? "", weight: 3 },
+    { text: item.stats ?? "", weight: 2 },
+    { text: item.sourceUrl ?? "", weight: 2 },
+    { text: item.timestamp, weight: 1 }
+  ];
+
+  let totalScore = 0;
+  for (const term of terms) {
+    let bestTermScore = 0;
+    for (const field of fields) {
+      bestTermScore = Math.max(bestTermScore, fuzzyFieldScore(normalizeSearchTerm(field.text), term) * field.weight);
+    }
+    if (bestTermScore === 0) return 0;
+    totalScore += bestTermScore;
+  }
+  return totalScore;
+}
+
+function fuzzyFieldScore(text: string, term: string) {
+  if (!text || !term) return 0;
+  if (text === term) return 10;
+  if (text.startsWith(term)) return 8;
+  if (text.includes(term)) return 6;
+  return isOrderedSubsequence(term, text) ? 2 : 0;
+}
+
+function isOrderedSubsequence(needle: string, haystack: string) {
+  let needleIndex = 0;
+  for (let haystackIndex = 0; haystackIndex < haystack.length && needleIndex < needle.length; haystackIndex += 1) {
+    if (haystack[haystackIndex] === needle[needleIndex]) {
+      needleIndex += 1;
+    }
+  }
+  return needleIndex === needle.length;
+}
+
+function normalizeSearchTerm(value: string) {
+  return value
+    .toLowerCase()
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
 }
 
 function sourceTotalForPage(model: KnowledgeInboxViewModel, activePage: KnowledgeInboxPage) {
