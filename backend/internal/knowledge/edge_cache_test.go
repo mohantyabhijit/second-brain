@@ -75,6 +75,27 @@ func TestPublishAppStatePurgesEdgeCacheForDigestPublish(t *testing.T) {
 	if !containsString(purgedFiles, "https://abhijitmohanty.com/second-brain/api/app-state?view=daily-newsletter&limit=10") {
 		t.Fatalf("expected view-scoped app-state purge, got %#v", purgedFiles)
 	}
+	if !containsString(purgedFiles, "https://www.abhijitmohanty.com/second-brain/api/app-state?view=original-x-posts&limit=25") {
+		t.Fatalf("expected www source app-state purge, got %#v", purgedFiles)
+	}
+}
+
+func TestEdgeCachePurgeURLsIncludesApexAndWWWVariants(t *testing.T) {
+	fromApex := edgeCachePurgeURLs("https://abhijitmohanty.com/second-brain")
+	if !containsString(fromApex, "https://abhijitmohanty.com/second-brain/original-x-bookmarks/") {
+		t.Fatalf("expected apex purge URL, got %#v", fromApex)
+	}
+	if !containsString(fromApex, "https://www.abhijitmohanty.com/second-brain/original-x-bookmarks/") {
+		t.Fatalf("expected www purge URL, got %#v", fromApex)
+	}
+
+	fromWWW := edgeCachePurgeURLs("https://www.abhijitmohanty.com/second-brain")
+	if !containsString(fromWWW, "https://www.abhijitmohanty.com/second-brain/api/app-state?view=original-x-posts&limit=500") {
+		t.Fatalf("expected www source purge URL, got %#v", fromWWW)
+	}
+	if !containsString(fromWWW, "https://abhijitmohanty.com/second-brain/api/app-state?view=original-x-posts&limit=500") {
+		t.Fatalf("expected apex source purge URL, got %#v", fromWWW)
+	}
 }
 
 type edgeCacheRoundTripFunc func(*http.Request) (*http.Response, error)
