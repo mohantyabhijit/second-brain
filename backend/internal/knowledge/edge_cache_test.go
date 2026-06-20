@@ -14,6 +14,7 @@ import (
 
 func TestPublishAppStatePurgesEdgeCacheForDigestPublish(t *testing.T) {
 	var purgedFiles []string
+	var purgeRequests int
 	client := &http.Client{Transport: edgeCacheRoundTripFunc(func(r *http.Request) (*http.Response, error) {
 		if r.URL.Path != "/client/v4/zones/test-zone/purge_cache" {
 			t.Fatalf("unexpected purge path %s", r.URL.Path)
@@ -27,7 +28,11 @@ func TestPublishAppStatePurgesEdgeCacheForDigestPublish(t *testing.T) {
 		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
 			t.Fatalf("decode purge payload: %v", err)
 		}
-		purgedFiles = payload.Files
+		if len(payload.Files) > cloudflarePurgeFileBatchSize {
+			t.Fatalf("expected purge batch under %d files, got %d", cloudflarePurgeFileBatchSize, len(payload.Files))
+		}
+		purgeRequests++
+		purgedFiles = append(purgedFiles, payload.Files...)
 		return &http.Response{
 			StatusCode: http.StatusOK,
 			Status:     "200 OK",
@@ -77,6 +82,9 @@ func TestPublishAppStatePurgesEdgeCacheForDigestPublish(t *testing.T) {
 	}
 	if !containsString(purgedFiles, "https://www.abhijitmohanty.com/second-brain/api/app-state?view=original-x-posts&limit=25") {
 		t.Fatalf("expected www source app-state purge, got %#v", purgedFiles)
+	}
+	if purgeRequests < 2 {
+		t.Fatalf("expected purge URLs to be chunked across multiple requests, got %d", purgeRequests)
 	}
 }
 

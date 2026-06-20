@@ -20,6 +20,8 @@ type cloudflarePurgeResponse struct {
 	} `json:"errors"`
 }
 
+const cloudflarePurgeFileBatchSize = 30
+
 func (s *Service) purgeEdgeCacheBestEffort(ctx context.Context, reason string) {
 	if !s.shouldPurgeEdgeCache(reason) {
 		return
@@ -58,28 +60,34 @@ func (s *Service) purgeCloudflareFiles(ctx context.Context, files []string) erro
 		apiBase = "https://api.cloudflare.com/client/v4"
 	}
 	endpoint := apiBase + "/zones/" + url.PathEscape(strings.TrimSpace(s.cfg.CloudflareZoneID)) + "/purge_cache"
-	raw, err := json.Marshal(map[string]any{"files": files})
-	if err != nil {
-		return err
-	}
 	headers := http.Header{}
 	headers.Set("Authorization", "Bearer "+strings.TrimSpace(s.cfg.CloudflareAPIToken))
 	headers.Set("Content-Type", "application/json")
-	var response cloudflarePurgeResponse
-	if err := s.requestJSON(ctx, http.MethodPost, endpoint, headers, bytes.NewReader(raw), &response); err != nil {
-		return err
-	}
-	if !response.Success {
-		messages := make([]string, 0, len(response.Errors))
-		for _, item := range response.Errors {
-			if strings.TrimSpace(item.Message) != "" {
-				messages = append(messages, item.Message)
+	for start := 0; start < len(files); start += cloudflarePurgeFileBatchSize {
+		end := start + cloudflarePurgeFileBatchSize
+		if end > len(files) {
+			end = len(files)
+		}
+		raw, err := json.Marshal(map[string]any{"files": files[start:end]})
+		if err != nil {
+			return err
+		}
+		var response cloudflarePurgeResponse
+		if err := s.requestJSON(ctx, http.MethodPost, endpoint, headers, bytes.NewReader(raw), &response); err != nil {
+			return err
+		}
+		if !response.Success {
+			messages := make([]string, 0, len(response.Errors))
+			for _, item := range response.Errors {
+				if strings.TrimSpace(item.Message) != "" {
+					messages = append(messages, item.Message)
+				}
 			}
+			if len(messages) == 0 {
+				messages = append(messages, "unknown Cloudflare purge failure")
+			}
+			return errors.New(strings.Join(messages, "; "))
 		}
-		if len(messages) == 0 {
-			messages = append(messages, "unknown Cloudflare purge failure")
-		}
-		return errors.New(strings.Join(messages, "; "))
 	}
 	return nil
 }
