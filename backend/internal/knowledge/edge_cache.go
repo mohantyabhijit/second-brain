@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -84,8 +85,8 @@ func (s *Service) purgeCloudflareFiles(ctx context.Context, files []string) erro
 }
 
 func edgeCachePurgeURLs(baseURL string) []string {
-	base := strings.TrimRight(strings.TrimSpace(baseURL), "/")
-	if base == "" {
+	bases := edgeCachePurgeBases(baseURL)
+	if len(bases) == 0 {
 		return nil
 	}
 	paths := []string{
@@ -111,9 +112,42 @@ func edgeCachePurgeURLs(baseURL string) []string {
 			paths = append(paths, fmt.Sprintf("/api/app-state?view=%s&limit=%d", view, limit))
 		}
 	}
-	urls := make([]string, 0, len(paths))
-	for _, path := range paths {
-		urls = append(urls, base+path)
+	urls := make([]string, 0, len(bases)*len(paths))
+	for _, base := range bases {
+		for _, path := range paths {
+			urls = append(urls, base+path)
+		}
 	}
 	return urls
+}
+
+func edgeCachePurgeBases(baseURL string) []string {
+	base := strings.TrimRight(strings.TrimSpace(baseURL), "/")
+	if base == "" {
+		return nil
+	}
+	bases := []string{base}
+	parsed, err := url.Parse(base)
+	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
+		return bases
+	}
+	hostname := parsed.Hostname()
+	if hostname == "" || hostname == "localhost" || net.ParseIP(hostname) != nil || !strings.Contains(hostname, ".") {
+		return bases
+	}
+	alternateHost := "www." + hostname
+	if strings.HasPrefix(hostname, "www.") {
+		alternateHost = strings.TrimPrefix(hostname, "www.")
+	}
+	alternate := *parsed
+	if port := parsed.Port(); port != "" {
+		alternate.Host = net.JoinHostPort(alternateHost, port)
+	} else {
+		alternate.Host = alternateHost
+	}
+	alternateBase := strings.TrimRight(alternate.String(), "/")
+	if alternateBase != "" && alternateBase != base {
+		bases = append(bases, alternateBase)
+	}
+	return bases
 }
