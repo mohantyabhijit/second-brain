@@ -327,19 +327,20 @@ type Result struct {
 		YouTube SourceStatus `json:"youtube"`
 		OneCLI  SourceStatus `json:"onecli"`
 	} `json:"sourceStatus"`
-	XBookmarks      []XBookmark        `json:"xBookmarks"`
-	YouTubeItems    []YouTubeItem      `json:"youtubeItems"`
-	Summaries       []Summary          `json:"summaries"`
-	Insights        []Insight          `json:"insights"`
-	ActionItems     []ActionItem       `json:"actionItems"`
-	Artifacts       []SourceArtifact   `json:"artifacts,omitempty"`
-	Processing      []ProcessingEvent  `json:"processing,omitempty"`
-	Themes          []ThemeCluster     `json:"themes,omitempty"`
-	InsightClusters []InsightCluster   `json:"insightClusters,omitempty"`
-	Connections     []SourceConnection `json:"connections,omitempty"`
-	Digest          *DigestIssue       `json:"digest,omitempty"`
-	Validation      []ValidationItem   `json:"validation"`
-	Blockers        []string           `json:"blockers"`
+	SourceCounts    AppStateSourceCounts `json:"sourceCounts,omitempty"`
+	XBookmarks      []XBookmark          `json:"xBookmarks"`
+	YouTubeItems    []YouTubeItem        `json:"youtubeItems"`
+	Summaries       []Summary            `json:"summaries"`
+	Insights        []Insight            `json:"insights"`
+	ActionItems     []ActionItem         `json:"actionItems"`
+	Artifacts       []SourceArtifact     `json:"artifacts,omitempty"`
+	Processing      []ProcessingEvent    `json:"processing,omitempty"`
+	Themes          []ThemeCluster       `json:"themes,omitempty"`
+	InsightClusters []InsightCluster     `json:"insightClusters,omitempty"`
+	Connections     []SourceConnection   `json:"connections,omitempty"`
+	Digest          *DigestIssue         `json:"digest,omitempty"`
+	Validation      []ValidationItem     `json:"validation"`
+	Blockers        []string             `json:"blockers"`
 }
 
 type RefreshStatus struct {
@@ -394,6 +395,11 @@ type AppStateViews struct {
 	OriginalYouTubePosts []YouTubeItem `json:"originalYouTubePosts"`
 }
 
+type AppStateSourceCounts struct {
+	XBookmarks   int `json:"xBookmarks"`
+	YouTubeItems int `json:"youtubeItems"`
+}
+
 type AppStateGraph struct {
 	Status          string                `json:"status"`
 	Themes          []ThemeCluster        `json:"themes"`
@@ -409,13 +415,14 @@ type AppStateAskContext struct {
 }
 
 type AppState struct {
-	Manifest      AppStateManifest   `json:"manifest"`
-	Latest        *Result            `json:"latest"`
-	Views         AppStateViews      `json:"views"`
-	Digests       []DigestIssue      `json:"digests"`
-	RefreshStatus RefreshStatus      `json:"refreshStatus"`
-	Graph         AppStateGraph      `json:"graph"`
-	AskContext    AppStateAskContext `json:"askContext"`
+	Manifest      AppStateManifest     `json:"manifest"`
+	Latest        *Result              `json:"latest"`
+	Views         AppStateViews        `json:"views"`
+	SourceCounts  AppStateSourceCounts `json:"sourceCounts"`
+	Digests       []DigestIssue        `json:"digests"`
+	RefreshStatus RefreshStatus        `json:"refreshStatus"`
+	Graph         AppStateGraph        `json:"graph"`
+	AskContext    AppStateAskContext   `json:"askContext"`
 }
 
 type SynthesisCacheKey struct {

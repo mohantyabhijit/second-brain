@@ -1,4 +1,4 @@
-import type { Decision, DigestIssue, ImportantTimeMarker, KnowledgeRunResult, QualityScore, SavedYouTubeItem, SourceStatus, ValidationItem } from "../contracts";
+import type { Decision, DigestIssue, ImportantTimeMarker, KnowledgeRunResult, QualityScore, SavedYouTubeItem, SourceCounts, SourceStatus, ValidationItem } from "../contracts";
 
 export type IconName = "key" | "x" | "youtube" | "check" | "run" | "link" | "alert" | "spark";
 
@@ -35,6 +35,7 @@ export type IntakeRowViewModel = {
   author: string;
   status: string;
   timestamp: string;
+  sortTimestamp?: string;
   stats?: string;
   sourceUrl: string;
 };
@@ -66,6 +67,7 @@ export type TranscriptItemViewModel = {
   statusLabel: string;
   detail: string;
   timestamp: string;
+  sortTimestamp?: string;
   sourceUrl: string;
   timeMarkers?: ImportantTimeMarker[];
 };
@@ -99,6 +101,7 @@ export type KnowledgeInboxViewModel = {
     isRunning: boolean;
   };
   sources: SourceCardViewModel[];
+  sourceCounts: SourceCounts;
   readiness: ReadinessViewModel;
   metrics: MetricViewModel[];
   intake: PanelViewModel<IntakeRowViewModel>;
@@ -137,7 +140,11 @@ const navItems: NavigationItemViewModel[] = [
 
 export function toKnowledgeInboxViewModel(run: KnowledgeRunResult, isRunning: boolean, error: string | null): KnowledgeInboxViewModel {
   const validationPassCount = run.validation.filter((item) => item.status === "pass").length;
-  const totalFetched = run.xBookmarks.length + run.youtubeItems.length;
+  const sourceCounts = {
+    xBookmarks: run.sourceCounts?.xBookmarks ?? run.xBookmarks.length,
+    youtubeItems: run.sourceCounts?.youtubeItems ?? run.youtubeItems.length
+  };
+  const totalFetched = sourceCounts.xBookmarks + sourceCounts.youtubeItems;
   const transcriptCount = run.youtubeItems.filter((item) => item.transcriptStatus === "available").length;
   const cachedCount = (run.processing ?? []).filter((item) => item.status === "cached").length;
   const progress = run.validation.length ? Math.round((validationPassCount / run.validation.length) * 100) : 0;
@@ -161,6 +168,7 @@ export function toKnowledgeInboxViewModel(run: KnowledgeRunResult, isRunning: bo
       sourceCard("X Bookmarks", "Recent saved bookmarks", run.sourceStatus.x, "x"),
       sourceCard("YouTube Inbox", "Playlist and captions", run.sourceStatus.youtube, "youtube")
     ],
+    sourceCounts,
     readiness: {
       label: `${validationPassCount}/${run.validation.length} checks passing`,
       value: `${progress}% indexed`,
@@ -192,6 +200,7 @@ export function toKnowledgeInboxViewModel(run: KnowledgeRunResult, isRunning: bo
           author: bookmark.username ? `@${bookmark.username}` : bookmark.authorName ?? bookmark.authorId ?? "Unknown",
           status: bookmark.contentType === "article" ? "Article captured" : "Post captured",
           timestamp: formatSourceDate(bookmark.createdAt),
+          sortTimestamp: bookmark.createdAt,
           stats: formatPublicMetrics(bookmark.publicMetrics),
           sourceUrl: bookmark.sourceUrl
         })),
@@ -203,6 +212,7 @@ export function toKnowledgeInboxViewModel(run: KnowledgeRunResult, isRunning: bo
           author: item.channelTitle ?? "Unknown",
           status: transcriptLabel(item),
           timestamp: formatSourceDate(item.publishedAt),
+          sortTimestamp: item.publishedAt,
           stats: item.transcriptStatus === "available" ? "transcript available" : item.transcriptStatus,
           sourceUrl: item.sourceUrl
         }))
@@ -293,6 +303,7 @@ export function toKnowledgeInboxViewModel(run: KnowledgeRunResult, isRunning: bo
         statusLabel: transcriptLabel(item),
         detail: item.transcriptPreview ?? item.transcriptOriginalPreview ?? item.transcriptError ?? "Not tested in this run.",
         timestamp: formatSourceDate(item.publishedAt),
+        sortTimestamp: item.publishedAt,
         sourceUrl: item.sourceUrl,
         timeMarkers: item.importantTimeMarkers
       })),

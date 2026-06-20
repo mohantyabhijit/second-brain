@@ -96,7 +96,7 @@ func (s *Store) ReadLatestView(ctx context.Context, view string, limit int) (*kn
 
 func (s *Store) ReadLatestViewForOwner(ctx context.Context, ownerID string, view string, limit int) (*knowledge.Result, error) {
 	ownerID = defaultOwnerID(ownerID)
-	field, limit := latestViewField(view, limit)
+	field, limit, orderClause := latestViewField(view, limit)
 	var raw []byte
 	var err error
 	if field == "" {
@@ -111,10 +111,17 @@ func (s *Store) ReadLatestViewForOwner(ctx context.Context, ownerID string, view
 			select jsonb_build_object(
 				'generatedAt', payload->'generatedAt',
 				'sourceStatus', payload->'sourceStatus',
+				'sourceCounts', source_counts,
 				'validation', coalesce(payload->'validation', '[]'::jsonb),
 				'blockers', coalesce(payload->'blockers', '[]'::jsonb)
 			)
-			from latest
+			from latest,
+			lateral (
+				select jsonb_build_object(
+					'xBookmarks', jsonb_array_length(coalesce(payload->'xBookmarks', '[]'::jsonb)),
+					'youtubeItems', jsonb_array_length(coalesce(payload->'youtubeItems', '[]'::jsonb))
+				) source_counts
+			) counts
 		`, ownerID).Scan(&raw)
 	} else {
 		err = s.pool.QueryRow(ctx, fmt.Sprintf(`
@@ -128,20 +135,27 @@ func (s *Store) ReadLatestViewForOwner(ctx context.Context, ownerID string, view
 			select jsonb_build_object(
 				'generatedAt', payload->'generatedAt',
 				'sourceStatus', payload->'sourceStatus',
+				'sourceCounts', source_counts,
 				'validation', coalesce(payload->'validation', '[]'::jsonb),
 				'blockers', coalesce(payload->'blockers', '[]'::jsonb),
 				'%[1]s', coalesce((
-					select jsonb_agg(item.value order by item.ordinality)
+					select jsonb_agg(item.value order by %[2]s)
 					from (
 						select value, ordinality
 						from jsonb_array_elements(coalesce(payload->'%[1]s', '[]'::jsonb)) with ordinality as item(value, ordinality)
-						order by ordinality
+						order by %[2]s
 						limit $1
 					) item
 				), '[]'::jsonb)
 			)
-			from latest
-		`, field), ownerID, limit).Scan(&raw)
+			from latest,
+			lateral (
+				select jsonb_build_object(
+					'xBookmarks', jsonb_array_length(coalesce(payload->'xBookmarks', '[]'::jsonb)),
+					'youtubeItems', jsonb_array_length(coalesce(payload->'youtubeItems', '[]'::jsonb))
+				) source_counts
+			) counts
+		`, field, orderClause), ownerID, limit).Scan(&raw)
 	}
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
@@ -156,24 +170,23 @@ func (s *Store) ReadLatestViewForOwner(ctx context.Context, ownerID string, view
 	return &result, nil
 }
 
-func latestViewField(view string, limit int) (string, int) {
-	if limit <= 0 || limit > 50 {
-		limit = 25
-	}
-	switch strings.TrimSpace(view) {
+func latestViewField(view string, limit int) (string, int, string) {
+	normalizedView := strings.TrimSpace(view)
+	limit = knowledge.NormalizeAppStateViewLimit(normalizedView, limit)
+	switch normalizedView {
 	case "insights":
-		return "insights", limit
+		return "insights", limit, "item.ordinality"
 	case "daily-newsletter":
 		if limit > 8 {
 			limit = 8
 		}
-		return "summaries", limit
+		return "summaries", limit, "item.ordinality"
 	case "original-x-posts", "original-x-bookmarks":
-		return "xBookmarks", limit
+		return "xBookmarks", limit, "coalesce(item.value->>'createdAt', '') desc, item.ordinality"
 	case "original-youtube-posts", "original-youtube-videos":
-		return "youtubeItems", limit
+		return "youtubeItems", limit, "coalesce(item.value->>'publishedAt', '') desc, item.ordinality"
 	default:
-		return "", limit
+		return "", limit, "item.ordinality"
 	}
 }
 
