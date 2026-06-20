@@ -59,9 +59,8 @@ export function useKnowledgeInboxController(activePage: KnowledgeInboxPage = "in
     if (!isExternalSourcePage(activePage) || isLoadingMore) {
       return;
     }
-    const total = sourceTotalForPage(run, activePage);
     const sourceLimit = sourceLimitRef.current;
-    const nextLimit = Math.min(sourceLimit + sourcePageBatchSize, total > 0 ? Math.min(total, sourcePageMaxLimit) : sourcePageMaxLimit);
+    const nextLimit = Math.min(sourceLimit + sourcePageBatchSize, sourcePageMaxLimit);
     if (nextLimit <= sourceLimit) {
       return;
     }
