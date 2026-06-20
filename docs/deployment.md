@@ -18,6 +18,25 @@ on the separate `codex-crapbox` VPS.
 - Redis runs locally on `ubuntu-sgp` and is a rebuildable read-model cache.
 - Runtime object storage is a private filesystem tree at `/srv/second-brain/object-storage`.
 
+## Redis Cache Maintenance
+
+Redis is a derived cache, not a source of truth. Deploy installs
+`/usr/local/bin/second-brain-redis-maintenance` plus
+`second-brain-redis-maintenance.timer` to run hourly with a randomized delay.
+The utility keeps Redis bounded and rebuildable without touching PostgreSQL,
+object storage, or the API/worker processes:
+
+- applies `maxmemory=256mb`, `maxmemory-policy=allkeys-lru`, `appendonly=no`,
+  and disables RDB `save` schedules;
+- removes stale `temp-*.rdb` files only when Redis is not running `BGSAVE`;
+- removes oversized `dump.rdb` cache files only when Redis is healthy or when
+  Redis is stuck loading an oversized cache dump;
+- if Redis was cleared and the read-model manifest is missing, reruns
+  `second-brain-precompute` through OneCLI so the app returns to the fast path.
+
+This can briefly make Redis unavailable during recovery, but the API falls back
+to the durable Postgres read-model snapshot and keeps serving the site.
+
 ## Secret Placement
 
 GitHub Actions stores only deploy/runtime secrets needed outside OneCLI:
@@ -31,6 +50,8 @@ GitHub Actions stores only deploy/runtime secrets needed outside OneCLI:
 - `SUPADATA_MONTHLY_REQUEST_LIMIT`: hard ceiling for unique Supadata transcript
   requests per calendar month. Production sets it to `100` for the free tier.
 - `REDIS_URL`: optional backend-only Redis read-model cache override. When absent, deploy provisions Redis on the VPS and uses `redis://127.0.0.1:6379/0`; deploy enables `REDIS_CACHE_ENABLED=true`.
+- `REDIS_CACHE_TTL`: optional TTL for run-scoped read models. Production defaults
+  to `24h` so repeated publishes do not accumulate month-long Redis payloads.
 - `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ZONE_ID`, `CLOUDFLARE_CACHE_PURGE_ENABLED`: optional edge-cache purge credentials. When present, successful refresh and digest read-model publishes purge the static pages and app-state URLs that Cloudflare caches.
 - `MEMORY_PROFILING_ENABLED`, `MEMORY_PROFILE_TOKEN`: optional backend profiling controls. When enabled in production, call `/second-brain/api/debug/memory` or `/second-brain/api/debug/pprof/heap?debug=1` with `Authorization: Bearer $MEMORY_PROFILE_TOKEN`. The Langfuse sample digest check at `/second-brain/api/debug/langfuse/sample-digest` also requires this token in production, but does not require `MEMORY_PROFILING_ENABLED=true`.
 - `ONECLI_API_KEY`: logs the VPS deploy user into OneCLI so the API can run behind the OneCLI gateway.

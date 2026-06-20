@@ -50,6 +50,7 @@ tar -xzf "$ARTIFACT_DIR/frontend.tgz" -C "$ARTIFACT_DIR/frontend"
   "$ARTIFACT_DIR/migrations.tgz" \
   "$ARTIFACT_DIR/runtime/second-brain.env" \
   "$ARTIFACT_DIR/runtime/onecli-api-key" \
+  "$ROOT_DIR/scripts/second-brain-redis-maintenance.sh" \
   "$DEPLOY_USER@$DEPLOY_HOST:$remote_tmp/"
 
 "${SSH[@]}" "RELEASE='$release' bash -s" <<'REMOTE'
@@ -106,6 +107,42 @@ set -a
 # shellcheck disable=SC1091
 . "$api_dir/second-brain.env"
 set +a
+
+sudo install -m 0755 "$tmp/second-brain-redis-maintenance.sh" /usr/local/bin/second-brain-redis-maintenance
+cat > /tmp/second-brain-redis-maintenance.service <<SERVICE
+[Unit]
+Description=Second Brain Redis cache maintenance
+After=redis-server.service
+Wants=redis-server.service
+
+[Service]
+Type=oneshot
+EnvironmentFile=$api_dir/second-brain.env
+Environment=SECOND_BRAIN_ENV_FILE=$api_dir/second-brain.env
+ExecStart=/usr/local/bin/second-brain-redis-maintenance
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7
+SERVICE
+cat > /tmp/second-brain-redis-maintenance.timer <<'TIMER'
+[Unit]
+Description=Run Second Brain Redis cache maintenance regularly
+
+[Timer]
+OnBootSec=10min
+OnUnitActiveSec=1h
+RandomizedDelaySec=10min
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+TIMER
+sudo install -m 0644 /tmp/second-brain-redis-maintenance.service /etc/systemd/system/second-brain-redis-maintenance.service
+sudo install -m 0644 /tmp/second-brain-redis-maintenance.timer /etc/systemd/system/second-brain-redis-maintenance.timer
+sudo systemctl daemon-reload
+sudo env SECOND_BRAIN_REDIS_REBUILD_ON_MISSING=false /usr/local/bin/second-brain-redis-maintenance
+sudo systemctl enable --now second-brain-redis-maintenance.timer >/dev/null
+
 "$onecli" run --project second-brain -- "$api_dir/second-brain-langfuse-prompts"
 "$api_dir/second-brain-migrate" "$base/migrations"
 
