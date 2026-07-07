@@ -1,15 +1,26 @@
 import type { AppState, AskSecondBrainResponse, DigestIssue, FeedbackSignal, InsightGraphResponse, KnowledgeRunResult, RefreshStatus, SourceCounts, SourceProviderConnection, WorkspaceStatus } from "../contracts";
+import { tryCreateClient } from "../../../utils/supabase/client";
 
 export type AppStateView = "insights" | "daily-newsletter" | "original-x-posts" | "original-youtube-posts" | "knowledge-graph";
 
 const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8080";
 const appStateResponseCache = new Map<string, { etag: string; state: AppState }>();
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
+type RequestOptions = {
+  auth?: boolean;
+};
+
+type JSONRequestInit = Omit<RequestInit, "headers"> & {
+  headers?: Record<string, string>;
+};
+
+async function request<T>(path: string, init?: JSONRequestInit, options?: RequestOptions): Promise<T> {
+  const authHeaders = options?.auth ? await readSupabaseAuthHeaders() : {};
   const response = await fetch(`${apiBaseUrl}${path}`, {
     ...init,
     headers: {
       "Content-Type": "application/json",
+      ...authHeaders,
       ...init?.headers
     }
   });
@@ -101,7 +112,7 @@ export async function askSecondBrain(input: { question: string; useLatest?: bool
   return request<AskSecondBrainResponse>("/api/ask", {
     method: "POST",
     body: JSON.stringify(input)
-  });
+  }, { auth: true });
 }
 
 export async function readInsightGraph(limit = 180) {
@@ -212,6 +223,16 @@ function readAPIError(detail: string) {
     // Fall through to plain text handling.
   }
   return sanitizeAPIError(detail);
+}
+
+async function readSupabaseAuthHeaders(): Promise<Record<string, string>> {
+  const supabase = tryCreateClient();
+  if (!supabase) {
+    return {};
+  }
+  const { data } = await supabase.auth.getSession();
+  const token = data.session?.access_token?.trim();
+  return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
 function sanitizeAPIError(message: string) {

@@ -27,8 +27,12 @@ describe("knowledge inbox page data flow", () => {
     expect(homePage).not.toContain("SecondBrainLanding");
 
     const apiClient = read("src/features/knowledge-inbox/api/knowledgeRuns.ts");
-    expect(apiClient).not.toContain("Authorization");
-    expect(apiClient).not.toContain("tryCreateClient");
+    const readAppStateBlock = apiClient.slice(
+      apiClient.indexOf("export async function readAppState"),
+      apiClient.indexOf("export function clearAppStateCache")
+    );
+    expect(readAppStateBlock).not.toContain("auth: true");
+    expect(readAppStateBlock).not.toContain("readSupabaseAuthHeaders");
 
     const consoleView = read("src/features/knowledge-inbox/ui/SecondBrainConsoleView.tsx");
     expect(consoleView).not.toContain("onFeedback");
