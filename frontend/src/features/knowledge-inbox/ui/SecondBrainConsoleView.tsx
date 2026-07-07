@@ -11,11 +11,12 @@ import { formatUsername, publicOwnerHandle } from "./authDisplay";
 type SecondBrainConsoleViewProps = {
   activePage: KnowledgeInboxPage;
   digestIssues: DigestIssue[];
+  hasMorePageItems: boolean;
   isLoading: boolean;
   isLoadingMore: boolean;
   insightGraph: InsightGraphResponse | null;
   model: KnowledgeInboxViewModel;
-  onLoadMoreSources: () => void;
+  onLoadMoreItems: () => void;
   refreshStatus: RefreshStatus | null;
 };
 
@@ -82,7 +83,17 @@ const themeStorageKey = "second-brain-theme";
 
 type ThemeMode = "light" | "dark";
 
-export function SecondBrainConsoleView({ activePage, digestIssues, insightGraph, isLoading, isLoadingMore, model, onLoadMoreSources, refreshStatus }: SecondBrainConsoleViewProps) {
+export function SecondBrainConsoleView({
+  activePage,
+  digestIssues,
+  hasMorePageItems,
+  insightGraph,
+  isLoading,
+  isLoadingMore,
+  model,
+  onLoadMoreItems,
+  refreshStatus
+}: SecondBrainConsoleViewProps) {
   const [visibleCountState, setVisibleCountState] = useState({ page: activePage, query: "", count: initialVisibleCount });
   const [copiedItems, setCopiedItems] = useState<Set<string>>(new Set());
   const [openSummaryItem, setOpenSummaryItem] = useState<FeedItem | null>(null);
@@ -94,6 +105,8 @@ export function SecondBrainConsoleView({ activePage, digestIssues, insightGraph,
   const sentinelRef = useRef<HTMLDivElement | null>(null);
   const page = pageCopy[activePage];
   const isSourceLoadingPage = isExternalSourcePage(activePage);
+  const isNewsletterPage = activePage === "daily-newsletter";
+  const isViewportFeedPage = isLazyLoadedFeedPage(activePage);
   const baseItems = useMemo(() => getFeedItems(model, activePage, digestIssues), [model, activePage, digestIssues]);
   const normalizedSourceSearch = useMemo(() => normalizeSearchTerm(deferredSourceSearch), [deferredSourceSearch]);
   const searchedItems = useMemo(
@@ -106,9 +119,8 @@ export function SecondBrainConsoleView({ activePage, digestIssues, insightGraph,
       : initialVisibleCount;
   const feedItems = useMemo(() => sliceItems(searchedItems, visibleCount), [searchedItems, visibleCount]);
   const sourceTotal = sourceTotalForPage(model, activePage);
-  const hasMoreSourceItems = isSourceLoadingPage && baseItems.length < sourceTotal;
   const hasActiveSourceSearch = isSourceLoadingPage && sourceSearch.trim().length > 0;
-  const shouldRenderSentinel = baseItems.length > 0 && (!hasActiveSourceSearch || feedItems.length > 0);
+  const shouldRenderSentinel = isViewportFeedPage && baseItems.length > 0 && (!hasActiveSourceSearch || feedItems.length > 0);
 
   useEffect(() => {
     const frame = window.requestAnimationFrame(() => {
@@ -122,7 +134,7 @@ export function SecondBrainConsoleView({ activePage, digestIssues, insightGraph,
   useEffect(() => {
     const sentinel = sentinelRef.current;
     if (!sentinel) return;
-    const root = isSourceLoadingPage ? feedScrollerRef.current : null;
+    const root = isViewportFeedPage ? feedScrollerRef.current : null;
 
     const observer = new IntersectionObserver(
       (entries) => {
@@ -141,12 +153,12 @@ export function SecondBrainConsoleView({ activePage, digestIssues, insightGraph,
             });
             return;
           }
-          if (hasMoreSourceItems && !isLoadingMore && (!hasActiveSourceSearch || feedItems.length > 0)) {
-            onLoadMoreSources();
+          if (hasMorePageItems && !isLoadingMore && (!hasActiveSourceSearch || feedItems.length > 0)) {
+            onLoadMoreItems();
           }
         }
       },
-      { root, rootMargin: isSourceLoadingPage ? "220px 0px" : "720px 0px" }
+      { root, rootMargin: isViewportFeedPage ? "220px 0px" : "720px 0px" }
     );
 
     observer.observe(sentinel);
@@ -155,11 +167,11 @@ export function SecondBrainConsoleView({ activePage, digestIssues, insightGraph,
     activePage,
     feedItems.length,
     hasActiveSourceSearch,
-    hasMoreSourceItems,
+    hasMorePageItems,
     isLoadingMore,
-    isSourceLoadingPage,
+    isViewportFeedPage,
     normalizedSourceSearch,
-    onLoadMoreSources,
+    onLoadMoreItems,
     searchedItems.length,
     visibleCount
   ]);
@@ -221,7 +233,7 @@ export function SecondBrainConsoleView({ activePage, digestIssues, insightGraph,
             <KnowledgeGraphView graph={insightGraph} isLoading={isLoading} />
           ) : (
             <section
-              className={`feed-column${isSourceLoadingPage ? " source-feed-column" : ""}`}
+              className={`feed-column${isViewportFeedPage ? " viewport-feed-column" : ""}${isSourceLoadingPage ? " source-feed-column" : ""}${isNewsletterPage ? " newsletter-feed-column" : ""}`}
               aria-label={`${page.title} feed`}
               ref={feedScrollerRef}
             >
@@ -236,6 +248,14 @@ export function SecondBrainConsoleView({ activePage, digestIssues, insightGraph,
                   searchQuery={sourceSearch}
                   total={sourceTotal}
                   visible={feedItems.length}
+                />
+              ) : null}
+              {isNewsletterPage && (!isLoading || digestIssues.length > 0) ? (
+                <NewsletterFeedSummary
+                  hasMorePageItems={hasMorePageItems}
+                  isLoadingMore={isLoadingMore}
+                  loaded={digestIssues.length}
+                  visible={feedItems.filter((item) => item.source === "Newsletter").length}
                 />
               ) : null}
               {feedItems.length ? (
@@ -257,23 +277,23 @@ export function SecondBrainConsoleView({ activePage, digestIssues, insightGraph,
               ) : hasActiveSourceSearch ? (
                 <SourceSearchEmpty
                   activePage={activePage}
-                  hasMoreSourceItems={hasMoreSourceItems}
+                  hasMoreSourceItems={hasMorePageItems}
                   isLoadingMore={isLoadingMore}
                   loaded={baseItems.length}
-                  onLoadMoreSources={onLoadMoreSources}
+                  onLoadMoreSources={onLoadMoreItems}
                 />
               ) : (
                 <EmptyFeedState activePage={activePage} emptyTitle={page.emptyTitle} />
               )}
               {shouldRenderSentinel ? (
                 <div ref={sentinelRef} className="feed-sentinel">
-                  {feedItems.length < searchedItems.length || hasMoreSourceItems
-                    ? isLoadingMore
-                      ? "Loading more sourced items"
-                      : hasActiveSourceSearch
-                        ? "Scroll for more matching sources"
-                        : "Scroll for more sourced items"
-                    : "End of sourced items"}
+                  {feedSentinelLabel({
+                    activePage,
+                    hasActiveSourceSearch,
+                    hasMorePageItems,
+                    hasMoreVisibleItems: feedItems.length < searchedItems.length,
+                    isLoadingMore
+                  })}
                 </div>
               ) : null}
             </section>
@@ -359,6 +379,31 @@ function SourceFeedSummary({
           </button>
         ) : null}
       </form>
+    </div>
+  );
+}
+
+function NewsletterFeedSummary({
+  hasMorePageItems,
+  isLoadingMore,
+  loaded,
+  visible
+}: {
+  hasMorePageItems: boolean;
+  isLoadingMore: boolean;
+  loaded: number;
+  visible: number;
+}) {
+  const shown = Math.min(visible, loaded);
+  return (
+    <div className="source-feed-summary newsletter-feed-summary">
+      <div className="source-feed-counts">
+        <span>Previous newsletters</span>
+        <small>
+          {formatNumber(shown)} shown, {formatNumber(loaded)} loaded
+          {isLoadingMore ? " - loading more" : hasMorePageItems ? " - more available" : loaded ? " - all loaded" : ""}
+        </small>
+      </div>
     </div>
   );
 }
@@ -503,6 +548,10 @@ export function IdentityBadge() {
 
 function isExternalSourcePage(activePage: KnowledgeInboxPage) {
   return activePage === "original-youtube-posts" || activePage === "original-x-posts";
+}
+
+function isLazyLoadedFeedPage(activePage: KnowledgeInboxPage) {
+  return activePage === "daily-newsletter" || isExternalSourcePage(activePage);
 }
 
 function RefreshProgress({ status }: { status: RefreshStatus | null }) {
@@ -931,6 +980,31 @@ function feedSortTime(item: FeedItem) {
 
 function sliceItems(items: FeedItem[], visibleCount: number) {
   return items.slice(0, visibleCount);
+}
+
+function feedSentinelLabel({
+  activePage,
+  hasActiveSourceSearch,
+  hasMorePageItems,
+  hasMoreVisibleItems,
+  isLoadingMore
+}: {
+  activePage: KnowledgeInboxPage;
+  hasActiveSourceSearch: boolean;
+  hasMorePageItems: boolean;
+  hasMoreVisibleItems: boolean;
+  isLoadingMore: boolean;
+}) {
+  if (activePage === "daily-newsletter") {
+    if (isLoadingMore) return "Loading previous newsletters";
+    if (hasMoreVisibleItems || hasMorePageItems) return "Scroll for previous newsletters";
+    return "End of newsletter archive";
+  }
+  if (isLoadingMore) return "Loading more sourced items";
+  if (hasMoreVisibleItems || hasMorePageItems) {
+    return hasActiveSourceSearch ? "Scroll for more matching sources" : "Scroll for more sourced items";
+  }
+  return "End of sourced items";
 }
 
 function filterFeedItems(items: FeedItem[], normalizedQuery: string) {

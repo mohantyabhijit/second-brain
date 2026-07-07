@@ -337,7 +337,7 @@ func (s *Service) ReadAppState(ctx context.Context) (*AppState, string, error) {
 	if err != nil {
 		return nil, "error", err
 	}
-	digests, err := s.readDigestsCanonical(ctx, 50)
+	digests, err := s.readDigestsCanonical(ctx, MaxNewsletterStateLimit)
 	if err != nil {
 		return nil, "error", err
 	}
@@ -381,7 +381,7 @@ func (s *Service) ReadAppStateView(ctx context.Context, view string, limit int) 
 	digests := []DigestIssue{}
 	switch view {
 	case "daily-newsletter":
-		digests, err = s.readDigestsCanonical(ctx, NormalizePageStateLimit(limit))
+		digests, err = s.readDigestsCanonical(ctx, limit)
 		if err != nil {
 			return nil, "error", err
 		}
@@ -837,7 +837,7 @@ func (s *Service) refreshTimeout() time.Duration {
 }
 
 func (s *Service) publishAppStateForResult(ctx context.Context, result Result, graphStatus string, reason string) error {
-	digests, err := s.readDigestsCanonical(ctx, 50)
+	digests, err := s.readDigestsCanonical(ctx, MaxNewsletterStateLimit)
 	if err != nil {
 		s.log(ctx).Warn("read digests for Redis publish failed", "error", err)
 		if result.Digest != nil {
@@ -854,7 +854,7 @@ func (s *Service) PublishReadModels(ctx context.Context, reason string) (*AppSta
 	if err != nil {
 		return nil, err
 	}
-	digests, err := s.readDigestsCanonical(ctx, 50)
+	digests, err := s.readDigestsCanonical(ctx, MaxNewsletterStateLimit)
 	if err != nil {
 		return nil, err
 	}

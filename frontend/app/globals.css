@@ -775,7 +775,7 @@ h1 {
   min-width: 0;
 }
 
-.source-feed-column {
+.viewport-feed-column {
   max-height: min(860px, calc(100vh - 176px));
   overflow-y: auto;
   overscroll-behavior: contain;
@@ -2052,7 +2052,7 @@ blockquote {
     gap: 4px;
   }
 
-  .source-feed-column {
+  .viewport-feed-column {
     max-height: 68vh;
     padding-right: 4px;
   }

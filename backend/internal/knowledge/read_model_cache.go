@@ -15,6 +15,7 @@ import (
 const AppStateSchemaVersion = "redis-read-model-v1"
 const MaxPageStateLimit = 50
 const MaxSourceStateLimit = 1000
+const MaxNewsletterStateLimit = 100
 
 var ErrReadModelCacheMiss = errors.New("read model cache miss")
 
@@ -164,6 +165,14 @@ func NormalizeAppStateViewLimit(view string, limit int) int {
 		}
 		if limit > MaxSourceStateLimit {
 			return MaxSourceStateLimit
+		}
+		return limit
+	case "daily-newsletter":
+		if limit <= 0 {
+			return 10
+		}
+		if limit > MaxNewsletterStateLimit {
+			return MaxNewsletterStateLimit
 		}
 		return limit
 	}

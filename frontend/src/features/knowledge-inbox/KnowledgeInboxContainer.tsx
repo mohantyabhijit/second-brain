@@ -17,9 +17,10 @@ export default function KnowledgeInboxContainer({ initialPage = "insights" }: Kn
     isLoading,
     isLoadingMore,
     isRunning,
-    loadMoreSources,
+    loadMorePageItems,
     refreshStatus,
     digestIssues,
+    hasMorePageItems,
     insightGraph,
     error
   } = useKnowledgeInboxController(initialPage);
@@ -30,7 +31,8 @@ export default function KnowledgeInboxContainer({ initialPage = "insights" }: Kn
       activePage={initialPage}
       isLoading={isLoading}
       isLoadingMore={isLoadingMore}
-      onLoadMoreSources={loadMoreSources}
+      hasMorePageItems={hasMorePageItems}
+      onLoadMoreItems={loadMorePageItems}
       refreshStatus={refreshStatus}
       digestIssues={digestIssues}
       insightGraph={insightGraph}
