@@ -143,7 +143,11 @@ sudo systemctl daemon-reload
 sudo env SECOND_BRAIN_REDIS_REBUILD_ON_MISSING=false /usr/local/bin/second-brain-redis-maintenance
 sudo systemctl enable --now second-brain-redis-maintenance.timer >/dev/null
 
-"$onecli" run --project second-brain -- "$api_dir/second-brain-langfuse-prompts"
+if "$onecli" run --project second-brain -- "$api_dir/second-brain-langfuse-prompts"; then
+  echo "Langfuse prompt sync completed."
+else
+  echo "Langfuse prompt sync failed; continuing deploy with the checked-in prompt fallback." >&2
+fi
 "$api_dir/second-brain-migrate" "$base/migrations"
 
 cat > /tmp/second-brain-api.service <<SERVICE
