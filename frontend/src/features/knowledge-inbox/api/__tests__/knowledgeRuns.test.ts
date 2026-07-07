@@ -1,6 +1,13 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+const supabaseGetSession = vi.hoisted(() => vi.fn());
+
+vi.mock("../../../../utils/supabase/client", () => ({
+  tryCreateClient: () => ({ auth: { getSession: supabaseGetSession } })
+}));
+
 afterEach(() => {
+  supabaseGetSession.mockReset();
   vi.resetModules();
   vi.unstubAllGlobals();
   vi.unstubAllEnvs();
@@ -236,6 +243,42 @@ describe("knowledge run API client", () => {
     });
     expect(digests).toHaveLength(1);
     expect(digests[0]?.subject).toBe("Displayed digest");
+  });
+
+  it("sends the Supabase bearer token for Ask when a session exists", async () => {
+    vi.stubEnv("NEXT_PUBLIC_API_BASE_URL", "https://api.example.test");
+    supabaseGetSession.mockResolvedValueOnce({
+      data: {
+        session: {
+          access_token: "session-token"
+        }
+      }
+    });
+    const fetchMock = vi.fn(async () => {
+      return new Response(
+        JSON.stringify({
+          answer: "Source-grounded answer",
+          sources: [],
+          usedLatest: false,
+          generatedAt: "2026-07-07T12:00:00.000Z",
+          searchStatus: "not_requested"
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } }
+      );
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { askSecondBrain } = await import("../knowledgeRuns");
+    await askSecondBrain({ question: "what did we learn last week", useLatest: false });
+
+    expect(fetchMock).toHaveBeenCalledWith("https://api.example.test/api/ask", {
+      method: "POST",
+      body: JSON.stringify({ question: "what did we learn last week", useLatest: false }),
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: "Bearer session-token"
+      }
+    });
   });
 
   it("normalizes insight graph responses", async () => {

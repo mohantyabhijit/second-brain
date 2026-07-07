@@ -290,6 +290,64 @@ func TestRouterResolvesPublicAndAuthenticatedWorkspace(t *testing.T) {
 	}
 }
 
+func TestRouterAllowsPublicOwnerAskSecondBrain(t *testing.T) {
+	cfg := testConfig(t)
+	store := localfile.New(cfg.KnowledgeRunPath)
+	result := knowledge.Result{
+		GeneratedAt: time.Date(2026, 7, 7, 12, 0, 0, 0, time.UTC),
+		Summaries: []knowledge.Summary{
+			{
+				ID:         "summary-1",
+				Source:     "x",
+				Title:      "Agent evaluation loops",
+				SourceURL:  "https://x.example/agent-evals",
+				Summary:    "Agent evaluation loops made the strongest work more reliable by measuring task quality before expanding automation.",
+				Quote:      "Evaluate the task loop before adding more agents.",
+				Confidence: "high",
+			},
+		},
+		Insights: []knowledge.Insight{
+			{
+				ID:         "insight-1",
+				Source:     "x",
+				SourceID:   "summary-1",
+				Title:      "Agent evals need task-level grounding",
+				Insight:    "The useful pattern was to judge agent systems by workflow outcomes, not model demos.",
+				Evidence:   "Saved notes repeatedly connected agent evaluation loops to production workflow reliability.",
+				SourceURL:  "https://x.example/agent-evals",
+				Confidence: "high",
+			},
+		},
+		Validation: []knowledge.ValidationItem{{Label: "seed", Status: "pass", Detail: "seeded ask context"}},
+		Blockers:   []string{},
+	}
+	result.SourceStatus.X = knowledge.SourceReady
+	result.SourceStatus.YouTube = knowledge.SourceReady
+	result.SourceStatus.OneCLI = knowledge.SourceReady
+	if err := store.SaveRun(context.Background(), result, nil); err != nil {
+		t.Fatalf("seed latest run: %v", err)
+	}
+	router := NewRouter(cfg, knowledge.NewService(cfg, store, http.DefaultClient), logging.Discard())
+
+	response := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPost, "/api/ask", strings.NewReader(`{"question":"what did we learn last week about agent evaluation loops?"}`))
+	router.ServeHTTP(response, request)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("expected public ask status 200, got %d: %s", response.Code, response.Body.String())
+	}
+	var payload knowledge.AskSecondBrainResponse
+	if err := json.Unmarshal(response.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("decode ask response: %v", err)
+	}
+	if len(payload.Sources) == 0 {
+		t.Fatalf("expected source-grounded ask response, got %#v", payload)
+	}
+	if !strings.Contains(payload.Answer, "Agent evaluation loops") && !strings.Contains(payload.Answer, "agent evaluation loops") {
+		t.Fatalf("expected answer to use seeded source, got %q", payload.Answer)
+	}
+}
+
 func TestRouterRejectsInvalidSupabaseBearer(t *testing.T) {
 	router, _ := authenticatedTestRouter(t)
 	request := httptest.NewRequest(http.MethodGet, "/api/workspace", nil)

@@ -277,7 +277,7 @@ func NewRouter(cfg config.Config, service *knowledge.Service, logger *logging.Lo
 	}
 
 	askSecondBrain := func(w http.ResponseWriter, r *http.Request) {
-		scope, ok := resolveScope(w, r, true)
+		scope, ok := resolveScope(w, r, false)
 		if !ok {
 			return
 		}
