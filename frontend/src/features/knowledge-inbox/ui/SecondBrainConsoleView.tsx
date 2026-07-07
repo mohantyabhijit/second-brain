@@ -107,11 +107,12 @@ export function SecondBrainConsoleView({
   const isSourceLoadingPage = isExternalSourcePage(activePage);
   const isNewsletterPage = activePage === "daily-newsletter";
   const isViewportFeedPage = isLazyLoadedFeedPage(activePage);
+  const isSearchableFeedPage = isSearchablePage(activePage);
   const baseItems = useMemo(() => getFeedItems(model, activePage, digestIssues), [model, activePage, digestIssues]);
   const normalizedSourceSearch = useMemo(() => normalizeSearchTerm(deferredSourceSearch), [deferredSourceSearch]);
   const searchedItems = useMemo(
-    () => (isSourceLoadingPage ? filterFeedItems(baseItems, normalizedSourceSearch) : baseItems),
-    [baseItems, isSourceLoadingPage, normalizedSourceSearch]
+    () => (isSearchableFeedPage ? filterFeedItems(baseItems, normalizedSourceSearch) : baseItems),
+    [baseItems, isSearchableFeedPage, normalizedSourceSearch]
   );
   const visibleCount =
     visibleCountState.page === activePage && visibleCountState.query === normalizedSourceSearch
@@ -119,7 +120,7 @@ export function SecondBrainConsoleView({
       : initialVisibleCount;
   const feedItems = useMemo(() => sliceItems(searchedItems, visibleCount), [searchedItems, visibleCount]);
   const sourceTotal = sourceTotalForPage(model, activePage);
-  const hasActiveSourceSearch = isSourceLoadingPage && sourceSearch.trim().length > 0;
+  const hasActiveSourceSearch = isSearchableFeedPage && sourceSearch.trim().length > 0;
   const shouldRenderSentinel = isViewportFeedPage && baseItems.length > 0 && (!hasActiveSourceSearch || feedItems.length > 0);
 
   useEffect(() => {
@@ -255,6 +256,10 @@ export function SecondBrainConsoleView({
                   hasMorePageItems={hasMorePageItems}
                   isLoadingMore={isLoadingMore}
                   loaded={digestIssues.length}
+                  matched={searchedItems.length}
+                  onSearchChange={updateSourceSearch}
+                  searchIsStale={sourceSearch !== deferredSourceSearch}
+                  searchQuery={sourceSearch}
                   visible={feedItems.filter((item) => item.source === "Newsletter").length}
                 />
               ) : null}
@@ -387,23 +392,50 @@ function NewsletterFeedSummary({
   hasMorePageItems,
   isLoadingMore,
   loaded,
+  matched,
+  onSearchChange,
+  searchIsStale,
+  searchQuery,
   visible
 }: {
   hasMorePageItems: boolean;
   isLoadingMore: boolean;
   loaded: number;
+  matched: number;
+  onSearchChange: (query: string) => void;
+  searchIsStale: boolean;
+  searchQuery: string;
   visible: number;
 }) {
-  const shown = Math.min(visible, loaded);
+  const hasSearch = searchQuery.trim().length > 0;
+  const shown = hasSearch ? Math.min(visible, matched) : Math.min(visible, loaded);
   return (
     <div className="source-feed-summary newsletter-feed-summary">
       <div className="source-feed-counts">
         <span>Previous newsletters</span>
         <small>
-          {formatNumber(shown)} shown, {formatNumber(loaded)} loaded
+          {hasSearch
+            ? `${formatNumber(shown)} of ${formatNumber(matched)} matches shown from ${formatNumber(loaded)} loaded`
+            : `${formatNumber(shown)} shown, ${formatNumber(loaded)} loaded`}
+          {searchIsStale ? " - updating" : ""}
           {isLoadingMore ? " - loading more" : hasMorePageItems ? " - more available" : loaded ? " - all loaded" : ""}
         </small>
       </div>
+      <form className="source-search" onSubmit={(event) => event.preventDefault()} role="search">
+        <input
+          aria-label="Search newsletter issues"
+          autoComplete="off"
+          onChange={(event) => onSearchChange(event.target.value)}
+          placeholder="Search newsletters"
+          type="search"
+          value={searchQuery}
+        />
+        {searchQuery ? (
+          <button aria-label="Clear newsletter search" onClick={() => onSearchChange("")} type="button">
+            Clear
+          </button>
+        ) : null}
+      </form>
     </div>
   );
 }
@@ -444,19 +476,20 @@ function SourceSearchEmpty({
   loaded: number;
   onLoadMoreSources: () => void;
 }) {
-  const label = activePage === "original-youtube-posts" ? "YouTube videos" : "X bookmarks";
+  const isNewsletter = activePage === "daily-newsletter";
+  const label = isNewsletter ? "newsletter issues" : activePage === "original-youtube-posts" ? "YouTube videos" : "X bookmarks";
   return (
     <div className="feed-card empty-feed source-search-empty">
       <span className="feed-source">No matches</span>
       <h2>No loaded {label} match this search</h2>
       <p>
         {hasMoreSourceItems
-          ? `${formatNumber(loaded)} sources are loaded. Load another batch or try a broader query.`
+          ? `${formatNumber(loaded)} ${isNewsletter ? "issues" : "sources"} are loaded. ${isNewsletter ? "Load previous newsletters" : "Load another batch"} or try a broader query.`
           : "Try a broader query."}
       </p>
       {hasMoreSourceItems ? (
         <button className="source-load-button" disabled={isLoadingMore} onClick={onLoadMoreSources} type="button">
-          {isLoadingMore ? "Loading" : "Load more sources"}
+          {isLoadingMore ? "Loading" : isNewsletter ? "Load previous newsletters" : "Load more sources"}
         </button>
       ) : null}
     </div>
@@ -551,6 +584,10 @@ function isExternalSourcePage(activePage: KnowledgeInboxPage) {
 }
 
 function isLazyLoadedFeedPage(activePage: KnowledgeInboxPage) {
+  return activePage === "daily-newsletter" || isExternalSourcePage(activePage);
+}
+
+function isSearchablePage(activePage: KnowledgeInboxPage) {
   return activePage === "daily-newsletter" || isExternalSourcePage(activePage);
 }
 
@@ -997,8 +1034,10 @@ function feedSentinelLabel({
 }) {
   if (activePage === "daily-newsletter") {
     if (isLoadingMore) return "Loading previous newsletters";
-    if (hasMoreVisibleItems || hasMorePageItems) return "Scroll for previous newsletters";
-    return "End of newsletter archive";
+    if (hasMoreVisibleItems || hasMorePageItems) {
+      return hasActiveSourceSearch ? "Scroll for more matching newsletters" : "Scroll for previous newsletters";
+    }
+    return hasActiveSourceSearch ? "End of matching newsletters" : "End of newsletter archive";
   }
   if (isLoadingMore) return "Loading more sourced items";
   if (hasMoreVisibleItems || hasMorePageItems) {
@@ -1031,6 +1070,7 @@ function feedItemSearchScore(item: FeedItem, normalizedQuery: string) {
     { text: item.title, weight: 6 },
     { text: item.author, weight: 4 },
     { text: item.body, weight: 3 },
+    { text: item.fullBody ?? "", weight: 3, allowSubsequence: false },
     { text: item.quote ?? "", weight: 3 },
     { text: item.stats ?? "", weight: 2 },
     { text: item.sourceUrl ?? "", weight: 2 },
@@ -1041,12 +1081,23 @@ function feedItemSearchScore(item: FeedItem, normalizedQuery: string) {
   for (const term of terms) {
     let bestTermScore = 0;
     for (const field of fields) {
-      bestTermScore = Math.max(bestTermScore, fuzzyFieldScore(normalizeSearchTerm(field.text), term) * field.weight);
+      const normalizedField = normalizeSearchTerm(field.text);
+      const fieldScore =
+        field.allowSubsequence === false ? substringFieldScore(normalizedField, term) : fuzzyFieldScore(normalizedField, term);
+      bestTermScore = Math.max(bestTermScore, fieldScore * field.weight);
     }
     if (bestTermScore === 0) return 0;
     totalScore += bestTermScore;
   }
   return totalScore;
+}
+
+function substringFieldScore(text: string, term: string) {
+  if (!text || !term) return 0;
+  if (text === term) return 10;
+  if (text.startsWith(term)) return 8;
+  if (text.includes(term)) return 6;
+  return 0;
 }
 
 function fuzzyFieldScore(text: string, term: string) {
