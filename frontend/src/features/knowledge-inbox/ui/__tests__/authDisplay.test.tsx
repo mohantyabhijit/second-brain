@@ -38,5 +38,6 @@ describe("auth display surfaces", () => {
     expect(html).not.toContain("Generate Digest");
     expect(html).not.toContain("Send Latest");
     expect(html).not.toContain("Digest recipient email");
+    expect(html).toContain("Search newsletters");
   });
 });
