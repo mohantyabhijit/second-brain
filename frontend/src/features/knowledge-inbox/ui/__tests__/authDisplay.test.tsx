@@ -20,11 +20,12 @@ describe("auth display surfaces", () => {
       <SecondBrainConsoleView
         activePage="daily-newsletter"
         digestIssues={[]}
+        hasMorePageItems={false}
         insightGraph={null}
         isLoading={false}
         isLoadingMore={false}
         model={toKnowledgeInboxViewModel(initialKnowledgeRun, false, null)}
-        onLoadMoreSources={() => undefined}
+        onLoadMoreItems={() => undefined}
         refreshStatus={null}
       />
     );

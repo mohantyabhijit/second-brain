@@ -96,6 +96,44 @@ func TestReadAppStateViewPreservesLargeSourceLimitForCanonicalFallback(t *testin
 	}
 }
 
+func TestReadAppStateViewPreservesNewsletterLimitForCanonicalFallback(t *testing.T) {
+	now := time.Date(2026, 5, 31, 6, 0, 0, 0, time.UTC)
+	digests := make([]DigestIssue, 75)
+	for index := range digests {
+		digests[index] = DigestIssue{
+			ID:             fmt.Sprintf("digest-%03d", index),
+			DigestDate:     now.AddDate(0, 0, -index).Format("2006-01-02"),
+			ScheduledFor:   now.AddDate(0, 0, -index),
+			IdempotencyKey: fmt.Sprintf("daily:%03d", index),
+			Subject:        fmt.Sprintf("Digest %03d", index),
+			BodyMarkdown:   "# Digest",
+			Status:         "sent",
+		}
+	}
+	store := &cacheOrderStore{
+		latestView: &Result{
+			GeneratedAt: now,
+			Digest:      &digests[0],
+		},
+		digests: digests,
+	}
+	service := NewService(config.Config{OwnerID: "owner-1"}, store, nil)
+
+	state, status, err := service.ReadAppStateView(context.Background(), "daily-newsletter", 75)
+	if err != nil {
+		t.Fatalf("read newsletter view: %v", err)
+	}
+	if status != "fallback" {
+		t.Fatalf("expected canonical fallback status, got %q", status)
+	}
+	if store.latestViewLimit != 75 {
+		t.Fatalf("expected newsletter view limit 75 to reach store, got %d", store.latestViewLimit)
+	}
+	if got := len(state.Digests); got != 75 {
+		t.Fatalf("expected 75 digest issues, got %d", got)
+	}
+}
+
 func TestGenerateDigestUsesCanonicalLatestInsteadOfRedisLatest(t *testing.T) {
 	now := time.Date(2026, 5, 31, 6, 0, 0, 0, time.UTC)
 	store := &cacheOrderStore{

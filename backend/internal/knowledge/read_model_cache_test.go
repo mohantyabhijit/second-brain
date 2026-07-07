@@ -115,6 +115,9 @@ func TestNormalizeAppStateViewLimitAllowsLargeGraphViews(t *testing.T) {
 	if got := NormalizeAppStateViewLimit("original-youtube-posts", 1200); got != MaxSourceStateLimit {
 		t.Fatalf("expected source page limit capped at %d, got %d", MaxSourceStateLimit, got)
 	}
+	if got := NormalizeAppStateViewLimit("daily-newsletter", 120); got != MaxNewsletterStateLimit {
+		t.Fatalf("expected newsletter page limit capped at %d, got %d", MaxNewsletterStateLimit, got)
+	}
 	if got := NormalizeAppStateViewLimit("knowledge-graph", 180); got != 180 {
 		t.Fatalf("expected graph page limit to preserve 180, got %d", got)
 	}
