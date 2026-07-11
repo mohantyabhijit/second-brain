@@ -78,15 +78,6 @@ type transcriptAttempt struct {
 	mode  string
 }
 
-func (s *Service) fetchYouTubeInboxItems(ctx context.Context, playlistID string, transcriptVideoID string) ([]YouTubeItem, error) {
-	items, err := s.fetchPlaylistItems(ctx, playlistID, youtubePlaylistFetchLimit)
-	if err != nil {
-		return nil, err
-	}
-
-	return s.fetchYouTubeTranscriptsForNewMaterials(ctx, items, transcriptVideoID, nil), nil
-}
-
 func normalizeYouTubePlaylistID(playlistID string, playlistURL string) string {
 	candidate := strings.TrimSpace(playlistID)
 	if candidate == "" {

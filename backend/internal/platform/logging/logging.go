@@ -152,22 +152,6 @@ func FromContext(ctx context.Context, fallbackLogger ...*Logger) *Logger {
 	return Default()
 }
 
-func Info(ctx context.Context, message string, fields ...any) {
-	FromContext(ctx).InfoContext(ctx, message, fields...)
-}
-
-func Warn(ctx context.Context, message string, fields ...any) {
-	FromContext(ctx).WarnContext(ctx, message, fields...)
-}
-
-func Error(ctx context.Context, message string, fields ...any) {
-	FromContext(ctx).ErrorContext(ctx, message, fields...)
-}
-
-func Debug(ctx context.Context, message string, fields ...any) {
-	FromContext(ctx).DebugContext(ctx, message, fields...)
-}
-
 func (l *Logger) Info(message string, fields ...any) {
 	l.log(context.Background(), zerolog.InfoLevel, message, fields...)
 }

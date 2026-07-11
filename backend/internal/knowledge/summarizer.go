@@ -11,55 +11,6 @@ var sentenceBoundary = regexp.MustCompile(`([.!?])\s+`)
 var strongSignals = []string{"research", "agent", "workflow", "build", "evidence", "benchmark", "model", "product"}
 var weakSignals = []string{"giveaway", "discount", "sale", "promo"}
 
-func summarizeBookmarks(bookmarks []XBookmark) []Summary {
-	summaries := make([]Summary, 0, len(bookmarks))
-	for _, bookmark := range bookmarks {
-		title := bookmark.Title
-		if title == "" && bookmark.Username != "" {
-			title = "@" + bookmark.Username
-		}
-		if title == "" {
-			title = fallback(bookmark.AuthorName, "X bookmark")
-		}
-		summaries = append(summaries, extractiveSummary(rawSummaryInput{
-			ID:        bookmark.ID,
-			Source:    "x",
-			Title:     title,
-			SourceURL: bookmark.SourceURL,
-			Body:      bookmark.Body,
-			Quote:     bookmark.Body,
-		}))
-	}
-	return summaries
-}
-
-func summarizeVideos(items []YouTubeItem) []Summary {
-	summaries := []Summary{}
-	for _, item := range items {
-		notes := []string{}
-		if item.TranscriptTranslationStatus == "translated" && item.TranscriptSourceLang != "" {
-			notes = append(notes, "Transcript preview translated from "+item.TranscriptSourceLang+" to English before summarization.")
-		}
-		body := fallback(fallback(item.TranscriptPreview, item.TranscriptOriginalPreview), youtubeMetadataBody(item))
-		if body == "" {
-			continue
-		}
-		if item.TranscriptStatus != "available" {
-			notes = append(notes, "Transcript unavailable; summary is grounded only in YouTube playlist metadata.")
-		}
-		summaries = append(summaries, extractiveSummary(rawSummaryInput{
-			ID:        item.VideoID,
-			Source:    "youtube",
-			Title:     item.Title,
-			SourceURL: item.SourceURL,
-			Body:      body,
-			Quote:     body,
-			Notes:     notes,
-		}))
-	}
-	return summaries
-}
-
 type rawSummaryInput struct {
 	ID        string
 	Source    string

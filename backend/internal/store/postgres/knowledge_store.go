@@ -190,10 +190,6 @@ func latestViewField(view string, limit int) (string, int, string) {
 	}
 }
 
-func (s *Store) readLatestDigest(ctx context.Context) (*knowledge.DigestIssue, error) {
-	return s.readLatestDigestForOwner(ctx, config.DefaultOwnerID)
-}
-
 func (s *Store) readLatestDigestForOwner(ctx context.Context, ownerID string) (*knowledge.DigestIssue, error) {
 	ownerID = defaultOwnerID(ownerID)
 	var digest knowledge.DigestIssue
@@ -389,74 +385,6 @@ func (s *Store) ReadNewDigestSources(ctx context.Context, ownerID string, prompt
 		}
 		ref.SynthesizedAt = &synthesizedAt
 		ref.DigestRole = "input"
-		refs = append(refs, ref)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return refs, nil
-}
-
-func (s *Store) readDigestSourceRefs(ctx context.Context, digestID string) ([]knowledge.DigestSourceRef, error) {
-	if strings.TrimSpace(digestID) == "" {
-		return []knowledge.DigestSourceRef{}, nil
-	}
-	rows, err := s.pool.Query(ctx, `
-		select
-			coalesce(source_item_id::text, ''),
-			coalesce(source_capture_id::text, ''),
-			coalesce(knowledge_synthesis_id::text, ''),
-			source_type,
-			external_id,
-			source_url,
-			title,
-			capture_hash,
-			first_seen_at,
-			captured_at,
-			synthesized_at,
-			digest_role
-		from digest_source_items
-		where digest_issue_id = $1
-		order by first_seen_at asc nulls last, source_type, external_id
-	`, digestID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	refs := []knowledge.DigestSourceRef{}
-	for rows.Next() {
-		var ref knowledge.DigestSourceRef
-		var firstSeenAt *time.Time
-		var capturedAt *time.Time
-		var synthesizedAt *time.Time
-		if err := rows.Scan(
-			&ref.SourceItemID,
-			&ref.SourceCaptureID,
-			&ref.KnowledgeSynthesisID,
-			&ref.Source,
-			&ref.ExternalID,
-			&ref.SourceURL,
-			&ref.Title,
-			&ref.CaptureHash,
-			&firstSeenAt,
-			&capturedAt,
-			&synthesizedAt,
-			&ref.DigestRole,
-		); err != nil {
-			return nil, err
-		}
-		if firstSeenAt != nil {
-			value := firstSeenAt.UTC()
-			ref.FirstSeenAt = &value
-		}
-		if capturedAt != nil {
-			value := capturedAt.UTC()
-			ref.CapturedAt = &value
-		}
-		if synthesizedAt != nil {
-			value := synthesizedAt.UTC()
-			ref.SynthesizedAt = &value
-		}
 		refs = append(refs, ref)
 	}
 	if err := rows.Err(); err != nil {
@@ -994,17 +922,6 @@ func upsertInsights(ctx context.Context, tx pgx.Tx, sourceItemID string, sourceC
 		}
 	}
 	return insightIDs, nil
-}
-
-func updateSynthesisSummaryObject(ctx context.Context, tx pgx.Tx, sourceCaptureID string, synthesis knowledge.SynthesisRecord, summaryObjectID string) error {
-	_, err := tx.Exec(ctx, `
-		update knowledge_syntheses
-		set summary_object_id = $1
-		where source_capture_id = $2
-		  and prompt_version = $3
-		  and model = $4
-	`, summaryObjectID, sourceCaptureID, synthesis.PromptVersion, synthesis.Model)
-	return err
 }
 
 func upsertSourceChunks(ctx context.Context, tx pgx.Tx, sourceItemID string, sourceCaptureID string, source knowledge.ProcessedSource) (map[int]string, error) {

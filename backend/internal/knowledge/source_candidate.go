@@ -74,23 +74,6 @@ func candidatesFromVideos(items []YouTubeItem) []sourceCandidate {
 	return candidates
 }
 
-func youtubeMetadataBody(item YouTubeItem) string {
-	parts := []string{
-		"Title: " + strings.TrimSpace(item.Title),
-		"Channel: " + strings.TrimSpace(item.ChannelTitle),
-		"Published: " + strings.TrimSpace(item.PublishedAt),
-		"Source: " + strings.TrimSpace(item.SourceURL),
-		"Transcript status: " + strings.TrimSpace(item.TranscriptStatus),
-	}
-	if strings.TrimSpace(item.Description) != "" {
-		parts = append(parts, "Description: "+strings.TrimSpace(item.Description))
-	}
-	if strings.TrimSpace(item.TranscriptError) != "" {
-		parts = append(parts, "Transcript note: "+strings.TrimSpace(item.TranscriptError))
-	}
-	return strings.Join(compact(parts), "\n")
-}
-
 func (candidate sourceCandidate) captureHash() string {
 	hash := sha256.Sum256([]byte(strings.Join([]string{
 		string(candidate.sourceType),
