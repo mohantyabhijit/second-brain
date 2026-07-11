@@ -3,6 +3,7 @@ package httpapi
 import (
 	"context"
 	"encoding/base64"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -15,6 +16,32 @@ import (
 	"github.com/abhijitmohanty/second-brain/backend/internal/platform/logging"
 	"github.com/abhijitmohanty/second-brain/backend/internal/store/localfile"
 )
+
+func TestSupabaseAuthResponseIsBoundedAndStrict(t *testing.T) {
+	tests := []struct {
+		name string
+		body string
+	}{
+		{name: "oversized", body: fmt.Sprintf(`{"id":"%s"}`, strings.Repeat("a", maxAuthResponseBytes))},
+		{name: "multiple values", body: `{"id":"user-1"} {"id":"user-2"}`},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				_, _ = w.Write([]byte(test.body))
+			}))
+			t.Cleanup(server.Close)
+			cfg := testConfig(t)
+			cfg.SupabaseURL = server.URL
+			cfg.SupabasePublishableKey = "publishable-test-key"
+
+			_, hasBearer, err := readSupabaseAuthUser(context.Background(), cfg, "Bearer token")
+			if !hasBearer || err == nil {
+				t.Fatalf("expected bounded strict auth response rejection, hasBearer=%v err=%v", hasBearer, err)
+			}
+		})
+	}
+}
 
 func TestOperatorRoutesRequireSupabaseAuthentication(t *testing.T) {
 	cfg := testConfig(t)

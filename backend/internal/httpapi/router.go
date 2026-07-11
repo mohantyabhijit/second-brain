@@ -39,6 +39,8 @@ type supabaseAuthUser struct {
 const (
 	maxJSONBodyBytes     = 1 << 20
 	maxIllustrationBytes = 20 << 20
+	maxAuthResponseBytes = 64 << 10
+	authRequestTimeout   = 10 * time.Second
 )
 
 func NewRouter(cfg config.Config, service *knowledge.Service, logger *logging.Logger) http.Handler {
@@ -569,7 +571,9 @@ func readSupabaseAuthUser(ctx context.Context, cfg config.Config, authorization 
 	if baseURL == "" || publishableKey == "" {
 		return supabaseAuthUser{}, true, fmt.Errorf("Supabase auth is not configured.")
 	}
-	request, err := http.NewRequestWithContext(ctx, http.MethodGet, baseURL+"/auth/v1/user", nil)
+	requestContext, cancel := context.WithTimeout(ctx, authRequestTimeout)
+	defer cancel()
+	request, err := http.NewRequestWithContext(requestContext, http.MethodGet, baseURL+"/auth/v1/user", nil)
 	if err != nil {
 		return supabaseAuthUser{}, true, err
 	}
@@ -584,7 +588,12 @@ func readSupabaseAuthUser(ctx context.Context, cfg config.Config, authorization 
 		return supabaseAuthUser{}, true, fmt.Errorf("Supabase session is invalid or expired.")
 	}
 	var user supabaseAuthUser
-	if err := json.NewDecoder(response.Body).Decode(&user); err != nil {
+	decoder := json.NewDecoder(io.LimitReader(response.Body, maxAuthResponseBytes+1))
+	if err := decoder.Decode(&user); err != nil {
+		return supabaseAuthUser{}, true, fmt.Errorf("Supabase auth response could not be decoded.")
+	}
+	var trailing any
+	if err := decoder.Decode(&trailing); err != io.EOF {
 		return supabaseAuthUser{}, true, fmt.Errorf("Supabase auth response could not be decoded.")
 	}
 	user.ID = strings.TrimSpace(user.ID)
