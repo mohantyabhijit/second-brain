@@ -50,3 +50,26 @@ and do not use `npm audit fix --force` to bypass compatibility gates.
   review.
 - Deployment, environment, OneCLI, OAuth state/token, Redis, database, object
   storage, and observability configuration review.
+
+## API Trust-Boundary Findings
+
+### Remediated
+
+- Required a validated Supabase session for both X OAuth start entrypoints. The
+  legacy redirect endpoint previously allowed an anonymous caller to create an
+  OAuth flow scoped to the public owner workspace.
+- Marked authenticated knowledge-graph reads `private, no-store`; they
+  previously inherited public shared-cache headers even when resolved to a
+  private owner.
+- Replaced four permissive JSON decoders with one strict decoder that caps
+  mutation bodies at 1 MiB, rejects unknown fields, and rejects trailing JSON.
+- Added `nosniff`, `no-referrer`, and frame-denial headers consistently across
+  API responses.
+- Restricted persisted digest illustrations to an explicit raster image MIME
+  allowlist and a 20 MiB decoded-size limit. Arbitrary persisted content types
+  can no longer be served as immutable public images.
+
+Regression coverage proves anonymous operator routes fail closed, strict JSON
+parsing rejects ambiguous and oversized payloads, authenticated graph data is
+not publicly cacheable, unsafe illustration media is rejected, and baseline
+security headers are present.
