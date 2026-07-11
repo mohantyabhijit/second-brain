@@ -418,7 +418,7 @@ func xTokenRefreshNeedsReauthorization(err error) bool {
 	if err == nil {
 		return false
 	}
-	message := strings.ToLower(err.Error())
+	message := strings.ToLower(providerErrorDetail(err))
 	return strings.Contains(message, "invalid_request") ||
 		strings.Contains(message, "invalid_grant") ||
 		strings.Contains(message, "value passed for the token was invalid")

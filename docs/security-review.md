@@ -94,6 +94,13 @@ Gosec initially reported 32 candidates. Confirmed findings were remediated:
 - Rotated X-token environment writes now handle errors, transaction rollback
   intent is explicit, and OneCLI secret-update failures no longer include
   command output that could contain sensitive provider detail.
+- Provider HTTP responses are capped at 10 MiB. Non-success response bodies are
+  retained only inside a private typed error for internal recovery decisions
+  such as X reauthorization; public/log error strings contain only host and
+  status.
+- Feedback and tweet-share metadata now has explicit target, note, and URL
+  bounds. Only absolute HTTP(S) source URLs are accepted, and tweet targets are
+  validated before the external X post side effect occurs.
 
 The remaining gosec candidates are reviewed false positives or controlled
 operational boundaries: constant *names* of secret slots, production-conditional

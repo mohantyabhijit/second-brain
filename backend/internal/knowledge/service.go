@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"os/exec"
 	"strings"
 	"sync"
@@ -984,10 +985,40 @@ func (s *Service) SaveFeedback(ctx context.Context, event FeedbackEvent) error {
 	default:
 		return fmt.Errorf("unsupported feedback signal %q", event.Signal)
 	}
-	if strings.TrimSpace(event.TargetType) == "" || strings.TrimSpace(event.TargetID) == "" {
-		return fmt.Errorf("targetType and targetId are required")
+	if err := validateFeedbackEvent(event); err != nil {
+		return err
 	}
 	return s.store.SaveFeedback(ctx, event)
+}
+
+func validateFeedbackEvent(event FeedbackEvent) error {
+	targetType := strings.TrimSpace(event.TargetType)
+	targetID := strings.TrimSpace(event.TargetID)
+	if targetType == "" || targetID == "" {
+		return fmt.Errorf("targetType and targetId are required")
+	}
+	if len(targetType) > 64 || len(targetID) > 256 {
+		return fmt.Errorf("feedback target is too long")
+	}
+	if len(event.Note) > 2000 {
+		return fmt.Errorf("feedback note is too long")
+	}
+	return validateOptionalPublicURL(event.SourceURL)
+}
+
+func validateOptionalPublicURL(value string) error {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return nil
+	}
+	if len(value) > 2048 {
+		return fmt.Errorf("sourceUrl is too long")
+	}
+	parsed, err := url.Parse(value)
+	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" {
+		return fmt.Errorf("sourceUrl must be an absolute http or https URL")
+	}
+	return nil
 }
 
 func (s *Service) GenerateDigest(ctx context.Context) (*DigestIssue, error) {
