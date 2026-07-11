@@ -118,7 +118,7 @@ func logLatestInputCounts(ctx context.Context, service *knowledge.Service, logge
 }
 
 func writeExperimentReport(outputDir string, report *knowledge.NewsletterExperimentReport) (string, string, error) {
-	if err := os.MkdirAll(outputDir, 0o755); err != nil {
+	if err := os.MkdirAll(outputDir, 0o700); err != nil {
 		return "", "", err
 	}
 	base := report.ID
@@ -129,10 +129,10 @@ func writeExperimentReport(outputDir string, report *knowledge.NewsletterExperim
 	if err != nil {
 		return "", "", err
 	}
-	if err := os.WriteFile(jsonPath, append(raw, '\n'), 0o644); err != nil {
+	if err := os.WriteFile(jsonPath, append(raw, '\n'), 0o600); err != nil {
 		return "", "", err
 	}
-	if err := os.WriteFile(mdPath, []byte(renderExperimentMarkdown(report)), 0o644); err != nil {
+	if err := os.WriteFile(mdPath, []byte(renderExperimentMarkdown(report)), 0o600); err != nil {
 		return "", "", err
 	}
 	return jsonPath, mdPath, nil

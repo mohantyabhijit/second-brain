@@ -2,6 +2,7 @@ package localfile
 
 import (
 	"context"
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -19,6 +20,33 @@ func TestReadLatestReturnsNilWhenRunFileDoesNotExist(t *testing.T) {
 	}
 	if latest != nil {
 		t.Fatalf("expected nil latest for missing file, got %#v", latest)
+	}
+}
+
+func TestLocalStoreCreatesPrivateRunAndFeedbackFiles(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "runtime", "latest.json")
+	store := New(path)
+	if err := store.SaveRun(context.Background(), knowledge.Result{}, nil); err != nil {
+		t.Fatalf("save run: %v", err)
+	}
+	if err := store.SaveFeedback(context.Background(), knowledge.FeedbackEvent{TargetType: "insight", TargetID: "1", Signal: "useful"}); err != nil {
+		t.Fatalf("save feedback: %v", err)
+	}
+	for _, file := range []string{path, path + ".feedback.jsonl"} {
+		info, err := os.Stat(file)
+		if err != nil {
+			t.Fatalf("stat %s: %v", file, err)
+		}
+		if got := info.Mode().Perm(); got != 0o600 {
+			t.Fatalf("%s mode = %o, want 600", file, got)
+		}
+	}
+	info, err := os.Stat(filepath.Dir(path))
+	if err != nil {
+		t.Fatalf("stat runtime directory: %v", err)
+	}
+	if got := info.Mode().Perm(); got != 0o700 {
+		t.Fatalf("runtime directory mode = %o, want 700", got)
 	}
 }
 

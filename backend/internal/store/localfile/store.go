@@ -201,11 +201,11 @@ func (s *Store) SaveRun(ctx context.Context, result knowledge.Result, sources []
 	}
 	raw = append(raw, '\n')
 
-	if err := os.MkdirAll(filepath.Dir(s.path), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(s.path), 0o700); err != nil {
 		return err
 	}
 	tempPath := s.path + ".tmp"
-	if err := os.WriteFile(tempPath, raw, 0o644); err != nil {
+	if err := os.WriteFile(tempPath, raw, 0o600); err != nil {
 		return err
 	}
 	return os.Rename(tempPath, s.path)
@@ -220,10 +220,10 @@ func (s *Store) SaveFeedback(ctx context.Context, event knowledge.FeedbackEvent)
 		return err
 	}
 	feedbackPath := s.path + ".feedback.jsonl"
-	if err := os.MkdirAll(filepath.Dir(feedbackPath), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(feedbackPath), 0o700); err != nil {
 		return err
 	}
-	file, err := os.OpenFile(feedbackPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+	file, err := os.OpenFile(feedbackPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
 	if err != nil {
 		return err
 	}
@@ -423,7 +423,7 @@ func (s *Store) writeTranscriptRequests(records map[string]transcriptRequestReco
 	}
 	raw = append(raw, '\n')
 	path := s.path + ".youtube-transcript-requests.json"
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return err
 	}
 	tempPath := path + ".tmp"

@@ -313,8 +313,12 @@ func (s *Service) refreshXAccessToken(ctx context.Context) (string, error) {
 	if payload.ExpiresIn > 0 {
 		expiresAt = rotatedAt.Add(time.Duration(payload.ExpiresIn) * time.Second)
 	}
-	os.Setenv("X_USER_ACCESS_TOKEN", strings.TrimSpace(payload.AccessToken))
-	os.Setenv("X_REFRESH_TOKEN", strings.TrimSpace(payload.RefreshToken))
+	if err := os.Setenv("X_USER_ACCESS_TOKEN", strings.TrimSpace(payload.AccessToken)); err != nil {
+		return "", fmt.Errorf("set rotated X access token: %w", err)
+	}
+	if err := os.Setenv("X_REFRESH_TOKEN", strings.TrimSpace(payload.RefreshToken)); err != nil {
+		return "", fmt.Errorf("set rotated X refresh token: %w", err)
+	}
 	if strings.TrimSpace(s.cfg.XTokenEncryptionKey) != "" {
 		if err := s.saveXTokenSet(ctx, XTokenSet{
 			AccessToken:     strings.TrimSpace(payload.AccessToken),
@@ -525,7 +529,7 @@ func (s *Service) updateOneCLISecret(ctx context.Context, id string, value strin
 	cmd := exec.CommandContext(updateCtx, s.cfg.OneCLIBin, "secrets", "update", "--id", id, "--value", value)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("%v: %s", err, strings.TrimSpace(string(output)))
+		return fmt.Errorf("update OneCLI secret: %w", err)
 	}
 	var response struct {
 		Status string `json:"status"`

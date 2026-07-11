@@ -73,3 +73,34 @@ Regression coverage proves anonymous operator routes fail closed, strict JSON
 parsing rejects ambiguous and oversized payloads, authenticated graph data is
 not publicly cacheable, unsafe illustration media is rejected, and baseline
 security headers are present.
+
+## Secret and Static-Analysis Review
+
+The redacted full-history Gitleaks scan reported five candidates. Manual review
+confirmed all five are non-secret test fixtures, environment-variable
+references, or the Stripe publishable key intentionally embedded for browser
+checkout. No private credential was confirmed in tracked history. Production
+bundle scanning found configuration identifier strings, but no private-key
+material or server-side credential value.
+
+Gosec initially reported 32 candidates. Confirmed findings were remediated:
+
+- Local knowledge-run and feedback files now use mode `0600`; their runtime
+  directories use `0700`.
+- Transcript-request ledgers, source artifacts, and newsletter experiment
+  reports now use private file/directory modes.
+- The memory-profile timestamp conversion clamps unsigned nanoseconds before
+  conversion to a signed duration.
+- Rotated X-token environment writes now handle errors, transaction rollback
+  intent is explicit, and OneCLI secret-update failures no longer include
+  command output that could contain sensitive provider detail.
+
+The remaining gosec candidates are reviewed false positives or controlled
+operational boundaries: constant *names* of secret slots, production-conditional
+cookie security, argv-based (not shell-based) execution of configured OneCLI,
+macOS Keychain, and sibling deployment binaries, operator-selected migration
+and lint paths, administrator-selected CA bundle paths, and an embedding index
+guarded by a preceding equal-length check. These remain documented because
+subprocess arguments containing rotated credentials can be visible to a local
+same-host process observer; eliminating that residual requires OneCLI/Keychain
+support for stdin or file-descriptor secret input.

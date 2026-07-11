@@ -675,7 +675,7 @@ func (s *Store) beginWriteTx(ctx context.Context) (pgx.Tx, error) {
 		set local statement_timeout = '45s';
 		set local idle_in_transaction_session_timeout = '60s'
 	`); err != nil {
-		tx.Rollback(ctx)
+		_ = tx.Rollback(ctx)
 		return nil, err
 	}
 	return tx, nil
