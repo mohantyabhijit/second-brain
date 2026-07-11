@@ -1,4 +1,4 @@
-import type { AppState, AskSecondBrainResponse, DigestIssue, FeedbackSignal, InsightGraphResponse, KnowledgeRunResult, RefreshStatus, SourceCounts, SourceProviderConnection, WorkspaceStatus } from "../contracts";
+import type { AppState, AskSecondBrainResponse, DigestIssue, FeedbackSignal, InsightGraphResponse, KnowledgeRunResult, RefreshStatus, SourceCounts } from "../contracts";
 import { tryCreateClient } from "../../../utils/supabase/client";
 
 export type AppStateView = "insights" | "daily-newsletter" | "original-x-posts" | "original-youtube-posts" | "knowledge-graph";
@@ -96,18 +96,6 @@ export async function saveKnowledgeFeedback(input: {
   });
 }
 
-export async function shareInsightToX(input: {
-  targetType: string;
-  targetId: string;
-  text: string;
-  sourceUrl?: string;
-}) {
-  return request<{ id: string; text: string }>("/api/share/tweet", {
-    method: "POST",
-    body: JSON.stringify(input)
-  });
-}
-
 export async function askSecondBrain(input: { question: string; useLatest?: boolean }) {
   return request<AskSecondBrainResponse>("/api/ask", {
     method: "POST",
@@ -119,21 +107,6 @@ export async function readInsightGraph(limit = 180) {
   const params = new URLSearchParams({ limit: String(limit) });
   const payload = await request<InsightGraphResponse>(`/api/knowledge-graph/insights?${params.toString()}`);
   return normalizeInsightGraph(payload);
-}
-
-export async function readWorkspaceStatus() {
-  return request<WorkspaceStatus>("/api/workspace");
-}
-
-export async function startXAuth() {
-  return request<{ url: string }>("/api/auth/x/start");
-}
-
-export async function saveYouTubePlaylist(input: { playlistId?: string; playlistUrl?: string }) {
-  return request<SourceProviderConnection>("/api/source-connections/youtube", {
-    method: "POST",
-    body: JSON.stringify(input)
-  });
 }
 
 function normalizeKnowledgeRun(result: KnowledgeRunResult): KnowledgeRunResult {
