@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -94,7 +95,7 @@ func (s *Service) fetchXBookmarks(ctx context.Context, limit int) ([]XBookmark, 
 		return nil, err
 	}
 	if accessToken == "" && os.Getenv("X_USER_ACCESS_TOKEN") == "" && !s.cfg.OneCLIGateway {
-		return nil, fmt.Errorf(credentialHint("X_USER_ACCESS_TOKEN"))
+		return nil, errors.New(credentialHint("X_USER_ACCESS_TOKEN"))
 	}
 
 	profile, err := s.fetchXAuthenticatedProfile(ctx, accessToken)
@@ -146,7 +147,7 @@ func (s *Service) CheckXAuth(ctx context.Context) (*XAuthenticatedProfile, error
 		return nil, err
 	}
 	if accessToken == "" && os.Getenv("X_USER_ACCESS_TOKEN") == "" && !s.cfg.OneCLIGateway {
-		return nil, fmt.Errorf(credentialHint("X_USER_ACCESS_TOKEN"))
+		return nil, errors.New(credentialHint("X_USER_ACCESS_TOKEN"))
 	}
 	return s.fetchXAuthenticatedProfile(ctx, accessToken)
 }

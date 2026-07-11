@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -180,7 +181,7 @@ type openAIUsage struct {
 
 func (s *Service) fetchPlaylistItems(ctx context.Context, playlistID string, limit int) ([]YouTubeItem, error) {
 	if os.Getenv("YOUTUBE_API_KEY") == "" && os.Getenv("YOUTUBE_ACCESS_TOKEN") == "" && !s.cfg.OneCLIGateway {
-		return nil, fmt.Errorf(credentialHint("YOUTUBE_API_KEY or YOUTUBE_ACCESS_TOKEN"))
+		return nil, errors.New(credentialHint("YOUTUBE_API_KEY or YOUTUBE_ACCESS_TOKEN"))
 	}
 
 	headers := authHeader("YOUTUBE_ACCESS_TOKEN", "Bearer {value}")
@@ -347,7 +348,7 @@ func (s *Service) fetchSupadataTranscriptAttempt(ctx context.Context, videoID st
 func (s *Service) translateTranscriptPreviewToEnglish(ctx context.Context, text string, sourceLang string) (string, error) {
 	token := os.Getenv("OPENAI_API_KEY")
 	if token == "" && !s.cfg.OneCLIGateway {
-		return "", fmt.Errorf(credentialHint("OPENAI_API_KEY"))
+		return "", errors.New(credentialHint("OPENAI_API_KEY"))
 	}
 	ctx, span := s.startObservationSpan(ctx, observationOptions{
 		Name:          "youtube-transcript-translation",

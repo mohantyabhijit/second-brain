@@ -667,7 +667,7 @@ func (s *Service) RunCycle(ctx context.Context) (RunOutcome, error) {
 			setSpanOutputSummary(span, map[string]any{"new_content": false, "skipped_reason": "source_material_lookup_failed"})
 			return RunOutcome{Result: *latest, NewContent: false, SkippedReason: "source_material_lookup_failed"}, nil
 		}
-		err := fmt.Errorf(strings.Join(materialBlockers, "; "))
+		err := errors.New(strings.Join(materialBlockers, "; "))
 		setSpanError(span, err)
 		setSpanOutputSummary(span, map[string]any{"new_content": false, "skipped_reason": "source_material_lookup_failed"})
 		return RunOutcome{Result: result, NewContent: false, SkippedReason: "source_material_lookup_failed"}, err
