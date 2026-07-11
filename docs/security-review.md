@@ -39,7 +39,7 @@ current exploitability but does not erase the dependency finding. Retain it as
 a monitored residual, upgrade as soon as Next.js ships a fixed stable release,
 and do not use `npm audit fix --force` to bypass compatibility gates.
 
-## Required Remaining Review Lanes
+## Completed Review Lanes
 
 - Repository and history secret scanning, plus build-artifact data-exposure
   checks without printing secret values.
@@ -50,6 +50,10 @@ and do not use `npm audit fix --force` to bypass compatibility gates.
   review.
 - Deployment, environment, OneCLI, OAuth state/token, Redis, database, object
   storage, and observability configuration review.
+
+All lanes above were completed during this effort. Confirmed in-scope findings
+are listed below; scanner-only residuals and operational limitations are retained
+explicitly rather than treated as silently resolved.
 
 ## API Trust-Boundary Findings
 
@@ -68,6 +72,10 @@ and do not use `npm audit fix --force` to bypass compatibility gates.
 - Restricted persisted digest illustrations to an explicit raster image MIME
   allowlist and a 20 MiB decoded-size limit. Arbitrary persisted content types
   can no longer be served as immutable public images.
+- Bounded Supabase user validation to ten seconds and 64 KiB, and rejected
+  malformed or multi-value auth responses.
+- Streamed Base64 illustration decoding through the size limit so an exact
+  20 MiB image remains valid without permitting a larger allocation.
 
 Regression coverage proves anonymous operator routes fail closed, strict JSON
 parsing rejects ambiguous and oversized payloads, authenticated graph data is
