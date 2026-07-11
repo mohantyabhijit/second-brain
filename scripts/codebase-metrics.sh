@@ -38,7 +38,8 @@ frontend_tests="$(
 
 edge_tests="$(node --test --test-reporter=tap cloudflare/*.test.mjs | awk '/^ok [0-9]+ - / { count++ } END { print count + 0 }')"
 ops_tests="$(node --test --test-reporter=tap scripts/*.test.mjs | awk '/^ok [0-9]+ - / { count++ } END { print count + 0 }')"
-total_tests="$((go_tests + frontend_tests + edge_tests + ops_tests))"
+e2e_tests="$(npm exec -- playwright test --list --project=chromium | awk '/^  \[[^]]+\] › / { count++ } END { print count + 0 }')"
+total_tests="$((go_tests + frontend_tests + edge_tests + ops_tests + e2e_tests))"
 
 jq -n \
   --argjson production_loc "$production_loc" \
@@ -47,6 +48,7 @@ jq -n \
   --argjson frontend_tests "$frontend_tests" \
   --argjson edge_tests "$edge_tests" \
   --argjson ops_tests "$ops_tests" \
+  --argjson e2e_tests "$e2e_tests" \
   --argjson total_tests "$total_tests" \
   '{
     production_loc: $production_loc,
@@ -56,6 +58,7 @@ jq -n \
       frontend: $frontend_tests,
       edge: $edge_tests,
       ops: $ops_tests,
+      e2e: $e2e_tests,
       total: $total_tests
     }
   }'
