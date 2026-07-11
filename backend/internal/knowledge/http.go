@@ -3,6 +3,7 @@ package knowledge
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -11,6 +12,29 @@ import (
 	"strings"
 	"time"
 )
+
+const maxProviderResponseBytes = 10 << 20
+
+type providerHTTPError struct {
+	host   string
+	status string
+	detail string
+}
+
+func (e *providerHTTPError) Error() string {
+	return fmt.Sprintf("%s returned %s", e.host, e.status)
+}
+
+func providerErrorDetail(err error) string {
+	var providerErr *providerHTTPError
+	if errors.As(err, &providerErr) {
+		return providerErr.detail
+	}
+	if err == nil {
+		return ""
+	}
+	return err.Error()
+}
 
 func (s *Service) requestJSON(ctx context.Context, method string, url string, headers http.Header, body io.Reader, target any) error {
 	return requestJSONWithClient(ctx, s.client, method, url, headers, body, target)
@@ -33,12 +57,15 @@ func requestJSONWithClient(ctx context.Context, client *http.Client, method stri
 	}
 	defer response.Body.Close()
 
-	raw, err := io.ReadAll(response.Body)
+	raw, err := io.ReadAll(io.LimitReader(response.Body, maxProviderResponseBytes+1))
 	if err != nil {
 		return err
 	}
+	if len(raw) > maxProviderResponseBytes {
+		return fmt.Errorf("%s response exceeds %d bytes", req.URL.Host, maxProviderResponseBytes)
+	}
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		return fmt.Errorf("%s %s: %s", req.URL.Host, response.Status, strings.TrimSpace(string(raw)))
+		return &providerHTTPError{host: req.URL.Host, status: response.Status, detail: strings.TrimSpace(string(raw))}
 	}
 	if len(raw) == 0 {
 		return nil

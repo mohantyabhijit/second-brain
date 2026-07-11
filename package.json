@@ -15,6 +15,9 @@
     "lint": "npm --prefix frontend run lint && npm run backend:lint",
     "typecheck": "npm --prefix frontend run typecheck",
     "frontend:test": "npm --prefix frontend run test",
+    "frontend:coverage": "npm --prefix frontend run coverage",
+    "e2e:build": "NEXT_PUBLIC_API_BASE_URL=http://127.0.0.1:8080 npm run build",
+    "e2e:test": "npm run e2e:build && playwright test",
     "backend:dev": "bash scripts/run-backend-onecli.sh",
     "refresh:run": "bash scripts/run-refresh-onecli.sh",
     "digest:run": "bash scripts/run-digest-onecli.sh",
@@ -53,5 +56,9 @@
   },
   "workspaces": [
     "frontend"
-  ]
+  ],
+  "devDependencies": {
+    "@playwright/test": "^1.61.1",
+    "@vitest/coverage-v8": "^4.1.10"
+  }
 }

@@ -82,7 +82,7 @@ func registerProfilingRoutes(mux *http.ServeMux, cfg config.Config, logger *logg
 			GoroutineProfilePath: "/api/debug/pprof/goroutine?debug=1",
 		}
 		if stats.LastGC != 0 {
-			response.LastGCTimestamp = time.Unix(0, int64(stats.LastGC)).UTC().Format(time.RFC3339Nano)
+			response.LastGCTimestamp = unixNanoTimestamp(stats.LastGC)
 		}
 		httputil.JSON(w, http.StatusOK, response)
 	})
@@ -93,6 +93,14 @@ func registerProfilingRoutes(mux *http.ServeMux, cfg config.Config, logger *logg
 	mux.Handle("GET /api/debug/pprof/profile", requireToken(pprofHandler(pprof.Profile)))
 	mux.Handle("GET /api/debug/pprof/symbol", requireToken(pprofHandler(pprof.Symbol)))
 	mux.Handle("GET /api/debug/pprof/trace", requireToken(pprofHandler(pprof.Trace)))
+}
+
+func unixNanoTimestamp(value uint64) string {
+	const maxInt64 = uint64(^uint64(0) >> 1)
+	if value > maxInt64 {
+		value = maxInt64
+	}
+	return time.Unix(0, int64(value)).UTC().Format(time.RFC3339Nano)
 }
 
 func pprofHandler(handler func(http.ResponseWriter, *http.Request)) http.Handler {

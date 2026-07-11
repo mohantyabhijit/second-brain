@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -94,7 +95,7 @@ func (s *Service) fetchXBookmarks(ctx context.Context, limit int) ([]XBookmark, 
 		return nil, err
 	}
 	if accessToken == "" && os.Getenv("X_USER_ACCESS_TOKEN") == "" && !s.cfg.OneCLIGateway {
-		return nil, fmt.Errorf(credentialHint("X_USER_ACCESS_TOKEN"))
+		return nil, errors.New(credentialHint("X_USER_ACCESS_TOKEN"))
 	}
 
 	profile, err := s.fetchXAuthenticatedProfile(ctx, accessToken)
@@ -146,7 +147,7 @@ func (s *Service) CheckXAuth(ctx context.Context) (*XAuthenticatedProfile, error
 		return nil, err
 	}
 	if accessToken == "" && os.Getenv("X_USER_ACCESS_TOKEN") == "" && !s.cfg.OneCLIGateway {
-		return nil, fmt.Errorf(credentialHint("X_USER_ACCESS_TOKEN"))
+		return nil, errors.New(credentialHint("X_USER_ACCESS_TOKEN"))
 	}
 	return s.fetchXAuthenticatedProfile(ctx, accessToken)
 }
@@ -312,8 +313,12 @@ func (s *Service) refreshXAccessToken(ctx context.Context) (string, error) {
 	if payload.ExpiresIn > 0 {
 		expiresAt = rotatedAt.Add(time.Duration(payload.ExpiresIn) * time.Second)
 	}
-	os.Setenv("X_USER_ACCESS_TOKEN", strings.TrimSpace(payload.AccessToken))
-	os.Setenv("X_REFRESH_TOKEN", strings.TrimSpace(payload.RefreshToken))
+	if err := os.Setenv("X_USER_ACCESS_TOKEN", strings.TrimSpace(payload.AccessToken)); err != nil {
+		return "", fmt.Errorf("set rotated X access token: %w", err)
+	}
+	if err := os.Setenv("X_REFRESH_TOKEN", strings.TrimSpace(payload.RefreshToken)); err != nil {
+		return "", fmt.Errorf("set rotated X refresh token: %w", err)
+	}
 	if strings.TrimSpace(s.cfg.XTokenEncryptionKey) != "" {
 		if err := s.saveXTokenSet(ctx, XTokenSet{
 			AccessToken:     strings.TrimSpace(payload.AccessToken),
@@ -413,7 +418,7 @@ func xTokenRefreshNeedsReauthorization(err error) bool {
 	if err == nil {
 		return false
 	}
-	message := strings.ToLower(err.Error())
+	message := strings.ToLower(providerErrorDetail(err))
 	return strings.Contains(message, "invalid_request") ||
 		strings.Contains(message, "invalid_grant") ||
 		strings.Contains(message, "value passed for the token was invalid")
@@ -524,7 +529,7 @@ func (s *Service) updateOneCLISecret(ctx context.Context, id string, value strin
 	cmd := exec.CommandContext(updateCtx, s.cfg.OneCLIBin, "secrets", "update", "--id", id, "--value", value)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("%v: %s", err, strings.TrimSpace(string(output)))
+		return fmt.Errorf("update OneCLI secret: %w", err)
 	}
 	var response struct {
 		Status string `json:"status"`

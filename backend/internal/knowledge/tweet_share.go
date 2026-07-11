@@ -21,6 +21,16 @@ func (s *Service) ShareTweet(ctx context.Context, input TweetShareRequest) (Twee
 	if text == "" {
 		return TweetShareResult{}, fmt.Errorf("tweet text is required")
 	}
+	feedback := FeedbackEvent{
+		TargetType: input.TargetType,
+		TargetID:   input.TargetID,
+		Signal:     "tweeted",
+		Note:       "tweet_pending",
+		SourceURL:  input.SourceURL,
+	}
+	if err := validateFeedbackEvent(feedback); err != nil {
+		return TweetShareResult{}, err
+	}
 	accessToken, err := s.refreshXAccessToken(ctx)
 	if err != nil {
 		return TweetShareResult{}, err
@@ -38,13 +48,7 @@ func (s *Service) ShareTweet(ctx context.Context, input TweetShareRequest) (Twee
 	if response.Data == nil || strings.TrimSpace(response.Data.ID) == "" {
 		return TweetShareResult{}, fmt.Errorf("create X post returned no post id")
 	}
-	feedback := FeedbackEvent{
-		TargetType: input.TargetType,
-		TargetID:   input.TargetID,
-		Signal:     "tweeted",
-		Note:       "tweet_id=" + response.Data.ID,
-		SourceURL:  input.SourceURL,
-	}
+	feedback.Note = "tweet_id=" + response.Data.ID
 	if err := s.SaveFeedback(ctx, feedback); err != nil {
 		s.log(ctx).Warn("save tweet feedback failed", "error", err)
 	}

@@ -78,6 +78,13 @@ func TestWriteEvidenceArtifactStoresOnFilesystem(t *testing.T) {
 	if string(raw) != "transcript body" {
 		t.Fatalf("unexpected stored body: %q", string(raw))
 	}
+	info, err := os.Stat(storedPath)
+	if err != nil {
+		t.Fatalf("stat stored artifact: %v", err)
+	}
+	if got := info.Mode().Perm(); got != 0o600 {
+		t.Fatalf("stored artifact mode = %o, want 600", got)
+	}
 }
 
 func TestFilesystemObjectPathRejectsTraversal(t *testing.T) {

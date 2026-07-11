@@ -4,8 +4,10 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"html"
+	"io"
 	"net/http"
 	"slices"
 	"strconv"
@@ -34,6 +36,13 @@ type supabaseAuthUser struct {
 	ID    string `json:"id"`
 	Email string `json:"email"`
 }
+
+const (
+	maxJSONBodyBytes     = 1 << 20
+	maxIllustrationBytes = 20 << 20
+	maxAuthResponseBytes = 64 << 10
+	authRequestTimeout   = 10 * time.Second
+)
 
 func NewRouter(cfg config.Config, service *knowledge.Service, logger *logging.Logger) http.Handler {
 	service.SetLogger(logger)
@@ -186,8 +195,7 @@ func NewRouter(cfg config.Config, service *knowledge.Service, logger *logging.Lo
 			return
 		}
 		var event knowledge.FeedbackEvent
-		if err := json.NewDecoder(r.Body).Decode(&event); err != nil {
-			httputil.Error(w, http.StatusBadRequest, "invalid feedback payload")
+		if !decodeJSONBody(w, r, &event, "invalid feedback payload") {
 			return
 		}
 		if err := scope.service.SaveFeedback(r.Context(), event); err != nil {
@@ -232,8 +240,12 @@ func NewRouter(cfg config.Config, service *knowledge.Service, logger *logging.Lo
 			httputil.Error(w, http.StatusNotFound, "digest illustration not found")
 			return
 		}
-		raw, err := base64.StdEncoding.DecodeString(illustration.Base64)
+		raw, err := decodeIllustration(illustration.Base64)
 		if err != nil {
+			if errors.Is(err, errIllustrationTooLarge) {
+				httputil.Error(w, http.StatusRequestEntityTooLarge, "digest illustration is too large")
+				return
+			}
 			logger.ErrorContext(r.Context(), "decode digest illustration", "digest_id", digestID, "error", err)
 			httputil.Error(w, http.StatusInternalServerError, "decode digest illustration")
 			return
@@ -241,6 +253,11 @@ func NewRouter(cfg config.Config, service *knowledge.Service, logger *logging.Lo
 		mimeType := strings.TrimSpace(illustration.MimeType)
 		if mimeType == "" {
 			mimeType = http.DetectContentType(raw)
+		}
+		mimeType, ok = safeImageMimeType(mimeType)
+		if !ok {
+			httputil.Error(w, http.StatusUnsupportedMediaType, "digest illustration has an unsupported content type")
+			return
 		}
 		w.Header().Set("Content-Type", mimeType)
 		w.Header().Set("Cache-Control", "public, max-age=31536000, s-maxage=31536000, immutable")
@@ -263,8 +280,7 @@ func NewRouter(cfg config.Config, service *knowledge.Service, logger *logging.Lo
 			return
 		}
 		var input knowledge.TweetShareRequest
-		if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-			httputil.Error(w, http.StatusBadRequest, "invalid tweet payload")
+		if !decodeJSONBody(w, r, &input, "invalid tweet payload") {
 			return
 		}
 		result, err := scope.service.ShareTweet(r.Context(), input)
@@ -282,8 +298,7 @@ func NewRouter(cfg config.Config, service *knowledge.Service, logger *logging.Lo
 			return
 		}
 		var input knowledge.AskSecondBrainRequest
-		if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-			httputil.Error(w, http.StatusBadRequest, "invalid ask payload")
+		if !decodeJSONBody(w, r, &input, "invalid ask payload") {
 			return
 		}
 		result, err := scope.service.AskSecondBrain(r.Context(), input)
@@ -311,7 +326,7 @@ func NewRouter(cfg config.Config, service *knowledge.Service, logger *logging.Lo
 			httputil.Error(w, http.StatusServiceUnavailable, err.Error())
 			return
 		}
-		setReadModelCacheHeaders(w)
+		setReadModelCacheHeadersForScope(w, scope)
 		httputil.JSON(w, http.StatusOK, graph)
 	}
 
@@ -347,7 +362,7 @@ func NewRouter(cfg config.Config, service *knowledge.Service, logger *logging.Lo
 	}
 
 	startXAuth := func(w http.ResponseWriter, r *http.Request) {
-		scope, ok := resolveScope(w, r, false)
+		scope, ok := resolveScope(w, r, true)
 		if !ok {
 			return
 		}
@@ -423,8 +438,7 @@ func NewRouter(cfg config.Config, service *knowledge.Service, logger *logging.Lo
 			return
 		}
 		var input knowledge.YouTubePlaylistInput
-		if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-			httputil.Error(w, http.StatusBadRequest, "invalid YouTube playlist payload")
+		if !decodeJSONBody(w, r, &input, "invalid YouTube playlist payload") {
 			return
 		}
 		connection, err := scope.service.SaveYouTubePlaylist(r.Context(), input)
@@ -455,7 +469,46 @@ func NewRouter(cfg config.Config, service *knowledge.Service, logger *logging.Lo
 	mux.HandleFunc("POST /api/debug/langfuse/sample-digest", generateLangfuseSampleDigest)
 	registerProfilingRoutes(mux, cfg, logger)
 
-	return requestLogger(logger, cors(cfg.AllowedOrigins, mux))
+	return requestLogger(logger, securityHeaders(cors(cfg.AllowedOrigins, mux)))
+}
+
+func decodeJSONBody(w http.ResponseWriter, r *http.Request, target any, message string) bool {
+	r.Body = http.MaxBytesReader(w, r.Body, maxJSONBodyBytes)
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(target); err != nil {
+		httputil.Error(w, http.StatusBadRequest, message)
+		return false
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		httputil.Error(w, http.StatusBadRequest, message)
+		return false
+	}
+	return true
+}
+
+func safeImageMimeType(value string) (string, bool) {
+	mimeType := strings.ToLower(strings.TrimSpace(strings.Split(value, ";")[0]))
+	switch mimeType {
+	case "image/avif", "image/gif", "image/jpeg", "image/png", "image/webp":
+		return mimeType, true
+	default:
+		return "", false
+	}
+}
+
+var errIllustrationTooLarge = errors.New("digest illustration is too large")
+
+func decodeIllustration(value string) ([]byte, error) {
+	decoder := base64.NewDecoder(base64.StdEncoding, strings.NewReader(value))
+	raw, err := io.ReadAll(io.LimitReader(decoder, maxIllustrationBytes+1))
+	if err != nil {
+		return nil, err
+	}
+	if len(raw) > maxIllustrationBytes {
+		return nil, errIllustrationTooLarge
+	}
+	return raw, nil
 }
 
 func setSessionCookie(w http.ResponseWriter, cfg config.Config, ownerID string, xUserID string) error {
@@ -533,7 +586,9 @@ func readSupabaseAuthUser(ctx context.Context, cfg config.Config, authorization 
 	if baseURL == "" || publishableKey == "" {
 		return supabaseAuthUser{}, true, fmt.Errorf("Supabase auth is not configured.")
 	}
-	request, err := http.NewRequestWithContext(ctx, http.MethodGet, baseURL+"/auth/v1/user", nil)
+	requestContext, cancel := context.WithTimeout(ctx, authRequestTimeout)
+	defer cancel()
+	request, err := http.NewRequestWithContext(requestContext, http.MethodGet, baseURL+"/auth/v1/user", nil)
 	if err != nil {
 		return supabaseAuthUser{}, true, err
 	}
@@ -548,7 +603,12 @@ func readSupabaseAuthUser(ctx context.Context, cfg config.Config, authorization 
 		return supabaseAuthUser{}, true, fmt.Errorf("Supabase session is invalid or expired.")
 	}
 	var user supabaseAuthUser
-	if err := json.NewDecoder(response.Body).Decode(&user); err != nil {
+	decoder := json.NewDecoder(io.LimitReader(response.Body, maxAuthResponseBytes+1))
+	if err := decoder.Decode(&user); err != nil {
+		return supabaseAuthUser{}, true, fmt.Errorf("Supabase auth response could not be decoded.")
+	}
+	var trailing any
+	if err := decoder.Decode(&trailing); err != io.EOF {
 		return supabaseAuthUser{}, true, fmt.Errorf("Supabase auth response could not be decoded.")
 	}
 	user.ID = strings.TrimSpace(user.ID)
@@ -650,6 +710,15 @@ func requestLogger(logger *logging.Logger, next http.Handler) http.Handler {
 		default:
 			logger.InfoContext(r.Context(), "http request completed", fields...)
 		}
+	})
+}
+
+func securityHeaders(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		w.Header().Set("Referrer-Policy", "no-referrer")
+		w.Header().Set("X-Frame-Options", "DENY")
+		next.ServeHTTP(w, r)
 	})
 }
 

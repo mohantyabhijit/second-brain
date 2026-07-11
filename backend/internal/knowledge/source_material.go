@@ -126,17 +126,3 @@ func sourceMaterialKeyForCandidate(candidate sourceCandidate, promptVersion stri
 		Model:         model,
 	}
 }
-
-func sourceMaterialKeysForCandidates(candidates []sourceCandidate, promptVersion string, model string) []SourceMaterialKey {
-	keys := make([]SourceMaterialKey, 0, len(candidates))
-	seen := map[string]bool{}
-	for _, candidate := range candidates {
-		key := sourceMaterialKeyForCandidate(candidate, promptVersion, model)
-		if key.ExternalID == "" || seen[key.String()] {
-			continue
-		}
-		seen[key.String()] = true
-		keys = append(keys, key)
-	}
-	return keys
-}

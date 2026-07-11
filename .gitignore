@@ -18,6 +18,9 @@ yarn-debug.log*
 yarn-error.log*
 tsconfig.tsbuildinfo
 frontend/tsconfig.tsbuildinfo
+frontend/coverage/
+playwright-report/
+test-results/
 .DS_Store
 
 # Keep only the local web fonts imported by frontend/app/layout.tsx.

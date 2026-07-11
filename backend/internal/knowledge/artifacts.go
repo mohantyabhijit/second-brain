@@ -116,7 +116,7 @@ func (s *Service) writeFilesystemStorageArtifact(ctx context.Context, artifact S
 		return artifact
 	}
 	tmpPath := fmt.Sprintf("%s.tmp-%d", objectPath, time.Now().UnixNano())
-	if err := os.WriteFile(tmpPath, raw, 0o640); err != nil {
+	if err := os.WriteFile(tmpPath, raw, 0o600); err != nil {
 		artifact.Error = fmt.Sprintf("filesystem object storage upload failed: %v", err)
 		s.log(ctx).Warn(label+" upload failed", "source", artifact.Source, "source_id", artifact.SourceID, "bucket", artifact.Bucket, "path", artifact.Path, "duration_ms", time.Since(start).Milliseconds(), "error", err)
 		return artifact

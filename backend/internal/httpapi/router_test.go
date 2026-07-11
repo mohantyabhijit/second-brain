@@ -609,6 +609,15 @@ func TestMemoryProfilingRoutesRequireOptInAndToken(t *testing.T) {
 	}
 }
 
+func TestUnixNanoTimestampClampsOverflow(t *testing.T) {
+	if got := unixNanoTimestamp(0); got != "1970-01-01T00:00:00Z" {
+		t.Fatalf("zero timestamp = %q", got)
+	}
+	if got := unixNanoTimestamp(^uint64(0)); got != "2262-04-11T23:47:16.854775807Z" {
+		t.Fatalf("clamped timestamp = %q", got)
+	}
+}
+
 func waitForLatestRun(t *testing.T, router http.Handler) knowledge.Result {
 	t.Helper()
 	deadline := time.Now().Add(2 * time.Second)
