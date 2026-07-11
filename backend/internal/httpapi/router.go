@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"html"
 	"io"
@@ -239,12 +240,12 @@ func NewRouter(cfg config.Config, service *knowledge.Service, logger *logging.Lo
 			httputil.Error(w, http.StatusNotFound, "digest illustration not found")
 			return
 		}
-		if base64.StdEncoding.DecodedLen(len(illustration.Base64)) > maxIllustrationBytes {
-			httputil.Error(w, http.StatusRequestEntityTooLarge, "digest illustration is too large")
-			return
-		}
-		raw, err := base64.StdEncoding.DecodeString(illustration.Base64)
+		raw, err := decodeIllustration(illustration.Base64)
 		if err != nil {
+			if errors.Is(err, errIllustrationTooLarge) {
+				httputil.Error(w, http.StatusRequestEntityTooLarge, "digest illustration is too large")
+				return
+			}
 			logger.ErrorContext(r.Context(), "decode digest illustration", "digest_id", digestID, "error", err)
 			httputil.Error(w, http.StatusInternalServerError, "decode digest illustration")
 			return
@@ -494,6 +495,20 @@ func safeImageMimeType(value string) (string, bool) {
 	default:
 		return "", false
 	}
+}
+
+var errIllustrationTooLarge = errors.New("digest illustration is too large")
+
+func decodeIllustration(value string) ([]byte, error) {
+	decoder := base64.NewDecoder(base64.StdEncoding, strings.NewReader(value))
+	raw, err := io.ReadAll(io.LimitReader(decoder, maxIllustrationBytes+1))
+	if err != nil {
+		return nil, err
+	}
+	if len(raw) > maxIllustrationBytes {
+		return nil, errIllustrationTooLarge
+	}
+	return raw, nil
 }
 
 func setSessionCookie(w http.ResponseWriter, cfg config.Config, ownerID string, xUserID string) error {

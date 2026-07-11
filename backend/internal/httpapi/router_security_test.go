@@ -3,6 +3,7 @@ package httpapi
 import (
 	"context"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -140,6 +141,28 @@ func TestDigestIllustrationsRejectUnsafePersistedContentTypes(t *testing.T) {
 	router.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/api/digests/digest-unsafe/illustration", nil))
 	if response.Code != http.StatusUnsupportedMediaType {
 		t.Fatalf("expected unsafe image type status 415, got %d with %q", response.Code, response.Header().Get("Content-Type"))
+	}
+}
+
+func TestDecodeIllustrationAcceptsExactLimitAndRejectsLargerPayloads(t *testing.T) {
+	for _, test := range []struct {
+		name    string
+		size    int
+		wantErr error
+	}{
+		{name: "exact limit", size: maxIllustrationBytes},
+		{name: "over limit", size: maxIllustrationBytes + 1, wantErr: errIllustrationTooLarge},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			encoded := base64.StdEncoding.EncodeToString(make([]byte, test.size))
+			raw, err := decodeIllustration(encoded)
+			if !errors.Is(err, test.wantErr) {
+				t.Fatalf("decode error = %v, want %v", err, test.wantErr)
+			}
+			if test.wantErr == nil && len(raw) != test.size {
+				t.Fatalf("decoded size = %d, want %d", len(raw), test.size)
+			}
+		})
 	}
 }
 
