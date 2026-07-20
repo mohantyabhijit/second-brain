@@ -592,6 +592,54 @@ h1 {
   background: var(--surface);
 }
 
+.auth-provider-group {
+  flex-wrap: wrap;
+}
+
+.auth-provider-button,
+.auth-action {
+  min-height: 42px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 0 12px;
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  font-weight: 820;
+  cursor: pointer;
+}
+
+.auth-provider-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.auth-provider-button:disabled,
+.auth-action:disabled {
+  cursor: wait;
+  opacity: 0.72;
+}
+
+.auth-provider-icon {
+  display: inline-grid;
+  width: 22px;
+  height: 22px;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  color: var(--ink);
+  font-size: 0.74rem;
+  line-height: 1;
+}
+
+.auth-provider-group p {
+  flex-basis: 100%;
+  margin: 0;
+  color: var(--muted);
+  text-align: right;
+}
+
 .auth-form {
   flex-wrap: wrap;
 }
@@ -2002,6 +2050,12 @@ blockquote {
     justify-content: center;
   }
 
+  .auth-provider-button,
+  .auth-action {
+    justify-content: center;
+    width: 100%;
+  }
+
   .auth-form input,
   .auth-form button,
   .onboarding-band button {
@@ -2009,6 +2063,10 @@ blockquote {
   }
 
   .auth-form p {
+    text-align: left;
+  }
+
+  .auth-provider-group p {
     text-align: left;
   }
 
