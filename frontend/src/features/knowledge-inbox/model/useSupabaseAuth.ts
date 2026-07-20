@@ -1,4 +1,117 @@
-import type { User } from "@supabase/supabase-js";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import type { Provider, User } from "@supabase/supabase-js";
+import { isSupabaseConfigured, tryCreateClient } from "../../../utils/supabase/client";
+
+export type SupabaseOAuthProvider = Extract<Provider, "apple" | "google">;
+
+type AuthUser = {
+  displayName: string | null;
+  email: string | null;
+};
+
+type AuthState = {
+  error: string | null;
+  isConfigured: boolean;
+  isLoading: boolean;
+  pendingProvider: SupabaseOAuthProvider | null;
+  user: AuthUser | null;
+};
+
+const oauthProviders = ["google", "apple"] as const satisfies readonly SupabaseOAuthProvider[];
+
+export function useSupabaseAuth() {
+  const supabase = useMemo(() => tryCreateClient(), []);
+  const [state, setState] = useState<AuthState>({
+    error: null,
+    isConfigured: isSupabaseConfigured,
+    isLoading: Boolean(supabase),
+    pendingProvider: null,
+    user: null
+  });
+
+  useEffect(() => {
+    if (!supabase) {
+      return;
+    }
+
+    let isMounted = true;
+
+    supabase.auth
+      .getSession()
+      .then(({ data }) => {
+        if (isMounted) {
+          setState((current) => ({ ...current, isLoading: false, user: authUserFromSupabaseUser(data.session?.user) }));
+        }
+      })
+      .catch(() => {
+        if (isMounted) {
+          setState((current) => ({ ...current, error: "Could not read the Supabase session.", isLoading: false }));
+        }
+      });
+
+    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
+      setState((current) => ({
+        ...current,
+        error: null,
+        isLoading: false,
+        pendingProvider: null,
+        user: authUserFromSupabaseUser(session?.user)
+      }));
+    });
+
+    return () => {
+      isMounted = false;
+      listener.subscription.unsubscribe();
+    };
+  }, [supabase]);
+
+  const signInWithProvider = useCallback(
+    async (provider: SupabaseOAuthProvider) => {
+      if (!supabase) {
+        setState((current) => ({ ...current, error: "Supabase auth is not configured for this environment." }));
+        return;
+      }
+
+      setState((current) => ({ ...current, error: null, pendingProvider: provider }));
+      const { error } = await supabase.auth.signInWithOAuth(createOAuthSignInOptions(provider, window.location.href));
+
+      if (error) {
+        setState((current) => ({ ...current, error: error.message, pendingProvider: null }));
+      }
+    },
+    [supabase]
+  );
+
+  const signOut = useCallback(async () => {
+    if (!supabase) {
+      return;
+    }
+    setState((current) => ({ ...current, error: null, isLoading: true }));
+    const { error } = await supabase.auth.signOut();
+    setState((current) => ({
+      ...current,
+      error: error?.message ?? null,
+      isLoading: false,
+      user: error ? current.user : null
+    }));
+  }, [supabase]);
+
+  return {
+    ...state,
+    providers: oauthProviders,
+    signInWithProvider,
+    signOut
+  };
+}
+
+export function createOAuthSignInOptions(provider: SupabaseOAuthProvider, currentHref: string) {
+  return {
+    provider,
+    options: {
+      redirectTo: authRedirectUrl(undefined, currentHref)
+    }
+  };
+}
 
 export function usernameFromUser(user: Pick<User, "email" | "user_metadata"> | null | undefined) {
   const metadata = user?.user_metadata as Record<string, unknown> | undefined;
@@ -33,4 +146,14 @@ function cleanUsername(value: unknown) {
   }
   const trimmed = value.trim().replace(/^@+/, "");
   return trimmed || null;
+}
+
+function authUserFromSupabaseUser(user: User | null | undefined): AuthUser | null {
+  if (!user) {
+    return null;
+  }
+  return {
+    displayName: usernameFromUser(user),
+    email: user.email ?? null
+  };
 }

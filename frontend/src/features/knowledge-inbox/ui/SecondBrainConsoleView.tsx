@@ -6,6 +6,7 @@ import type { KnowledgeInboxPage } from "../KnowledgeInboxContainer";
 import type { KnowledgeInboxViewModel, NavigationItemViewModel, SummaryCardViewModel } from "../presentation/viewModel";
 import type { AskSecondBrainSource, DigestIssue, ImportantTimeMarker, InsightGraphResponse, RefreshStatus } from "../contracts";
 import { askSecondBrain } from "../api/knowledgeRuns";
+import { useSupabaseAuth, type SupabaseOAuthProvider } from "../model/useSupabaseAuth";
 import { KnowledgeGraphView } from "./KnowledgeGraphView";
 import { formatUsername, publicOwnerHandle } from "./authDisplay";
 type SecondBrainConsoleViewProps = {
@@ -572,11 +573,56 @@ function HeartIcon() {
 }
 
 export function IdentityBadge() {
+  const { error, isConfigured, isLoading, pendingProvider, providers, signInWithProvider, signOut, user } =
+    useSupabaseAuth();
+
+  if (!isConfigured) {
+    return (
+      <div aria-label="Current workspace user" className="auth-compact user-badge">
+        {formatUsername(publicOwnerHandle)}
+      </div>
+    );
+  }
+
+  if (user) {
+    return (
+      <div className="auth-compact user-badge" aria-label="Current workspace user">
+        <span>{formatUsername(user.displayName ?? publicOwnerHandle)}</span>
+        <button className="auth-action secondary-action" disabled={isLoading} onClick={signOut} type="button">
+          Sign out
+        </button>
+      </div>
+    );
+  }
+
   return (
-    <div aria-label="Current workspace user" className="auth-compact user-badge">
-      {formatUsername(publicOwnerHandle)}
+    <div className="auth-compact auth-provider-group" aria-label="Supabase sign in and sign up">
+      {providers.map((provider) => (
+        <button
+          aria-label={`Sign in or sign up with ${providerLabel(provider)}`}
+          className="auth-provider-button"
+          disabled={Boolean(pendingProvider)}
+          key={provider}
+          onClick={() => void signInWithProvider(provider)}
+          type="button"
+        >
+          <span aria-hidden="true" className="auth-provider-icon">
+            {providerIcon(provider)}
+          </span>
+          <span>{pendingProvider === provider ? "Opening" : providerLabel(provider)}</span>
+        </button>
+      ))}
+      {error ? <p role="status">{error}</p> : null}
     </div>
   );
+}
+
+function providerLabel(provider: SupabaseOAuthProvider) {
+  return provider === "google" ? "Google" : "Apple";
+}
+
+function providerIcon(provider: SupabaseOAuthProvider) {
+  return provider === "google" ? "G" : "A";
 }
 
 function isExternalSourcePage(activePage: KnowledgeInboxPage) {
