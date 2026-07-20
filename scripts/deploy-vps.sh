@@ -148,7 +148,25 @@ if "$onecli" run --project second-brain -- "$api_dir/second-brain-langfuse-promp
 else
   echo "Langfuse prompt sync failed; continuing deploy with the checked-in prompt fallback." >&2
 fi
-"$api_dir/second-brain-migrate" "$base/migrations"
+
+run_migrations_with_retry() {
+  local attempt
+  local max_attempts=30
+  local delay_seconds=10
+
+  for attempt in $(seq 1 "$max_attempts"); do
+    if "$api_dir/second-brain-migrate" "$base/migrations"; then
+      return 0
+    fi
+    if [[ "$attempt" -eq "$max_attempts" ]]; then
+      return 1
+    fi
+    echo "Migration attempt $attempt failed; retrying in ${delay_seconds}s." >&2
+    sleep "$delay_seconds"
+  done
+}
+
+run_migrations_with_retry
 
 cat > /tmp/second-brain-api.service <<SERVICE
 [Unit]
