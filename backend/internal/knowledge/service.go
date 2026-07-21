@@ -706,6 +706,25 @@ func (s *Service) RunCycle(ctx context.Context) (RunOutcome, error) {
 		setSpanOutputSummary(span, map[string]any{"new_content": false, "skipped_reason": "no_new_source_materials", "x_count": len(xBookmarks), "youtube_count": len(youtubeItems)})
 		return RunOutcome{Result: *latest, NewContent: false, SkippedReason: "no_new_source_materials"}, nil
 	}
+	if len(newCandidates) == 0 && len(blockers) > 0 && latest != nil && resultHasContent(latest) {
+		s.setRefreshStage("completed", "Source providers are blocked; kept the last populated inbox instead of publishing an empty refresh.")
+		s.log(ctx).Warn(
+			"knowledge refresh skipped; keeping last populated run after source blockers",
+			"x_count", len(latest.XBookmarks),
+			"youtube_count", len(latest.YouTubeItems),
+			"insights", len(latest.Insights),
+			"blockers", len(blockers),
+		)
+		setSpanOutputSummary(span, map[string]any{
+			"new_content":       false,
+			"skipped_reason":    "source_fetch_blocked",
+			"previous_x":        len(latest.XBookmarks),
+			"previous_youtube":  len(latest.YouTubeItems),
+			"previous_insights": len(latest.Insights),
+			"blockers":          len(blockers),
+		})
+		return RunOutcome{Result: *latest, NewContent: false, SkippedReason: "source_fetch_blocked"}, nil
+	}
 
 	s.setRefreshStage("gleaning_insights", fmt.Sprintf("Gleaning insights from %d new source material(s).", len(newCandidates)))
 	processStart := time.Now()
@@ -835,6 +854,14 @@ func (s *Service) refreshTimeout() time.Duration {
 		return 90 * time.Minute
 	}
 	return timeout
+}
+
+func resultHasContent(result *Result) bool {
+	return result != nil &&
+		(len(result.XBookmarks) > 0 ||
+			len(result.YouTubeItems) > 0 ||
+			len(result.Summaries) > 0 ||
+			len(result.Insights) > 0)
 }
 
 func (s *Service) publishAppStateForResult(ctx context.Context, result Result, graphStatus string, reason string) error {
