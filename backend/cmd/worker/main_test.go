@@ -34,3 +34,12 @@ func TestParseClockFallsBackForInvalidInput(t *testing.T) {
 		t.Fatalf("expected fallback clock, got %02d:%02d", hour, minute)
 	}
 }
+
+func TestShouldPublishAfterRefreshRequiresSuccessfulRefresh(t *testing.T) {
+	if shouldPublishAfterRefresh(refreshOutcome{ok: false, skippedReason: "refresh_failed"}) {
+		t.Fatal("expected failed refresh to skip read model publish")
+	}
+	if !shouldPublishAfterRefresh(refreshOutcome{ok: true, skippedReason: "no_new_source_materials"}) {
+		t.Fatal("expected successful refresh to publish read models")
+	}
+}

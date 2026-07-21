@@ -58,13 +58,18 @@ func main() {
 		} else if outcome.ok {
 			logger.Info("worker graph sync skipped", "reason", outcome.skippedReason)
 		}
-		publishReadModels(ctx, service, logger, "post_refresh_precompute")
+		if shouldPublishAfterRefresh(outcome) {
+			publishReadModels(ctx, service, logger, "post_refresh_precompute")
+		} else {
+			logger.Warn("worker precompute skipped", "reason", outcome.skippedReason)
+		}
 	}
 	runDigest := func(reason string) {
 		runLock.Lock()
 		defer runLock.Unlock()
-		generateDigest(ctx, service, logger, reason)
-		publishReadModels(ctx, service, logger, "daily_precompute")
+		if generateDigest(ctx, service, logger, reason) {
+			publishReadModels(ctx, service, logger, "daily_precompute")
+		}
 	}
 
 	runCycle("startup")
@@ -109,19 +114,24 @@ func runOnce(ctx context.Context, cfg config.Config, service *knowledge.Service,
 	return refreshOutcome{ok: true, newContent: outcome.NewContent, skippedReason: fallbackReason(outcome.SkippedReason, "no_new_source_materials")}
 }
 
-func generateDigest(ctx context.Context, service *knowledge.Service, logger *logging.Logger, reason string) {
+func shouldPublishAfterRefresh(outcome refreshOutcome) bool {
+	return outcome.ok
+}
+
+func generateDigest(ctx context.Context, service *knowledge.Service, logger *logging.Logger, reason string) bool {
 	digestCtx, cancel := context.WithTimeout(ctx, 3*time.Minute)
 	defer cancel()
 	digest, err := service.GenerateDigest(digestCtx)
 	if err != nil {
 		if errors.Is(err, knowledge.ErrNoNewDigestSources) {
 			logger.Info("worker digest skipped", "reason", reason, "error", err)
-			return
+			return false
 		}
 		logger.Error("worker digest failed", "reason", reason, "error", err)
-		return
+		return false
 	}
 	logger.Info("worker digest completed", "reason", reason, "date", digest.DigestDate, "status", digest.Status, "subject", digest.Subject)
+	return true
 }
 
 func publishReadModels(ctx context.Context, service *knowledge.Service, logger *logging.Logger, reason string) {
