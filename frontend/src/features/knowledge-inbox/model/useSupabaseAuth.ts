@@ -1,8 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import type { Provider, User } from "@supabase/supabase-js";
+import type { User } from "@supabase/supabase-js";
 import { isSupabaseConfigured, tryCreateClient } from "../../../utils/supabase/client";
-
-export type SupabaseOAuthProvider = Extract<Provider, "apple" | "google">;
 
 type AuthUser = {
   displayName: string | null;
@@ -13,11 +11,8 @@ type AuthState = {
   error: string | null;
   isConfigured: boolean;
   isLoading: boolean;
-  pendingProvider: SupabaseOAuthProvider | null;
   user: AuthUser | null;
 };
-
-const oauthProviders = ["google", "apple"] as const satisfies readonly SupabaseOAuthProvider[];
 
 export function useSupabaseAuth() {
   const supabase = useMemo(() => tryCreateClient(), []);
@@ -25,7 +20,6 @@ export function useSupabaseAuth() {
     error: null,
     isConfigured: isSupabaseConfigured,
     isLoading: Boolean(supabase),
-    pendingProvider: null,
     user: null
   });
 
@@ -54,7 +48,6 @@ export function useSupabaseAuth() {
         ...current,
         error: null,
         isLoading: false,
-        pendingProvider: null,
         user: authUserFromSupabaseUser(session?.user)
       }));
     });
@@ -64,23 +57,6 @@ export function useSupabaseAuth() {
       listener.subscription.unsubscribe();
     };
   }, [supabase]);
-
-  const signInWithProvider = useCallback(
-    async (provider: SupabaseOAuthProvider) => {
-      if (!supabase) {
-        setState((current) => ({ ...current, error: "Supabase auth is not configured for this environment." }));
-        return;
-      }
-
-      setState((current) => ({ ...current, error: null, pendingProvider: provider }));
-      const { error } = await supabase.auth.signInWithOAuth(createOAuthSignInOptions(provider, window.location.href));
-
-      if (error) {
-        setState((current) => ({ ...current, error: error.message, pendingProvider: null }));
-      }
-    },
-    [supabase]
-  );
 
   const signOut = useCallback(async () => {
     if (!supabase) {
@@ -98,18 +74,7 @@ export function useSupabaseAuth() {
 
   return {
     ...state,
-    providers: oauthProviders,
-    signInWithProvider,
     signOut
-  };
-}
-
-export function createOAuthSignInOptions(provider: SupabaseOAuthProvider, currentHref: string) {
-  return {
-    provider,
-    options: {
-      redirectTo: authRedirectUrl(undefined, currentHref)
-    }
   };
 }
 
@@ -125,19 +90,6 @@ export function usernameFromEmail(email: string | null | undefined) {
     return null;
   }
   return cleanUsername(trimmed.includes("@") ? trimmed.split("@")[0] : trimmed);
-}
-
-export function authRedirectUrl(redirectPath: string | undefined, currentHref: string) {
-  const current = new URL(currentHref.split("#")[0]);
-  if (!redirectPath) {
-    return current.toString();
-  }
-
-  const normalizedPath = redirectPath.replace(/^\/+/, "");
-  const basePath = current.pathname.endsWith("/") ? current.pathname : `${current.pathname}/`;
-  current.pathname = `${basePath}${normalizedPath}`.replace(/\/{2,}/g, "/");
-  current.search = "";
-  return current.toString();
 }
 
 function cleanUsername(value: unknown) {
