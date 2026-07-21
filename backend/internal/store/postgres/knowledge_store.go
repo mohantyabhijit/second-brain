@@ -21,6 +21,18 @@ type Store struct {
 	progress   func(done int, total int)
 }
 
+const latestRunOrderClause = `
+		case
+			when (jsonb_typeof(payload->'xBookmarks') = 'array' and jsonb_array_length(payload->'xBookmarks') > 0)
+				or (jsonb_typeof(payload->'youtubeItems') = 'array' and jsonb_array_length(payload->'youtubeItems') > 0)
+				or (jsonb_typeof(payload->'insights') = 'array' and jsonb_array_length(payload->'insights') > 0)
+				or (jsonb_typeof(payload->'summaries') = 'array' and jsonb_array_length(payload->'summaries') > 0)
+			then 0
+			else 1
+		end,
+		generated_at desc
+`
+
 func New(ctx context.Context, databaseURL string) (*Store, error) {
 	config, err := pgxpool.ParseConfig(databaseURL)
 	if err != nil {
@@ -70,7 +82,7 @@ func (s *Store) ReadLatestForOwner(ctx context.Context, ownerID string) (*knowle
 		select payload
 		from knowledge_runs
 		where owner_id = $1
-		order by generated_at desc
+		order by `+latestRunOrderClause+`
 		limit 1
 	`, ownerID).Scan(&raw)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -105,7 +117,7 @@ func (s *Store) ReadLatestViewForOwner(ctx context.Context, ownerID string, view
 				select payload
 				from knowledge_runs
 				where owner_id = $1
-				order by generated_at desc
+				order by `+latestRunOrderClause+`
 				limit 1
 			)
 			select jsonb_build_object(
@@ -129,7 +141,7 @@ func (s *Store) ReadLatestViewForOwner(ctx context.Context, ownerID string, view
 				select payload
 				from knowledge_runs
 				where owner_id = $1
-				order by generated_at desc
+				order by `+latestRunOrderClause+`
 				limit 1
 			)
 			select jsonb_build_object(
